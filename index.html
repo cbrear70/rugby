@@ -1601,7 +1601,13 @@ async function ensureMailbox(){
   if(z.memberOf !== z.group + ':' + uid){
     try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}); }
     catch(e){ if(!alreadyThere(e)) throw e; }
-    z.memberOf = z.group + ':' + uid; save();
+    z.memberOf = z.group + ':' + uid; z.seenAt = Date.now(); z.seenWho = z.who; save();
+  } else if(Date.now() - (z.seenAt || 0) > 3600e3 || z.seenWho !== z.who){
+    try {
+      await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, seen:{integerValue: String(Date.now())}}},
+        updateMask:{fieldPaths:['who', 'seen']}, currentDocument:{exists:true}}]});
+      z.seenAt = Date.now(); z.seenWho = z.who; save();
+    } catch(e){ if(e.status === 404 || /NOT_FOUND|no entity/i.test(e.message)) delete z.memberOf; } // not a member after all: registers next time
   }
   if(box && box === z.mailbox) return box;
   if(!box){

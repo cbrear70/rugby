@@ -36,6 +36,12 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
 .status{font-size:14px;min-height:1.4em;margin:0}
 .status.err{color:#FFB4A6} .status.ok{color:var(--ok)}
 .hint.err{color:#FFB4A6}
+.members summary{cursor:pointer;font:700 12px/1.4 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.members[open] summary{margin-bottom:6px}
+.members table{width:100%;border-collapse:collapse;font-size:14px}
+.members th{text-align:left;font:700 11px/1.2 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:4px 6px 4px 0;border-bottom:1px solid var(--line)}
+.members td{padding:6px 6px 6px 0;border-bottom:1px solid var(--line)}
+.members .hint{margin-top:8px}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 [hidden]{display:none !important}
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
@@ -155,11 +161,13 @@ async function load(){
       el.innerHTML = `<h2>${esc(name)}</h2>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
+        <details class="members" data-members><summary>Coaches · checking…</summary><div class="mlist"></div></details>
         ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p><div class="row" data-fix hidden><button class="btn" data-a="repair">Repair inbox</button></div>` : ''}
         ${(boxesByGroup[code] || []).filter(b => b !== mail).map(b => `<p class="hint err" data-stray="${esc(b)}">Send code ${fmt(b)} also leads to this group, but its coaches look in ${mail ? fmt(mail) : 'no inbox'}, so moves sent to ${fmt(b)} never reach them. Checking…</p>
           <div class="row"><button class="btn" data-a="adopt" data-box="${esc(b)}">Make ${fmt(b)} the send code</button></div>`).join('')}
         <div class="row"><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
       el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, raw, was, box: b.dataset.box}, el)));
+      showMembers(code, el);
       el.querySelectorAll('[data-stray]').forEach(p => list(`/mailboxes/${p.dataset.stray}/items`).then(w => {
         p.textContent = p.textContent.replace('Checking…', w.length ? `${w.length} move${w.length>1?'s':''} waiting there.` : 'Nothing waiting there.'); }).catch(() => {}));
       if(mail) inboxHealth(code, raw).then(h => {
@@ -174,6 +182,20 @@ async function load(){
   } catch(e){ status(e.message, 'err'); }
 }
 
+// Phones that joined the group (one per phone, so a coach with two phones shows twice), newest activity first
+const when = ms => { if(!ms) return '—'; const d = new Date(+ms), days = (Date.now() - d) / 864e5;
+  return days < 1 ? 'today' : days < 2 ? 'yesterday' : days < 7 ? Math.floor(days) + ' days ago' : d.toLocaleDateString('en-GB', {day:'numeric', month:'short', year: days > 300 ? 'numeric' : undefined}); };
+async function showMembers(code, el){
+  const box = el.querySelector('[data-members]');
+  try {
+    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {who: f.who?.stringValue || '(no name)', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue}; })
+      .sort((a, b) => (b.seen || 0) - (a.seen || 0));
+    const names = new Set(ms.map(m => m.who.trim().toLowerCase()));
+    box.querySelector('summary').textContent = ms.length ? `Coaches · ${names.size}${ms.length > names.size ? ` (${ms.length} phones)` : ''}` : 'Coaches · none registered yet';
+    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Joined</th><th>Last active</th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}</td><td>${when(m.joined)}</td><td>${when(m.seen)}</td></tr>`).join('')}</tbody></table>
+      <p class="hint">A phone registers when it first syncs with the group. A coach with two phones, or who reinstalled the app, appears once per phone. To remove someone's access, change the join code and give the new one only to coaches who should keep it.</p>` : '<p class="hint">Phones register when they first sync with the group.</p>';
+  } catch(e){ box.querySelector('summary').textContent = 'Coaches · could not load (' + e.message + ')'; }
+}
 // Is the group's send code linked to an inbox that points back at the group? Coaches can only read an inbox when
 // mailboxes/<send code>.group is exactly the group's join code, and the phone looks under the group's mailbox field.
 async function inboxHealth(code, raw){
