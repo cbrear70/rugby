@@ -55,12 +55,12 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <section class="card">
       <h2>New group</h2>
       <div class="field"><label class="field-label" for="nName">Group name</label><input id="nName" type="text" placeholder="e.g. Hawks U12 coaches"></div>
-      <div class="field"><label class="field-label" for="nCode">Join code (leave blank for a random one)</label><input id="nCode" class="code-in" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
+      <div class="field"><label class="field-label" for="nCode">Join code (leave blank for a random one)</label><input id="nCode" class="code-in" type="text" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" maxlength="12" placeholder="ABCD-EFGH-JK"></div>
       <div class="row"><button class="btn" id="create">Create group</button></div>
     </section>
     <div class="top"><h2>Groups</h2><button class="btn ghost" id="reload">Refresh</button></div>
     <div id="groups" style="display:flex;flex-direction:column;gap:12px"></div>
-    <p class="hint">Codes use the letters and digits <b>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</b> (no I, O, 0 or 1), 10 characters. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
+    <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
   </div>
 </main>
 <script>
@@ -73,9 +73,12 @@ const ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const newCode = () => [...crypto.getRandomValues(new Uint8Array(10))].map(x => ABC[x % 32]).join('');
-const norm = c => String(c||'').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const norm = c => String(c||'').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 10);
 const fmt = c => String(c||'').replace(/^(.{4})(.{4})(.*)$/, '$1-$2-$3');
-const validCode = c => c.length === 10 && [...c].every(ch => ABC.includes(ch));
+const validCode = c => /^[A-Z0-9]{10}$/.test(c);
+// iPhones capitalise, autocorrect and add spaces: keep code boxes as ABCD-EFGH-JK while typing
+const tidy = el => el.addEventListener('input', () => { el.value = fmt(norm(el.value)); });
+const codeInput = id => `<input id="${id}" class="code-in" type="text" inputmode="text" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" maxlength="12" placeholder="ABCD-EFGH-JK">`;
 const KEY = 'rtpAdmin';
 let auth = null; try { auth = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e){}
 const keep = () => { try { auth ? localStorage.setItem(KEY, JSON.stringify(auth)) : localStorage.removeItem(KEY); } catch(e){} };
@@ -143,13 +146,26 @@ async function load(){
   } catch(e){ status(e.message, 'err'); }
 }
 
-// ask for a new code (blank = random); returns null if cancelled
-function askCode(what, current){
-  const v = prompt(`New ${what} for this group. Leave blank for a random one.\nCurrent: ${fmt(current)}`, '');
-  if(v === null) return null;
-  const c = norm(v) || newCode();
-  if(!validCode(c)){ alert('Codes are 10 characters from ' + ABC + ' (no I, O, 0 or 1).'); return null; }
-  return c;
+// ask for a new code in the group's card (blank = random); resolves to the code, or null if cancelled
+function askCode(el, what, current){
+  return new Promise(done => {
+    el.querySelector('.ask')?.remove();
+    const box = document.createElement('div'); box.className = 'ask field';
+    box.innerHTML = `<label class="field-label" for="askIn">New ${what} (now ${fmt(current)})</label>${codeInput('askIn')}
+      <div class="row"><button class="btn" data-k="ok">Use this code</button><button class="btn ghost" data-k="rand">Random</button><button class="btn ghost" data-k="no">Cancel</button></div>
+      <p class="hint" data-k="err"></p>`;
+    el.appendChild(box);
+    const inp = box.querySelector('input'), err = box.querySelector('[data-k="err"]'); tidy(inp); inp.focus();
+    const finish = v => { box.remove(); done(v); };
+    box.querySelector('[data-k="rand"]').addEventListener('click', () => { inp.value = fmt(newCode()); });
+    box.querySelector('[data-k="no"]').addEventListener('click', () => finish(null));
+    box.querySelector('[data-k="ok"]').addEventListener('click', () => {
+      const c = norm(inp.value) || newCode();
+      if(!validCode(c)) return err.textContent = 'Codes are 10 letters or digits.';
+      if(c === current) return err.textContent = 'That is the current code.';
+      finish(c);
+    });
+  });
 }
 
 async function act(what, g, el){
@@ -161,8 +177,9 @@ async function act(what, g, el){
       status('Renamed.', 'ok');
     }
     if(what === 'join'){
-      const c = askCode('join code', g.code); if(!c) return;
+      const c = await askCode(el, 'join code', g.code); if(!c) return;
       if(await fb('GET', '/groups/'+c)) return status('That code is already used by another group.', 'err');
+      if(c === g.mail) return status('That is this group’s send code. Pick a different join code.', 'err');
       if(!confirm(`Change ${g.name}'s join code from ${fmt(g.code)} to ${fmt(c)}?\n\nThe old code stops working straight away. Coaches will be asked for the new code on their next sync and keep all their data. Give the new code only to coaches who should still have access.`)) return;
       busy(true); status('Copying teams and moves…');
       const old = await fb('GET', '/groups/'+g.code), items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`);
@@ -174,7 +191,9 @@ async function act(what, g, el){
       status(`${g.name}: new join code ${fmt(c)} (${items.length} items copied).`, 'ok');
     }
     if(what === 'send'){
-      const c = askCode('send code', g.mail); if(!c) return;
+      const c = await askCode(el, 'send code', g.mail); if(!c) return;
+      if(c === g.code) return status('That is this group’s join code. Pick a different send code.', 'err');
+      if(await fb('GET', '/groups/'+c)) return status('That code is already a group’s join code.', 'err');
       if(!confirm(`Change ${g.name}'s send code from ${fmt(g.mail)} to ${fmt(c)}?\n\nOther groups will need the new send code to send moves. Moves already waiting are kept.`)) return;
       busy(true); status('Moving the inbox…');
       const waiting = await list(`/mailboxes/${g.mail}/items`);
@@ -184,7 +203,9 @@ async function act(what, g, el){
       status(`${g.name}: new send code ${fmt(c)}.`, 'ok');
     }
     if(what === 'delete'){
-      if(prompt(`Delete ${g.name} and all its teams and moves for everyone? Coaches keep what's on their phones but can't sync.\n\nType the group name to confirm.`) !== g.name) return;
+      const typed = prompt(`Delete ${g.name} and all its teams and moves for everyone? Coaches keep what's on their phones but can't sync.\n\nType the group name to confirm.`);
+      const same = x => String(x||'').toLowerCase().replace(/\s+/g, '');
+      if(typed === null) return; if(same(typed) !== same(g.name)) return status('The name didn’t match, so nothing was deleted.', 'err');
       busy(true); status('Deleting…');
       const items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`), waiting = g.mail ? await list(`/mailboxes/${g.mail}/items`) : [];
       await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)),
@@ -198,7 +219,7 @@ async function act(what, g, el){
 $('#create').addEventListener('click', async () => {
   const name = $('#nName').value.trim(), c = norm($('#nCode').value) || newCode();
   if(!name) return status('Enter a group name.', 'err');
-  if(!validCode(c)) return status('Codes are 10 characters from ' + ABC + '.', 'err');
+  if(!validCode(c)) return status('Codes are 10 letters or digits.', 'err');
   $('#create').disabled = true;
   try {
     if(await fb('GET', '/groups/'+c)) throw new Error('That code is already used by another group.');
@@ -207,6 +228,7 @@ $('#create').addEventListener('click', async () => {
   } catch(e){ status(e.message, 'err'); }
   finally { $('#create').disabled = false; }
 });
+tidy($('#nCode'));
 $('#go').addEventListener('click', signIn);
 $('#pw').addEventListener('keydown', e => { if(e.key === 'Enter') signIn(); });
 $('#reload').addEventListener('click', load);

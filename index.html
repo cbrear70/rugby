@@ -1424,8 +1424,10 @@ const FB = {apiKey:'AIzaSyBjRwmW1c-Y5V05NzSuEqOMAjMRUo3ZZV4', projectId:'rugbyte
 const fbOn = () => !!(FB.apiKey && FB.projectId);
 const DOCS = () => `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
 const DOCNAME = path => `projects/${FB.projectId}/databases/(default)/documents/${path}`;
-const normCode = c => String(c||'').toUpperCase().replace(/[^A-Z0-9]/g,'');
-const fmtCode = c => String(c||'').replace(/^(.{4})(.{4})(.*)$/, '$1-$2-$3');
+const normCode = c => String(c||'').toUpperCase().replace(/[^A-Z0-9]/g,'').slice(0, 10);
+const fmtCode = c => String(c||'').replace(/^(.{4})(.{4})(.*)$/, '$1-$2-$3').replace(/^(.{4})(.{1,3})$/, '$1-$2');
+// iPhones capitalise, autocorrect and add spaces: keep code boxes as ABCD-EFGH-JK while typing
+const tidyCode = el => { if(el){ el.setAttribute('autocorrect', 'off'); el.addEventListener('input', () => { el.value = fmtCode(normCode(el.value)); }); } };
 function hashStr(s){ let h = 0x811c9dc5; for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h>>>0).toString(36) + '.' + s.length.toString(36); }
 const syncing = () => !!(S.sync && S.sync.group);
 
@@ -1635,6 +1637,7 @@ function sendToGroup(m){
     <div class="row-btns"><button class="btn" id="sgGo">Send move</button><button class="btn ghost" data-close>Cancel</button></div>
     <p class="hint" id="sgErr" role="alert"></p>`,
     el => {
+      tidyCode($('#sgCode', el));
       $$('[data-rc]', el).forEach(b => b.addEventListener('click', () => { $('#sgCode', el).value = fmtCode(b.dataset.rc); }));
       $('#sgGo', el).addEventListener('click', async () => {
         const code = normCode($('#sgCode', el).value), err = t => { $('#sgErr', el).textContent = t; };
@@ -1679,6 +1682,7 @@ function askNewCode(){
     <button class="btn danger" id="ncLeave">Leave this group</button>
     <p class="hint" id="ncErr" role="alert"></p>`,
     el => {
+      tidyCode($('#ncCode', el));
       const err = t => { $('#ncErr', el).textContent = t; };
       $('#ncGo', el).addEventListener('click', async () => {
         const code = normCode($('#ncCode', el).value); if(code.length !== 10) return err('Enter the 10-character code.');
@@ -1740,6 +1744,7 @@ function showGate(canClose){
     ${canClose ? '<button class="btn ghost wide" id="gtClose">Cancel</button>' : ''}
     <p class="hint" id="gtErr" role="alert"></p></div>`;
   g.hidden = false;
+  tidyCode($('#gtCode', g));
   const err = m => { $('#gtErr', g).textContent = m; }, who = () => $('#gtWho', g).value.trim();
   const busy = on => $$('button', g).forEach(b => b.disabled = on);
   const enter = async grp => {
