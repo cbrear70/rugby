@@ -74,6 +74,19 @@ main{flex:1;min-height:0;position:relative}
 .pitch .fdot.held{fill:none;stroke:rgba(255,255,255,.45);stroke-width:.15}
 .pitch .fdot.held.cur{stroke:#fff;stroke-width:.3}
 .carry-row{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.chain{display:flex;flex-direction:column}
+.step{background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:8px}
+.step.warn{border-color:color-mix(in srgb,var(--danger) 60%,transparent)}
+.step-top{display:flex;gap:8px;align-items:center}
+.step-top select{flex:1;width:auto;min-width:0;padding:8px 10px;font-size:15px}
+.sline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
+.sline.bad{color:#FFB4A6}
+.sline .fnum{color:var(--ink);font-variant-numeric:tabular-nums}
+.stp{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:999px;background:var(--panel)}
+.stp button{width:34px;height:32px;border:0;background:none;color:var(--ink);font:700 18px/1 var(--body)}
+.stp button:active{background:var(--line);border-radius:999px}
+.stp b{min-width:22px;text-align:center;color:var(--ink);font-variant-numeric:tabular-nums}
+.pass-link{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:24px;padding:8px 0 8px 14px;border-left:2px dashed var(--line);font-size:14px;color:var(--muted)}
 .carry-row select{width:auto;flex:1;padding:8px 10px;font-size:15px}
 .zoomhint{position:absolute;left:10px;bottom:8px;font:600 11px/1 var(--body);color:rgba(255,255,255,.55);pointer-events:none;letter-spacing:.04em}
 
@@ -172,7 +185,6 @@ textarea{resize:vertical;min-height:84px}
 .pgrid button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 18%,var(--panel2))}
 .pgrid button small{font-size:10px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pgrid button:not(.on) svg{opacity:.45}
-.pgrid.give button svg{opacity:1}
 .opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
 .opt input{margin-top:3px;accent-color:var(--accent);width:18px;height:18px;flex:none}
 .opt b{display:block}
@@ -243,6 +255,7 @@ textarea{resize:vertical;min-height:84px}
         </div>
         <div class="toolrow">
           <button class="chip on" id="pathsChip">Paths</button>
+          <button class="chip" id="edPasses" hidden>Passes</button>
           <button class="chip" id="edFit">Whole pitch</button>
           <span class="spacer"></span>
           <span class="hint" id="edHint">Drag at frame 1 = start, frame 20 = finish</span>
@@ -798,6 +811,7 @@ function renderEditor(){
   $('#edName').textContent = m.name;
   $('#edDesc').textContent = m.desc || 'Tap to name and describe this move';
   $('#pathsChip').classList.toggle('on', S.ui.paths!==false);
+  $('#edPasses').hidden = !m.icons.ball;
   const ids = iconIds(m);
   $('#edHint').textContent = ids.length ? 'Drag at frame 1 = start, frame 20 = finish' : 'Tap Players to add shirts and the ball';
   renderBanner(); renderMoveLayer(); updateTransport();
@@ -877,6 +891,7 @@ $('#edTitle').addEventListener('click', () => {
     });
 });
 $('#edPlayers').addEventListener('click', () => pickPlayers());
+$('#edPasses').addEventListener('click', () => showMoveIcon('ball'));
 function addIconToMove(m, id){
   const t = team();
   if(id==='ball'){
@@ -908,17 +923,15 @@ function showMoveIcon(id){
   openSheet(`<div class="det-head">${ball?miniBall(64):bigShirt(id, moveColor(m,id))}<div class="who"><div class="eyebrow">${ball?'Ball':'#'+id+' · '+posName(+id)}</div><h2>${ball?'Ball':p?esc(p.name):'Shirt '+id}</h2>
     <div class="muted">${custom.length ? 'Custom path through frame'+(custom.length>1?'s ':' ')+custom.join(', ') : 'Straight line from frame 1 to frame 20'}</div></div></div>
     ${ball?'':`<div class="field"><div class="field-label">Shirt colour in this move</div>${swatchRow(ic.color, defaultColor(id))}</div>`}
-    ${ball ? carrySection(m, f) : m.icons.ball ? `<div class="field"><div class="field-label">Ball</div>${carrierAt(m,f)===id ? `<p class="hint">Has the ball at frame ${f+1}.</p>` : `<button class="btn ghost" id="miGive">Ball to #${id} from frame ${f+1}</button>`}${passSelect()}</div>` : ''}
+    ${ball ? '<div class="field" id="chainBox"></div>' : m.icons.ball ? `<div class="field"><div class="field-label">Ball</div>${carrierAt(m,f)===id ? `<p class="hint">Has the ball at frame ${f+1}.</p>` : `<button class="btn ghost" id="miGive">Ball to #${id} from frame ${f+1}</button>`}${passSelect()}</div>` : ''}
     <div class="row-btns"><button class="btn" id="miPath">Edit path</button><button class="btn ghost" id="miStraight"${custom.length?'':' disabled'}>Straighten</button></div>
     <div class="row-btns"><button class="btn danger" id="miRemove">Remove from move</button><button class="btn ghost" data-close>Close</button></div>
     <p class="hint">You are on frame ${f+1}. ${ball && !ballFree(m,f) ? `The ball is ${carrierAt(m,f) ? 'with #'+carrierAt(m,f) : 'being passed'} at this frame, so it follows the players.` : `Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}.`} Double-tap it to edit all 20 frames.</p>`,
     el => {
       if(!ball) wireSwatches(el, c => { ic.color = c; save(); renderMoveLayer(); });
       wirePassSelect(el);
-      const give = p => { giveBall(m, p, f, passLen()); save(); renderMoveLayer(); showMoveIcon(id); toast(p ? `#${p} has the ball from frame ${f+1}` : `Ball let go at frame ${f+1}`); };
-      $$('[data-give]', el).forEach(b => b.addEventListener('click', () => give(b.dataset.give)));
-      $$('[data-ungive]', el).forEach(b => b.addEventListener('click', () => { ic.carry = ic.carry.filter(c => c.f !== +b.dataset.ungive); tidyCarry(m); save(); renderMoveLayer(); showMoveIcon(id); }));
-      const gb = $('#miGive', el); if(gb) gb.addEventListener('click', () => give(id));
+      if(ball) renderChain($('#chainBox', el), m);
+      const gb = $('#miGive', el); if(gb) gb.addEventListener('click', () => { giveBall(m, id, f, passLen()); save(); renderMoveLayer(); showMoveIcon(id); toast(`#${id} has the ball from frame ${f+1}`); });
       $('#miPath', el).addEventListener('click', () => { closeSheet(); startPathEdit(id); });
       $('#miStraight', el).addEventListener('click', () => { closeSheet(); straighten(id); });
       $('#miRemove', el).addEventListener('click', () => { removeIcon(m,id); save(); closeSheet(); renderEditor(); });
@@ -929,20 +942,70 @@ function passSelect(){
   return `<label class="carry-row">Pass takes <select id="passLen" aria-label="Frames the pass takes">${[0,1,2,3,4,5,6,8,10].map(n => `<option value="${n}"${n===passLen()?' selected':''}>${n ? n+' frame'+(n>1?'s':'') : 'no time (hand-off)'}</option>`).join('')}</select></label>`;
 }
 function wirePassSelect(el){ const s = $('#passLen', el); if(s) s.addEventListener('change', () => { S.ui.passLen = +s.value; save(); }); }
-function carrySection(m, f){
-  const t = team(), cs = carries(m), cur = carrierAt(m, f);
-  const who = p => { const pl = playerAt(t,+p); return '#'+p+(pl ? ' '+esc(surname(pl.name)) : ''); };
-  const rows = cs.map((c,i) => { const next = cs[i+1], until = next ? next.f - (next.pass||0) : LAST;
-    const what = c.p ? (c.pass ? `Pass frames ${c.f-c.pass+1}–${c.f+1}, then has it ` : 'Has it ') + (until > c.f ? `frames ${c.f+1}–${until+1}` : `at frame ${c.f+1}`) : `Kicked or loose from frame ${c.f+1}. Follows its own path.`;
-    return `<div class="prow">${c.p ? miniShirt(c.p, moveColor(m,c.p), 30) : miniBall(30)}<div class="who"><b>${c.p ? who(c.p) : 'Let go'}</b><small>${what}</small></div><button class="chip" data-ungive="${c.f}">Remove</button></div>`; }).join('');
-  const shirts = iconIds(m).filter(i => i!=='ball');
-  return `<div class="field"><div class="field-label">Who has the ball</div>
-      ${rows ? `<div class="list">${rows}</div>` : `<p class="hint">Nobody yet. The ball follows its own path until you give it to a player.</p>`}</div>
-    <div class="field"><div class="field-label">From frame ${f+1}, the ball goes to</div>
-      ${shirts.length ? `<div class="pgrid give">${shirts.map(p => `<button data-give="${p}" class="${cur===p?'on':''}" aria-pressed="${cur===p}">${miniShirt(p, moveColor(m,p), 34)}<small>${esc(surname((playerAt(t,+p)||{}).name||'')) || '#'+p}</small></button>`).join('')}
-        <button data-give="" aria-label="Let go of the ball">${miniBall(34)}<small>Let go</small></button></div>` : `<p class="hint">Add shirts to the move first.</p>`}
-      ${passSelect()}
-      <p class="hint">The ball sticks to that player from frame ${f+1} and follows them until the next pass. Use the frame slider to pick the frame first.</p></div>`;
+// Passing sequence: the carry list edited as a chain of steps. Each step is a carrier (or '' = let go)
+// with how long they hold it and how long the pass to the next step takes; changing one step shifts the rest.
+function getChain(m){
+  const cs = carries(m); if(!cs.length) return null;
+  return {start: cs[0].f, firstPass: cs[0].pass||0, steps: cs.map((c,i) => { const n = cs[i+1]; return {p:c.p, hold: n ? n.f - (n.pass||0) - c.f : 2, pass: n ? n.pass||0 : passLen()}; })};
+}
+function setChain(m, ch){
+  const b = m.icons.ball; if(!b) return;
+  if(!ch || !ch.steps.length){ delete b.carry; return; }
+  let f = ch.start; const out = [];
+  ch.steps.forEach((st,i) => {
+    if(i){ const pv = ch.steps[i-1]; if(st.p==='') pv.pass = 0; if(pv.hold + pv.pass < 1) pv.hold = 1; f += pv.hold + pv.pass; }
+    out.push({p:st.p, f, pass: i ? ch.steps[i-1].pass : ch.firstPass});
+  });
+  b.carry = out;
+  // a let-go starts from the hands of whoever had the ball, so the ball never jumps
+  out.forEach((c,i) => { if(c.p==='' && i && out[i-1].p && c.f<=LAST){ const q = heldPos(m, out[i-1], c.f); b.keys[c.f] = [r1(q[0]), r1(q[1])]; } });
+}
+function chainFrames(ch){ let f = ch.start; return ch.steps.map((st,i) => { if(i) f += ch.steps[i-1].hold + ch.steps[i-1].pass; return f; }); }
+const stepper = (key, val, label) => `<span class="stp" role="group" aria-label="${label}"><button data-st="${key}:-1" aria-label="Less">−</button><b>${val}</b><button data-st="${key}:1" aria-label="More">+</button></span>`;
+function renderChain(box, m){
+  const t = team(), ch = getChain(m), shirts = iconIds(m).filter(i => i!=='ball');
+  const name = p => { const pl = playerAt(t,+p); return '#'+p+(pl ? ' '+surname(pl.name) : ''); };
+  const opts = cur => shirts.map(p => `<option value="${p}"${p===cur?' selected':''}>${esc(name(p))}</option>`).join('') + `<option value=""${cur===''?' selected':''}>Kick / let go</option>`;
+  let html = `<div class="field-label">Passing sequence</div>`;
+  if(!ch){
+    html += `<p class="hint">Nobody has the ball yet, so it follows its own path. Start the sequence with the first player to have it, then add each pass.</p>`;
+  } else {
+    const fs = chainFrames(ch), n = ch.steps.length;
+    html += `<div class="chain">` + ch.steps.map((st,i) => {
+      const f = fs[i], last = i===n-1, loose = st.p==='', past = f > LAST, until = f + st.hold;
+      let h = `<div class="step${past?' warn':''}"><div class="step-top">${loose ? miniBall(30) : miniShirt(st.p, moveColor(m,st.p), 30)}<select data-sp="${i}" aria-label="Step ${i+1} player">${opts(st.p)}</select><button class="chip" data-sdel="${i}">Remove</button></div>`;
+      h += `<div class="sline">${i ? `${loose ? 'Let go at' : 'Catches it at'} frame <b class="fnum">${f+1}</b>` : `${loose ? 'Loose from' : 'Has it from'} frame ${stepper('start:0', f+1, 'Start frame')}`}</div>`;
+      if(past) h += `<div class="sline bad">This starts after frame ${FRAMES}. Shorten an earlier hold or pass.</div>`;
+      else if(!last) h += `<div class="sline">${loose ? 'Loose for' : 'Holds it for'} ${stepper('hold:'+i, st.hold, 'Frames held')} frame${st.hold===1?'':'s'}</div><div class="sline">${loose ? 'until' : 'Passes at'} frame ${stepper('until:'+i, until+1, 'Until frame')}</div>`;
+      else h += `<div class="sline">${loose ? 'Follows its own path to the end.' : 'Keeps it to the end of the move.'}</div>`;
+      h += `</div>`;
+      if(!last) h += ch.steps[i+1].p==='' ? `<div class="pass-link">↓ lets go</div>` : `<div class="pass-link">↓ ${loose ? 'reaches the next player in' : 'pass takes'} ${stepper('pass:'+i, st.pass, 'Pass frames')} frame${st.pass===1?'':'s'}</div>`;
+      return h; }).join('') + `</div>`;
+  }
+  html += shirts.length ? `<div class="row-btns"><button class="btn ghost" id="chAdd">${ch ? 'Add pass' : 'Start: first player has the ball'}</button>${ch ? `<button class="btn ghost" id="chKick">Add kick / let go</button>` : ''}</div>` : `<p class="hint">Add shirts to the move first.</p>`;
+  box.innerHTML = html;
+
+  const commit = c => { setChain(m, c); save(); renderMoveLayer(); renderChain(box, m); };
+  const nextShirt = after => { if(!shirts.length) return ''; const i = shirts.indexOf(after); return shirts[(i+1) % shirts.length]; };
+  $$('[data-sp]', box).forEach(sel => sel.addEventListener('change', () => { const c = getChain(m); c.steps[+sel.dataset.sp].p = sel.value; commit(c); }));
+  $$('[data-sdel]', box).forEach(b => b.addEventListener('click', () => { const c = getChain(m), i = +b.dataset.sdel;
+    if(i===0 && c.steps.length>1) c.start = chainFrames(c)[1];
+    else if(i>0 && i<c.steps.length-1){ const pv = c.steps[i-1], st = c.steps[i]; pv.hold += pv.pass + st.hold; pv.pass = st.pass; } // later catches keep their frames
+    c.steps.splice(i,1); commit(c.steps.length ? c : null); }));
+  $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
+    const [kind, i, d] = b.dataset.st.split(':'), k = +i, dd = +d, c = getChain(m), st = c.steps[k];
+    if(kind==='start') c.start = clamp(c.start + dd, 0, LAST);
+    else if(kind==='hold' || kind==='until') st.hold = clamp(st.hold + dd, st.pass ? 0 : 1, LAST);
+    else if(kind==='pass'){ st.pass = clamp(st.pass + dd, st.hold ? 0 : 1, 10); S.ui.passLen = st.pass; }
+    commit(c);
+  }));
+  const add = p => { let c = getChain(m);
+    if(!c) c = {start: Math.round(ME.frame), firstPass: 0, steps: [{p: shirts.includes('9') ? '9' : shirts[0], hold: 2, pass: passLen()}]};
+    else { const lastStep = c.steps[c.steps.length-1]; if(!lastStep.hold && !lastStep.pass) lastStep.hold = 1;
+      c.steps.push({p: p ?? nextShirt(lastStep.p || c.steps.filter(x=>x.p).map(x=>x.p).pop()), hold: 2, pass: passLen()}); }
+    commit(c); };
+  const ab = $('#chAdd', box); if(ab) ab.addEventListener('click', () => add());
+  const kb = $('#chKick', box); if(kb) kb.addEventListener('click', () => add(''));
 }
 
 /* ---------- TEAMS ---------- */
