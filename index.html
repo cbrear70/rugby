@@ -39,7 +39,15 @@ button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-vis
 .team-btn .tn{font:800 23px/1.05 var(--display);letter-spacing:.02em;text-transform:uppercase;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .team-btn svg{flex:none;opacity:.7}
 .tn-wrap{display:flex;flex-direction:column;min-width:0}
-.gn{font:700 11px/1.1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gn{align-self:flex-start;max-width:100%;display:inline-flex;align-items:center;gap:6px;margin-bottom:3px;padding:3px 9px 3px 7px;border-radius:999px;font:700 11px/1.1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--gc);background:color-mix(in srgb,var(--gc) 18%,transparent);border:1px solid color-mix(in srgb,var(--gc) 45%,transparent);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gn::before,.gdot{content:'';flex:none;width:8px;height:8px;border-radius:50%;background:var(--gc)}
+.gdot{display:inline-block;width:10px;height:10px;margin-right:8px;vertical-align:1px}
+.gcard{display:flex;flex-direction:column;align-items:flex-start;gap:3px;width:100%;text-align:left;padding:12px 14px;border-radius:12px;border:1px solid color-mix(in srgb,var(--gc) 45%,var(--line));border-left:6px solid var(--gc);background:color-mix(in srgb,var(--gc) 12%,var(--panel2));color:var(--ink)}
+.gcard .eyebrow{color:var(--gc)}
+.gcard b{font:800 22px/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em}
+.gcard small{color:var(--muted);font-size:13px}
+.teams-in{margin-left:14px;padding-left:12px;border-left:3px solid var(--gc);display:flex;flex-direction:column;gap:10px}
+.teams-in h2{font-size:22px}
 .icon-btn{width:40px;height:40px;display:grid;place-items:center;background:none;border:0;border-radius:10px;color:var(--ink)}
 .icon-btn:active{background:var(--panel2)}
 
@@ -699,7 +707,8 @@ function showTab(tab){
 $$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function renderAll(){
   $('#teamName').textContent = team().name;
-  const gn = $('#groupName'), many = syncing() && Object.keys(S.parked || {}).length > 0; gn.hidden = !many; if(many) gn.textContent = S.sync.groupName;
+  const gn = $('#groupName'); gn.hidden = !syncing();
+  if(syncing()){ gn.textContent = S.sync.groupName; gn.style.setProperty('--gc', groupColour(S.sync.group)); }
   if(TAB==='pitch'){ renderTeamPitch(); renderBench(); requestAnimationFrame(()=>{ teamCtl.refresh(); if(!teamZoomed) teamZoomed = zoomTeam(); syncFitChip(); }); }
   if(TAB==='squad') renderSquad();
   if(TAB==='select') renderSelect();
@@ -1250,11 +1259,14 @@ function teamSettings(t, isNew){
 }
 $('#teamBtn').addEventListener('click', () => {
   const t = team();
-  openSheet(`<div class="eyebrow">Teams on this phone</div><h2>Switch team</h2>
-    ${fbOn() ? (syncing() ? `<button class="btn ghost" id="tmGroup">Group: ${esc(S.sync.groupName)} · switch, sync, invite</button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
+  const gc = syncing() ? groupColour(S.sync.group) : 'var(--accent)', others = Object.keys(S.parked || {}).length;
+  openSheet(`${fbOn() ? (syncing() ? `<button class="gcard" id="tmGroup" style="--gc:${gc}"><span class="eyebrow">Group${others ? ` · 1 of ${others+1} on this phone` : ''}</span><b>${esc(S.sync.groupName)}</b><small>${others ? 'Switch group, ' : ''}sync, invite coaches, codes ›</small></button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
+    <div class="teams-in" style="--gc:${gc}">
+    <div class="eyebrow" style="color:${gc}">${syncing() ? 'Teams in '+esc(S.sync.groupName) : 'Teams on this phone'}</div><h2>Switch team</h2>
     <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${x.players.length} players</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
-    <div class="field"><label class="field-label" for="tmNew">New team</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
+    <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
+    </div>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -1703,8 +1715,10 @@ $('#syncBtn').addEventListener('click', () => syncing() ? runSync() : showGate(t
 // A phone can belong to several groups. The active group's data lives in S.teams, S.moves, S.currentTeamId and S.sync
 // as before; the others wait in S.parked[joinCode] and are swapped in when you switch.
 const WORKSPACE = ['teams', 'moves', 'currentTeamId', 'sync'];
-const groupsOnPhone = () => (syncing() ? [{code: S.sync.group, name: S.sync.groupName, active: true}] : [])
-  .concat(Object.entries(S.parked || {}).map(([code, w]) => ({code, name: w.sync.groupName, lastSync: w.sync.lastSync})));
+const GROUP_COLOURS = ['#3FB6E8', '#B98CF5', '#F0883E', '#4FD1A5', '#F06BA8', '#A3D94A', '#6C8CFF', '#E8C547'];
+const groupColour = code => { let h = 7; for(const c of String(code||'')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return GROUP_COLOURS[h % GROUP_COLOURS.length]; };
+const groupsOnPhone = () => (syncing() ? [{code: S.sync.group, name: S.sync.groupName, active: true, teams: S.teams.length}] : [])
+  .concat(Object.entries(S.parked || {}).map(([code, w]) => ({code, name: w.sync.groupName, lastSync: w.sync.lastSync, teams: w.teams.length})));
 function parkGroup(){ S.parked = S.parked || {}; const w = {}; for(const k of WORKSPACE) w[k] = S[k]; S.parked[S.sync.group] = w; }
 function switchGroup(code){
   const w = S.parked && S.parked[code]; if(!w) return;
@@ -1768,14 +1782,14 @@ async function chooseUploads(){
 }
 function showGroup(){
   const z = S.sync, n = pendingChanges(), link = linkBase() + '#join=' + fmtCode(z.group);
-  openSheet(`<div class="eyebrow">Your group</div><h2>${esc(z.groupName)}</h2>
+  openSheet(`<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your group</span><b>${esc(z.groupName)}</b><small>${S.teams.length} team${S.teams.length===1?'':'s'}, ${S.moves.length} move${S.moves.length===1?'':'s'}</small></div>
     <div class="field"><div class="field-label">Join code · only for your own coaches</div><div class="gcode">${fmtCode(z.group)}</div></div>
     <div class="field"><div class="field-label">Send code · give this to other groups</div><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div>
       <p class="hint">Other groups use it to send you moves. It can't be used to see or change anything in your group.</p></div>
     <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
     <div class="row-btns"><button class="btn" id="gpSync">Sync now</button><button class="btn ghost" id="gpInvite">Invite a coach</button><button class="btn ghost" id="gpSend">Share send code</button></div>
     <div class="field"><label class="field-label" for="gpWho">Your name in the group</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
-    <div class="field"><div class="field-label">Groups on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}">${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
+    <div class="field"><div class="field-label">Groups on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.teams} team${gr.teams===1?'':'s'} · ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
       <button class="btn ghost" id="gpAdd">Add another group</button></div>
     <button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>
     <p class="hint">Anyone with the join code can see and change the group's teams and moves, so only give it to your coaches.</p>`,
