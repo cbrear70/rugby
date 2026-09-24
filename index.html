@@ -84,6 +84,17 @@ main{flex:1;min-height:0;position:relative}
 .sbtn:active{background:var(--line)}
 .sbtn.del{color:var(--danger)}
 .pass-link .ins{margin-left:auto}
+.vtable{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.vrow{display:grid;grid-template-columns:1fr 64px 64px;align-items:center;padding:8px 12px;border-bottom:1px solid var(--line);background:var(--panel2)}
+.vrow:last-child{border-bottom:0}
+.vhead{background:none;padding:6px 12px;font:700 11px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.vhead span{text-align:center}
+.vwho{display:flex;align-items:center;gap:10px;min-width:0}
+.vwho b{display:block;font-weight:600}
+.vwho small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vtg{display:grid;place-items:center;height:36px}
+.vtg input{width:24px;height:24px;accent-color:var(--accent)}
+.vtg input:disabled{opacity:.35}
 .tlwrap{display:flex;flex-direction:column;gap:3px}
 .tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px}
 .tl{height:30px;border:0;border-radius:4px;background:var(--panel2);padding:0;position:relative;outline:1px solid var(--line);outline-offset:-1px}
@@ -275,7 +286,7 @@ textarea{resize:vertical;min-height:84px}
           <button class="chip" id="edDone">Done</button>
         </div>
         <div class="toolrow">
-          <button class="chip on" id="pathsChip">Paths</button>
+          <button class="chip" id="showChip">Show</button>
           <button class="chip" id="edPasses" hidden>Passes</button>
           <button class="chip" id="edFit">Whole pitch</button>
           <span class="spacer"></span>
@@ -847,7 +858,7 @@ function renderEditor(){
   const m = curMove();
   $('#edName').textContent = m.name;
   $('#edDesc').textContent = m.desc || 'Tap to name and describe this move';
-  $('#pathsChip').classList.toggle('on', S.ui.paths!==false);
+  syncShowChip();
   $('#edPasses').hidden = !m.icons.ball;
   const ids = iconIds(m);
   $('#edHint').textContent = ids.length ? 'Drag at frame 1 = start, frame 20 = finish' : 'Tap Players to add shirts and the ball';
@@ -863,9 +874,10 @@ function renderMoveLayer(){
   let paths='', toks='', dots='', edTok='';
   for(const id of iconIds(m)){
     const ic = m.icons[id], isEd = ME.editing===id, dim = !!ME.editing && !isEd;
-    const col = id==='ball' ? '#FFFFFF' : moveColor(m,id);
+    const col = id==='ball' ? '#FFFFFF' : moveColor(m,id), key = visKey(m,id);
+    const hideTok = !isEd && isHidden('shirts', key), hidePath = !isEd && (S.ui.paths===false || hideTok || isHidden('paths', key));
     const pts = [...Array(FRAMES)].map((_,k)=>iconPos(m,id,k));
-    if(S.ui.paths!==false || isEd){
+    if(!hidePath){
       paths += `<polyline points="${pts.map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')}" class="path${isEd?' ed':''}${dim?' dim':''}" stroke="${col}" ${id==='ball'?'stroke-dasharray="1 .8"':''}/>`;
       if(!isEd && !dim){ const s = pts[0], e = pts[LAST]; paths += `<circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/>`; }
     }
@@ -876,9 +888,10 @@ function renderMoveLayer(){
     const p = iconPos(m, id, f);
     const p2 = playerAt(t, +id);
     const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: dim?null:'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 ? surname(p2.name) : '', hit: dim?null:'i:'+id, dim, ghost:isEd});
-    if(isEd) edTok = tok; else toks += tok; // ball is last in iconIds, so it draws on top
+    if(isEd) edTok = tok; else if(!hideTok) toks += tok; // ball is last in iconIds, so it draws on top
   }
   moveCtl.layer.innerHTML = paths + toks + edTok + dots;
+  syncShowChip();
 }
 function updateTransport(){
   const f = Math.round(ME.frame);
@@ -909,7 +922,44 @@ $('#tNext').addEventListener('click', () => { stopPlay(); ME.frame = Math.min(LA
 $('#tSlider').addEventListener('input', e => { stopPlay(); ME.frame = +e.target.value; renderMoveLayer(); updateTransport(); });
 $('#tSpeed').addEventListener('click', () => { ME.speed = ME.speed===1 ? 2 : ME.speed===2 ? 0.5 : 1; updateTransport(); });
 $('#tLoop').addEventListener('click', () => { ME.loop = !ME.loop; updateTransport(); });
-$('#pathsChip').addEventListener('click', () => { S.ui.paths = S.ui.paths===false; save(); renderEditor(); });
+$('#showChip').addEventListener('click', () => showVisibility());
+// Show / hide on the move pitch: a master paths switch, then shirts and paths per shirt colour (and the ball).
+// Stored by colour in S.ui.mvHide so it carries across moves.
+const visKey = (m,id) => id==='ball' ? 'ball' : moveColor(m,id);
+const isHidden = (what, key) => !!(S.ui.mvHide && S.ui.mvHide[what] && S.ui.mvHide[what][key]);
+function setHidden(what, key, on){ const h = S.ui.mvHide = S.ui.mvHide || {shirts:{}, paths:{}}; h[what] = h[what] || {}; if(on) h[what][key] = true; else delete h[what][key]; save(); }
+function colourGroups(m){
+  const g = {}; for(const id of iconIds(m)) if(id!=='ball'){ const c = moveColor(m,id); (g[c] = g[c] || []).push(id); }
+  return Object.entries(g).map(([color, ids]) => ({color, ids, name: (SWATCHES.find(s => s[0].toLowerCase()===color.toLowerCase()) || [0,'Custom'])[1]}));
+}
+function hiddenCount(m){
+  let n = 0; for(const g of colourGroups(m)) n += isHidden('shirts', g.color) ? g.ids.length : 0;
+  if(m.icons.ball && isHidden('shirts','ball')) n++;
+  return n;
+}
+function syncShowChip(){
+  const m = curMove(); if(!m) return; const n = hiddenCount(m), off = S.ui.paths===false;
+  $('#showChip').textContent = 'Show' + (n ? ` · ${n} hidden` : '') + (off ? ' · no paths' : '');
+  $('#showChip').classList.toggle('on', !!n || off);
+}
+function showVisibility(){
+  const m = curMove();
+  const tg = (what, key, label) => `<label class="vtg"><input type="checkbox" data-vis="${what}" data-key="${key}"${isHidden(what,key)?'':' checked'} aria-label="${label}"></label>`;
+  const rows = colourGroups(m).map(g => `<div class="vrow"><div class="vwho">${miniShirt(g.ids.length===1 ? g.ids[0] : '', g.color, 30)}<div><b>${esc(g.name)}</b><small>${g.ids.map(i=>'#'+i).join(', ')}</small></div></div>${tg('shirts', g.color, g.name+' shirts')}${tg('paths', g.color, g.name+' paths')}</div>`).join('')
+    + (m.icons.ball ? `<div class="vrow"><div class="vwho">${miniBall(30)}<div><b>Ball</b></div></div>${tg('shirts','ball','Ball')}${tg('paths','ball','Ball path')}</div>` : '');
+  openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Show on the pitch</h2>
+    <label class="check"><input type="checkbox" id="visPaths"${S.ui.paths===false?'':' checked'}> Show paths</label>
+    ${rows ? `<div class="vtable"><div class="vrow vhead"><span></span><span>Shirts</span><span>Paths</span></div>${rows}</div>` : `<p class="hint">No shirts in this move yet.</p>`}
+    <p class="hint">Hiding shirts also hides their paths. This is only for viewing: hidden shirts still play their part in the move and are still shared.</p>
+    <div class="row-btns"><button class="btn ghost" id="visAll">Show everything</button><button class="btn" data-close>Done</button></div>`,
+    el => {
+      const sync = () => { $$('[data-vis="paths"]', el).forEach(c => { c.disabled = S.ui.paths===false || isHidden('shirts', c.dataset.key); }); renderMoveLayer(); syncShowChip(); };
+      $('#visPaths', el).addEventListener('change', e => { S.ui.paths = e.target.checked; save(); sync(); });
+      $$('[data-vis]', el).forEach(c => c.addEventListener('change', () => { setHidden(c.dataset.vis, c.dataset.key, !c.checked); sync(); }));
+      $('#visAll', el).addEventListener('click', () => { S.ui.mvHide = {shirts:{}, paths:{}}; S.ui.paths = true; save(); $$('[data-vis]', el).forEach(c => c.checked = true); $('#visPaths', el).checked = true; sync(); });
+      sync();
+    });
+}
 $('#edFit').addEventListener('click', () => { if(moveCtl.isFit()) zoomMove(); else { moveCtl.fit(); syncEdFit(); } });
 $('#edDone').addEventListener('click', () => { ME.editing = null; renderBanner(); renderMoveLayer(); });
 $('#edStraight').addEventListener('click', () => { straighten(ME.editing); });
