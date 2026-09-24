@@ -1438,7 +1438,11 @@ async function fb(method, path, body){
 }
 const niceErr = e => /fetch|network|load failed/i.test(e.message||'') ? 'No connection. Try again when you have signal.' : (e.message || 'Something went wrong');
 
-async function fetchGroup(code){ const d = await fb('GET', '/groups/'+code); return d ? {code, name: d.fields.name.stringValue} : null; }
+async function fetchGroup(code){
+  const d = await fb('GET', '/groups/'+code); if(!d) return null;
+  const f = d.fields || {}, was = f.formerly && f.formerly.arrayValue && f.formerly.arrayValue.values || [];
+  return {code, name: f.name.stringValue, formerly: was.map(v => v.stringValue)};
+}
 async function listItems(code){
   const out = {}; let page = '';
   do {
@@ -1559,9 +1563,9 @@ async function ensureMailbox(){
     catch(e){ if(!alreadyThere(e)) throw e; }
     z.memberOf = z.group + ':' + uid; save();
   }
-  if(z.mailbox) return z.mailbox;
   const read = async () => { const g = await fb('GET', '/groups/'+z.group); return g && g.fields.mailbox ? g.fields.mailbox.stringValue : ''; };
   let box = await read();
+  if(box && box === z.mailbox) return box;
   if(!box){
     box = newCode();
     try { await fb('PATCH', `/groups/${z.group}?updateMask.fieldPaths=mailbox&currentDocument.exists=true`, {fields:{mailbox:{stringValue: box}}}); }
@@ -1648,9 +1652,35 @@ async function runSync(choices){
   } catch(e){
     // the admin removed the group: say so rather than showing a permissions error
     let gone = false; if(e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
-    toast(gone ? 'This group no longer exists. Ask your head coach for the new code (team menu → Group → Leave group).' : niceErr(e));
+    if(gone) askNewCode(); else toast(niceErr(e));
   }
   finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); }
+}
+// The admin changed this group's join code (or deleted the group). The new group lists the codes it replaced, so a
+// phone can only be moved to the same group; its teams, moves and unsynced changes carry straight on.
+function askNewCode(){
+  const z = S.sync, old = z.group;
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This group has a new code</h2>
+    <p class="muted">The code this phone joined with no longer works. Your head coach has changed it, or removed the group. Enter the new join code to carry on; your teams, moves and any changes you haven't synced are kept.</p>
+    <div class="field"><label class="field-label" for="ncCode">New join code</label><input id="ncCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
+    <div class="row-btns"><button class="btn" id="ncGo">Continue</button><button class="btn ghost" data-close>Later</button></div>
+    <button class="btn danger" id="ncLeave">Leave this group</button>
+    <p class="hint" id="ncErr" role="alert"></p>`,
+    el => {
+      const err = t => { $('#ncErr', el).textContent = t; };
+      $('#ncGo', el).addEventListener('click', async () => {
+        const code = normCode($('#ncCode', el).value); if(code.length !== 10) return err('Enter the 10-character code.');
+        err('Checking…');
+        try {
+          const grp = await fetchGroup(code);
+          if(!grp) return err('No group has that code. Check it with your head coach.');
+          if(!grp.formerly.includes(old)) return err('That code is for a different group. To join it as well, use Group → Add another group.');
+          z.group = grp.code; z.groupName = grp.name; delete z.memberOf; delete z.mailbox; save();
+          closeSheet(); renderAll(); runSync();
+        } catch(e){ err(niceErr(e)); }
+      });
+      $('#ncLeave', el).addEventListener('click', () => { closeSheet(); showGroup(); });
+    });
 }
 function askTeamConflicts(needs, choices){
   const n = needs[0];

@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Team Picker Admin</title>
+<link rel="icon" type="image/png" href="icon-192.png">
+<style>
+:root{
+  --display:"Saira Condensed","Arial Narrow",sans-serif; --body:"Barlow",system-ui,-apple-system,sans-serif;
+  --bg:#0E1712; --panel:#15231B; --panel2:#1C2E23; --line:#2A4032;
+  --ink:#EDF3EE; --muted:#95AA9B; --accent:#F2C230; --accent-ink:#1A1405; --danger:#E4573F; --ok:#5BC77A;
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 var(--body);-webkit-text-size-adjust:100%}
+main{max-width:720px;margin:0 auto;padding:calc(16px + env(safe-area-inset-top,0px)) 16px 48px;display:flex;flex-direction:column;gap:14px}
+h1{margin:0;font:800 30px/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em}
+h2{margin:0;font:800 21px/1.1 var(--display);text-transform:uppercase;letter-spacing:.02em}
+.eyebrow{font:700 12px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.muted{color:var(--muted)} .hint{font-size:13px;color:var(--muted);margin:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field-label{font:700 12px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;font-family:inherit}
+.code-in{font:800 20px/1.1 var(--display);letter-spacing:.12em;text-transform:uppercase}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:0;border-radius:10px;padding:10px 14px;background:var(--accent);color:var(--accent-ink);font:700 14px/1.1 var(--body);cursor:pointer}
+.btn.ghost{background:var(--panel2);color:var(--ink);border:1px solid var(--line)}
+.btn.danger{background:transparent;color:var(--danger);border:1px solid color-mix(in srgb,var(--danger) 50%,transparent)}
+.btn:disabled{opacity:.45;cursor:default}
+.codes{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;align-items:baseline}
+.codes b{font:800 19px/1.1 var(--display);letter-spacing:.1em;user-select:all;-webkit-user-select:all}
+.codes span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
+.status{font-size:14px;min-height:1.4em;margin:0}
+.status.err{color:#FFB4A6} .status.ok{color:var(--ok)}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><div><div class="eyebrow">Rugby Team Picker</div><h1>Admin</h1></div><button class="btn ghost" id="out" hidden>Sign out</button></div>
+  <p class="status" id="status" role="status"></p>
+
+  <section class="card" id="signin" hidden>
+    <h2>Sign in</h2>
+    <p class="hint">Use the admin account you created in Firebase (Authentication → Users). Coaches can't use this page.</p>
+    <div class="field"><label class="field-label" for="em">Email</label><input id="em" type="email" autocomplete="username"></div>
+    <div class="field"><label class="field-label" for="pw">Password</label><input id="pw" type="password" autocomplete="current-password"></div>
+    <div class="row"><button class="btn" id="go">Sign in</button></div>
+  </section>
+
+  <div id="admin" hidden style="display:flex;flex-direction:column;gap:14px">
+    <section class="card">
+      <h2>New group</h2>
+      <div class="field"><label class="field-label" for="nName">Group name</label><input id="nName" type="text" placeholder="e.g. Hawks U12 coaches"></div>
+      <div class="field"><label class="field-label" for="nCode">Join code (leave blank for a random one)</label><input id="nCode" class="code-in" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
+      <div class="row"><button class="btn" id="create">Create group</button></div>
+    </section>
+    <div class="top"><h2>Groups</h2><button class="btn ghost" id="reload">Refresh</button></div>
+    <div id="groups" style="display:flex;flex-direction:column;gap:12px"></div>
+    <p class="hint">Codes use the letters and digits <b>ABCDEFGHJKLMNPQRSTUVWXYZ23456789</b> (no I, O, 0 or 1), 10 characters. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
+  </div>
+</main>
+<script>
+(() => {
+'use strict';
+const FB = {apiKey:'AIzaSyBjRwmW1c-Y5V05NzSuEqOMAjMRUo3ZZV4', projectId:'rugbyteam'};
+const DOCS = `https://firestore.googleapis.com/v1/projects/${FB.projectId}/databases/(default)/documents`;
+const NAME = path => `projects/${FB.projectId}/databases/(default)/documents/${path}`;
+const ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const newCode = () => [...crypto.getRandomValues(new Uint8Array(10))].map(x => ABC[x % 32]).join('');
+const norm = c => String(c||'').toUpperCase().replace(/[^A-Z0-9]/g, '');
+const fmt = c => String(c||'').replace(/^(.{4})(.{4})(.*)$/, '$1-$2-$3');
+const validCode = c => c.length === 10 && [...c].every(ch => ABC.includes(ch));
+const KEY = 'rtpAdmin';
+let auth = null; try { auth = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e){}
+const keep = () => { try { auth ? localStorage.setItem(KEY, JSON.stringify(auth)) : localStorage.removeItem(KEY); } catch(e){} };
+
+const status = (t, kind) => { const s = $('#status'); s.textContent = t || ''; s.className = 'status' + (kind ? ' '+kind : ''); };
+async function errOf(r){ try { const j = await r.json(); return (j.error && (j.error.message || j.error.status)) || 'HTTP '+r.status; } catch(e){ return 'HTTP '+r.status; } }
+async function token(){
+  if(!auth) throw new Error('Signed out');
+  if(auth.exp > Date.now() + 60000) return auth.token;
+  const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(auth.refresh)});
+  if(!r.ok){ auth = null; keep(); show(); throw new Error('Please sign in again.'); }
+  const j = await r.json(); auth.token = j.id_token; auth.refresh = j.refresh_token; auth.exp = Date.now() + (+j.expires_in)*1000; keep(); return auth.token;
+}
+async function fb(method, path, body){
+  const r = await fetch(DOCS + path, {method, headers:{'Authorization':'Bearer '+await token(), 'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined});
+  if(r.status === 404 && method === 'GET') return null;
+  if(!r.ok){ const e = new Error(await errOf(r)); e.status = r.status; throw e; }
+  return r.json();
+}
+async function list(path){
+  const out = []; let page = '';
+  do { const j = await fb('GET', `${path}?pageSize=300${page ? '&pageToken='+encodeURIComponent(page) : ''}`) || {}; out.push(...(j.documents || [])); page = j.nextPageToken; } while(page);
+  return out;
+}
+const idOf = d => d.name.split('/').pop();
+async function commit(writes){ for(let i = 0; i < writes.length; i += 400) await fb('POST', ':commit', {writes: writes.slice(i, i+400)}); }
+const create = (path, fields) => ({update:{name: NAME(path), fields}, currentDocument:{exists:false}});
+const del = path => ({delete: NAME(path)});
+const str = v => ({stringValue: v});
+
+async function signIn(){
+  const email = $('#em').value.trim(), password = $('#pw').value;
+  if(!email || !password) return status('Enter your email and password.', 'err');
+  $('#go').disabled = true; status('Signing in…');
+  try {
+    const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FB.apiKey}`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({email, password, returnSecureToken:true})});
+    if(!r.ok){ const m = await errOf(r);
+      throw new Error(/LOGIN_DISABLED|OPERATION_NOT_ALLOWED/.test(m) ? 'Email sign-in is not switched on in Firebase yet (Authentication → Sign-in method → Email/Password).'
+        : /INVALID|PASSWORD|EMAIL_NOT_FOUND|CREDENTIAL/.test(m) ? 'Wrong email or password.' : m); }
+    const j = await r.json(); auth = {token: j.idToken, refresh: j.refreshToken, exp: Date.now() + (+j.expiresIn)*1000, uid: j.localId}; keep();
+    if(!(await fb('GET', '/admins/' + auth.uid).catch(() => null))){ auth = null; keep(); throw new Error('That account is not an admin. Add its User UID to the admins collection in Firestore.'); }
+    $('#pw').value = ''; status(''); show();
+  } catch(e){ status(e.message, 'err'); }
+  finally { $('#go').disabled = false; }
+}
+
+async function load(){
+  status('Loading groups…');
+  try {
+    const docs = await list('/groups'), box = $('#groups');
+    box.innerHTML = docs.length ? '' : '<p class="muted">No groups yet.</p>';
+    docs.sort((a, b) => (a.fields.name?.stringValue || '').localeCompare(b.fields.name?.stringValue || ''));
+    for(const d of docs){
+      const code = idOf(d), f = d.fields || {}, name = f.name?.stringValue || '(no name)', mail = f.mailbox?.stringValue || '';
+      const was = (f.formerly?.arrayValue?.values || []).map(v => v.stringValue);
+      const el = document.createElement('section'); el.className = 'card';
+      el.innerHTML = `<h2>${esc(name)}</h2>
+        <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
+        ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
+        <div class="row"><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
+      el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, was}, el)));
+      box.appendChild(el);
+    }
+    status('');
+  } catch(e){ status(e.message, 'err'); }
+}
+
+// ask for a new code (blank = random); returns null if cancelled
+function askCode(what, current){
+  const v = prompt(`New ${what} for this group. Leave blank for a random one.\nCurrent: ${fmt(current)}`, '');
+  if(v === null) return null;
+  const c = norm(v) || newCode();
+  if(!validCode(c)){ alert('Codes are 10 characters from ' + ABC + ' (no I, O, 0 or 1).'); return null; }
+  return c;
+}
+
+async function act(what, g, el){
+  const busy = on => el.querySelectorAll('button').forEach(b => b.disabled = on);
+  try {
+    if(what === 'rename'){
+      const n = prompt('New name for the group', g.name); if(!n || !n.trim()) return;
+      busy(true); await fb('PATCH', `/groups/${g.code}?updateMask.fieldPaths=name&currentDocument.exists=true`, {fields:{name: str(n.trim())}});
+      status('Renamed.', 'ok');
+    }
+    if(what === 'join'){
+      const c = askCode('join code', g.code); if(!c) return;
+      if(await fb('GET', '/groups/'+c)) return status('That code is already used by another group.', 'err');
+      if(!confirm(`Change ${g.name}'s join code from ${fmt(g.code)} to ${fmt(c)}?\n\nThe old code stops working straight away. Coaches will be asked for the new code on their next sync and keep all their data. Give the new code only to coaches who should still have access.`)) return;
+      busy(true); status('Copying teams and moves…');
+      const old = await fb('GET', '/groups/'+g.code), items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`);
+      const fields = Object.assign({}, old.fields, {formerly:{arrayValue:{values: [g.code, ...g.was].map(str)}}});
+      await commit([create('groups/'+c, fields), ...items.map(d => create(`groups/${c}/items/${idOf(d)}`, d.fields || {}))]);
+      if(g.mail) await commit([{update:{name: NAME('mailboxes/'+g.mail), fields:{group: str(c)}}, currentDocument:{exists:true}}]);
+      status('Removing the old code…');
+      await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)), del('groups/'+g.code)]);
+      status(`${g.name}: new join code ${fmt(c)} (${items.length} items copied).`, 'ok');
+    }
+    if(what === 'send'){
+      const c = askCode('send code', g.mail); if(!c) return;
+      if(!confirm(`Change ${g.name}'s send code from ${fmt(g.mail)} to ${fmt(c)}?\n\nOther groups will need the new send code to send moves. Moves already waiting are kept.`)) return;
+      busy(true); status('Moving the inbox…');
+      const waiting = await list(`/mailboxes/${g.mail}/items`);
+      await commit([create('mailboxes/'+c, {group: str(g.code)}), ...waiting.map(d => create(`mailboxes/${c}/items/${idOf(d)}`, d.fields || {})),
+        {update:{name: NAME('groups/'+g.code), fields:{mailbox: str(c)}}, updateMask:{fieldPaths:['mailbox']}, currentDocument:{exists:true}}]);
+      await commit([...waiting.map(d => del(`mailboxes/${g.mail}/items/${idOf(d)}`)), del('mailboxes/'+g.mail)]);
+      status(`${g.name}: new send code ${fmt(c)}.`, 'ok');
+    }
+    if(what === 'delete'){
+      if(prompt(`Delete ${g.name} and all its teams and moves for everyone? Coaches keep what's on their phones but can't sync.\n\nType the group name to confirm.`) !== g.name) return;
+      busy(true); status('Deleting…');
+      const items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`), waiting = g.mail ? await list(`/mailboxes/${g.mail}/items`) : [];
+      await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)),
+        ...waiting.map(d => del(`mailboxes/${g.mail}/items/${idOf(d)}`)), ...(g.mail ? [del('mailboxes/'+g.mail)] : []), del('groups/'+g.code)]);
+      status(`${g.name} deleted.`, 'ok');
+    }
+    await load();
+  } catch(e){ status(e.message, 'err'); busy(false); }
+}
+
+$('#create').addEventListener('click', async () => {
+  const name = $('#nName').value.trim(), c = norm($('#nCode').value) || newCode();
+  if(!name) return status('Enter a group name.', 'err');
+  if(!validCode(c)) return status('Codes are 10 characters from ' + ABC + '.', 'err');
+  $('#create').disabled = true;
+  try {
+    if(await fb('GET', '/groups/'+c)) throw new Error('That code is already used by another group.');
+    await commit([create('groups/'+c, {name: str(name)})]);
+    $('#nName').value = ''; $('#nCode').value = ''; status(`Created ${name}. Join code ${fmt(c)}.`, 'ok'); await load();
+  } catch(e){ status(e.message, 'err'); }
+  finally { $('#create').disabled = false; }
+});
+$('#go').addEventListener('click', signIn);
+$('#pw').addEventListener('keydown', e => { if(e.key === 'Enter') signIn(); });
+$('#reload').addEventListener('click', load);
+$('#out').addEventListener('click', () => { auth = null; keep(); status(''); show(); });
+function show(){
+  $('#signin').hidden = !!auth; $('#admin').hidden = !auth; $('#admin').style.display = auth ? 'flex' : 'none'; $('#out').hidden = !auth;
+  if(auth) load();
+}
+show();
+})();
+</script>
+</body>
+</html>
