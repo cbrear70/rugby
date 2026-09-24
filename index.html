@@ -71,6 +71,10 @@ main{flex:1;min-height:0;position:relative}
 .pitch .fdot.cur{stroke:#fff;stroke-width:.45;fill:#fff}
 .pitch .fdot.key.cur{fill:var(--accent);stroke:#fff}
 .pitch .pdot{stroke:none}
+.pitch .fdot.held{fill:none;stroke:rgba(255,255,255,.45);stroke-width:.15}
+.pitch .fdot.held.cur{stroke:#fff;stroke-width:.3}
+.carry-row{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted)}
+.carry-row select{width:auto;flex:1;padding:8px 10px;font-size:15px}
 .zoomhint{position:absolute;left:10px;bottom:8px;font:600 11px/1 var(--body);color:rgba(255,255,255,.55);pointer-events:none;letter-spacing:.04em}
 
 .bench{display:flex;gap:4px;overflow-x:auto;padding:8px 12px;border-top:1px solid var(--line);background:var(--panel)}
@@ -168,6 +172,7 @@ textarea{resize:vertical;min-height:84px}
 .pgrid button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 18%,var(--panel2))}
 .pgrid button small{font-size:10px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .pgrid button:not(.on) svg{opacity:.45}
+.pgrid.give button svg{opacity:1}
 .opt{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--panel2)}
 .opt input{margin-top:3px;accent-color:var(--accent);width:18px;height:18px;flex:none}
 .opt b{display:block}
@@ -342,7 +347,7 @@ function sampleMove(){
   const P = {9:[[30,70],[31,66]], 10:[[24,75],[22,67]], 12:[[18,79],[23,56]], 13:[[11,82],[12,63]]};
   for(const n in P) m.icons[n] = {keys:{0:P[n][0], [LAST]:P[n][1]}, color:null};
   const at = (n,f) => { const p=posAt(m.icons[n],f); return [r1(p[0]+1.3), r1(p[1]-1.3)]; };
-  m.icons.ball = {keys:{0:at(9,0), 3:at(9,3), 7:at(10,7), 10:at(10,10), 14:at(12,14), [LAST]:at(12,LAST)}};
+  m.icons.ball = {keys:{0:at(9,0), [LAST]:at(12,LAST)}, carry:[{p:'9', f:0, pass:0}, {p:'10', f:7, pass:4}, {p:'12', f:14, pass:4}]};
   return m;
 }
 
@@ -355,6 +360,43 @@ function posAt(ic,f){
   for(let i=0;i<ks.length-1;i++){ const a=ks[i], b=ks[i+1]; if(f>=a && f<=b){ const t=(f-a)/(b-a), A=ic.keys[a], B=ic.keys[b]; return [A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t]; } }
   return ic.keys[last];
 }
+// ball.carry: [{p, f, pass}] — shirt p has the ball from frame f; the pass to them leaves the previous carrier `pass` frames earlier.
+// p '' means the ball is let go at frame f (kick or loose ball) and follows its own keys again.
+const BALL_OFF = [1.3, -1.3];
+function carries(m){ const b = m.icons.ball; return b && b.carry ? b.carry.filter(c => c.p==='' || m.icons[c.p]).sort((a,b)=>a.f-b.f) : []; }
+function heldPos(m, c, f){ if(!c || !c.p) return posAt(m.icons.ball, f); const q = posAt(m.icons[c.p], f); return [q[0]+BALL_OFF[0], q[1]+BALL_OFF[1]]; }
+function ballState(m, f){
+  const cs = carries(m);
+  for(let i=cs.length-1;i>=0;i--){ const c = cs[i], r = c.f - (c.pass||0);
+    if(f >= c.f) return {hold:c};
+    if(f > r) return {pass:c, prev:cs[i-1]||null, r};
+  }
+  return null;
+}
+const carrierAt = (m, f) => { const s = ballState(m, f); return s && s.hold && s.hold.p ? s.hold.p : null; };
+const ballFree = (m, f) => { const s = ballState(m, f); return !s || (s.hold && !s.hold.p); };
+function iconPos(m, id, f){
+  if(id!=='ball') return posAt(m.icons[id], f);
+  const s = ballState(m, f);
+  if(!s) return posAt(m.icons.ball, f);
+  if(s.hold) return heldPos(m, s.hold, f);
+  const A = heldPos(m, s.prev, s.r), B = heldPos(m, s.pass, s.pass.f), t = (f - s.r) / s.pass.pass;
+  return [A[0]+(B[0]-A[0])*t, A[1]+(B[1]-A[1])*t];
+}
+function tidyCarry(m){
+  const b = m.icons.ball; if(!b || !b.carry) return;
+  const byF = {}; for(const c of b.carry) if(c.p==='' || m.icons[c.p]) byF[c.f] = c;
+  const cs = Object.values(byF).sort((a,b)=>a.f-b.f);
+  cs.forEach((c,i) => { c.pass = c.p==='' ? 0 : clamp(c.pass||0, 0, i ? c.f - cs[i-1].f : c.f); });
+  if(cs.length) b.carry = cs; else delete b.carry;
+}
+function giveBall(m, p, f, pass){
+  const b = m.icons.ball; if(!b) return;
+  if(p===''){ const q = iconPos(m, 'ball', f); b.keys[f] = [r1(q[0]), r1(q[1])]; }
+  b.carry = (b.carry||[]).filter(c => c.f !== f).concat([{p, f, pass: p==='' ? 0 : pass}]);
+  tidyCarry(m);
+}
+function removeIcon(m, id){ delete m.icons[id]; tidyCarry(m); if(ME.editing===id) ME.editing = null; }
 function iconIds(m){ return Object.keys(m.icons).filter(k=>k!=='ball').sort((a,b)=>a-b).concat(m.icons.ball ? ['ball'] : []); }
 const moveColor = (m,id) => (m.icons[id] && m.icons[id].color) || defaultColor(id);
 
@@ -684,7 +726,7 @@ const ME = {moveId:null, frame:0, playing:false, editing:null, speed:1, loop:fal
 const curMove = () => team().moves.find(m => m.id === ME.moveId);
 function moveThumb(m){
   let xs=[], ys=[], paths='';
-  for(const id of iconIds(m)){ const ic=m.icons[id]; const pts=[...Array(FRAMES)].map((_,k)=>posAt(ic,k)); pts.forEach(p=>{xs.push(p[0]); ys.push(p[1]);});
+  for(const id of iconIds(m)){ const pts=[...Array(FRAMES)].map((_,k)=>iconPos(m,id,k)); pts.forEach(p=>{xs.push(p[0]); ys.push(p[1]);});
     paths += `<polyline points="${pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${id==='ball'?'#fff':moveColor(m,id)}" stroke-width="${id==='ball'?.7:1}" ${id==='ball'?'stroke-dasharray="1.2 1"':''} stroke-linecap="round"/>`;
     const e = pts[LAST]; paths += id==='ball' ? `<circle cx="${e[0]}" cy="${e[1]}" r="1.2" fill="#fff"/>` : `<circle cx="${e[0]}" cy="${e[1]}" r="1.5" fill="${moveColor(m,id)}" stroke="#fff" stroke-width=".35"/>`; }
   if(!xs.length){ xs=[0,70]; ys=[40,80]; }
@@ -716,7 +758,7 @@ function renderMoves(){
   $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = t.moves.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', 'This move and all its frames will be deleted from this team.', 'Delete move', () => { t.moves = t.moves.filter(x=>x!==m); save(); renderMoves(); toast('Move deleted'); }); }));
 }
 function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
-function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<FRAMES;k++){ const p = posAt(m.icons[id],k); xs.push(p[0]); ys.push(p[1]); }
+function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<FRAMES;k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
 function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move' : 'Whole pitch'; }
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
@@ -727,7 +769,7 @@ const moveCtl = PitchCtl($('#movePitch'), {
     if(!ME.editing) return null;
     const m = curMove(), ic = m && m.icons[ME.editing]; if(!ic) return null;
     let best = null, bd = 1e9;
-    for(let k=0;k<FRAMES;k++){ const p = posAt(ic,k); const d = Math.hypot(p[0]-x, p[1]-y) - (ic.keys[k]?0.4:0); if(d < bd){ bd = d; best = {id:'dot:'+k, x:p[0], y:p[1]}; } }
+    for(let k=0;k<FRAMES;k++){ if(ME.editing==='ball' && !ballFree(m,k)) continue; const p = iconPos(m,ME.editing,k); const d = Math.hypot(p[0]-x, p[1]-y) - (ic.keys[k]?0.4:0); if(d < bd){ bd = d; best = {id:'dot:'+k, x:p[0], y:p[1]}; } }
     const lim = Math.max(2.2, 16/moveCtl.scale);
     return bd <= lim ? best : null;
   },
@@ -739,11 +781,15 @@ const moveCtl = PitchCtl($('#movePitch'), {
     if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==LAST && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
     startPathEdit(id.slice(2));
   },
-  dragStart: () => { if(ME.playing) stopPlay(); },
+  dragStart: id => {
+    if(ME.playing) stopPlay();
+    const m = curMove(), f = Math.round(ME.frame);
+    if(id==='i:ball' && m && !ballFree(m,f)){ const c = carrierAt(m,f); toast(c ? `#${c} has the ball at frame ${f+1}. Drag #${c} instead.` : `The ball is being passed at frame ${f+1}`); }
+  },
   drag: (id, x, y) => {
     const m = curMove(); if(!m) return;
     if(id.startsWith('dot:')){ const k = +id.slice(4); m.icons[ME.editing].keys[k] = [x,y]; ME.frame = k; }
-    else { const iid = id.slice(2), f = Math.round(ME.frame); ME.frame = f; m.icons[iid].keys[f] = [x,y]; }
+    else { const iid = id.slice(2), f = Math.round(ME.frame); ME.frame = f; if(iid==='ball' && !ballFree(m,f)) return; m.icons[iid].keys[f] = [x,y]; }
     save(); renderMoveLayer(); updateTransport();
   },
 });
@@ -767,16 +813,16 @@ function renderMoveLayer(){
   for(const id of iconIds(m)){
     const ic = m.icons[id], isEd = ME.editing===id, dim = !!ME.editing && !isEd;
     const col = id==='ball' ? '#FFFFFF' : moveColor(m,id);
-    const pts = [...Array(FRAMES)].map((_,k)=>posAt(ic,k));
+    const pts = [...Array(FRAMES)].map((_,k)=>iconPos(m,id,k));
     if(S.ui.paths!==false || isEd){
       paths += `<polyline points="${pts.map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')}" class="path${isEd?' ed':''}${dim?' dim':''}" stroke="${col}" ${id==='ball'?'stroke-dasharray="1 .8"':''}/>`;
       if(!isEd && !dim){ const s = pts[0], e = pts[LAST]; paths += `<circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/>`; }
     }
     if(isEd){
-      dots += pts.map((p,k) => `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${ic.keys[k]?1.05:.75}" class="fdot${ic.keys[k]?' key':''}${k===cf?' cur':''}"/>`).join('');
+      dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k); return `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${held?.5:ic.keys[k]?1.05:.75}" class="fdot${held?' held':ic.keys[k]?' key':''}${k===cf?' cur':''}"/>`; }).join('');
       dots += `<text x="${pts[0][0]}" y="${pts[0][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">1</text><text x="${pts[LAST][0]}" y="${pts[LAST][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">20</text>`;
     }
-    const p = posAt(ic, f);
+    const p = iconPos(m, id, f);
     const p2 = playerAt(t, +id);
     const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: dim?null:'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 ? surname(p2.name) : '', hit: dim?null:'i:'+id, dim, ghost:isEd});
     if(isEd) edTok = tok; else toks += tok; // ball is last in iconIds, so it draws on top
@@ -850,7 +896,7 @@ function pickPlayers(){
     <button class="btn wide" data-close>Done</button>`,
     el => $$('[data-pp]', el).forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.pp;
-      if(m.icons[id]){ delete m.icons[id]; if(ME.editing===id) ME.editing=null; } else addIconToMove(m,id);
+      if(m.icons[id]) removeIcon(m,id); else addIconToMove(m,id);
       save(); b.classList.toggle('on', !!m.icons[id]); b.setAttribute('aria-pressed', !!m.icons[id]); renderEditor();
     })));
 }
@@ -862,15 +908,41 @@ function showMoveIcon(id){
   openSheet(`<div class="det-head">${ball?miniBall(64):bigShirt(id, moveColor(m,id))}<div class="who"><div class="eyebrow">${ball?'Ball':'#'+id+' · '+posName(+id)}</div><h2>${ball?'Ball':p?esc(p.name):'Shirt '+id}</h2>
     <div class="muted">${custom.length ? 'Custom path through frame'+(custom.length>1?'s ':' ')+custom.join(', ') : 'Straight line from frame 1 to frame 20'}</div></div></div>
     ${ball?'':`<div class="field"><div class="field-label">Shirt colour in this move</div>${swatchRow(ic.color, defaultColor(id))}</div>`}
+    ${ball ? carrySection(m, f) : m.icons.ball ? `<div class="field"><div class="field-label">Ball</div>${carrierAt(m,f)===id ? `<p class="hint">Has the ball at frame ${f+1}.</p>` : `<button class="btn ghost" id="miGive">Ball to #${id} from frame ${f+1}</button>`}${passSelect()}</div>` : ''}
     <div class="row-btns"><button class="btn" id="miPath">Edit path</button><button class="btn ghost" id="miStraight"${custom.length?'':' disabled'}>Straighten</button></div>
     <div class="row-btns"><button class="btn danger" id="miRemove">Remove from move</button><button class="btn ghost" data-close>Close</button></div>
-    <p class="hint">You are on frame ${f+1}. Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}. Double-tap it to edit all 20 frames.</p>`,
+    <p class="hint">You are on frame ${f+1}. ${ball && !ballFree(m,f) ? `The ball is ${carrierAt(m,f) ? 'with #'+carrierAt(m,f) : 'being passed'} at this frame, so it follows the players.` : `Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}.`} Double-tap it to edit all 20 frames.</p>`,
     el => {
       if(!ball) wireSwatches(el, c => { ic.color = c; save(); renderMoveLayer(); });
+      wirePassSelect(el);
+      const give = p => { giveBall(m, p, f, passLen()); save(); renderMoveLayer(); showMoveIcon(id); toast(p ? `#${p} has the ball from frame ${f+1}` : `Ball let go at frame ${f+1}`); };
+      $$('[data-give]', el).forEach(b => b.addEventListener('click', () => give(b.dataset.give)));
+      $$('[data-ungive]', el).forEach(b => b.addEventListener('click', () => { ic.carry = ic.carry.filter(c => c.f !== +b.dataset.ungive); tidyCarry(m); save(); renderMoveLayer(); showMoveIcon(id); }));
+      const gb = $('#miGive', el); if(gb) gb.addEventListener('click', () => give(id));
       $('#miPath', el).addEventListener('click', () => { closeSheet(); startPathEdit(id); });
       $('#miStraight', el).addEventListener('click', () => { closeSheet(); straighten(id); });
-      $('#miRemove', el).addEventListener('click', () => { delete m.icons[id]; if(ME.editing===id) ME.editing=null; save(); closeSheet(); renderEditor(); });
+      $('#miRemove', el).addEventListener('click', () => { removeIcon(m,id); save(); closeSheet(); renderEditor(); });
     });
+}
+const passLen = () => S.ui.passLen ?? 3;
+function passSelect(){
+  return `<label class="carry-row">Pass takes <select id="passLen" aria-label="Frames the pass takes">${[0,1,2,3,4,5,6,8,10].map(n => `<option value="${n}"${n===passLen()?' selected':''}>${n ? n+' frame'+(n>1?'s':'') : 'no time (hand-off)'}</option>`).join('')}</select></label>`;
+}
+function wirePassSelect(el){ const s = $('#passLen', el); if(s) s.addEventListener('change', () => { S.ui.passLen = +s.value; save(); }); }
+function carrySection(m, f){
+  const t = team(), cs = carries(m), cur = carrierAt(m, f);
+  const who = p => { const pl = playerAt(t,+p); return '#'+p+(pl ? ' '+esc(surname(pl.name)) : ''); };
+  const rows = cs.map((c,i) => { const next = cs[i+1], until = next ? next.f - (next.pass||0) : LAST;
+    const what = c.p ? (c.pass ? `Pass frames ${c.f-c.pass+1}–${c.f+1}, then has it ` : 'Has it ') + (until > c.f ? `frames ${c.f+1}–${until+1}` : `at frame ${c.f+1}`) : `Kicked or loose from frame ${c.f+1}. Follows its own path.`;
+    return `<div class="prow">${c.p ? miniShirt(c.p, moveColor(m,c.p), 30) : miniBall(30)}<div class="who"><b>${c.p ? who(c.p) : 'Let go'}</b><small>${what}</small></div><button class="chip" data-ungive="${c.f}">Remove</button></div>`; }).join('');
+  const shirts = iconIds(m).filter(i => i!=='ball');
+  return `<div class="field"><div class="field-label">Who has the ball</div>
+      ${rows ? `<div class="list">${rows}</div>` : `<p class="hint">Nobody yet. The ball follows its own path until you give it to a player.</p>`}</div>
+    <div class="field"><div class="field-label">From frame ${f+1}, the ball goes to</div>
+      ${shirts.length ? `<div class="pgrid give">${shirts.map(p => `<button data-give="${p}" class="${cur===p?'on':''}" aria-pressed="${cur===p}">${miniShirt(p, moveColor(m,p), 34)}<small>${esc(surname((playerAt(t,+p)||{}).name||'')) || '#'+p}</small></button>`).join('')}
+        <button data-give="" aria-label="Let go of the ball">${miniBall(34)}<small>Let go</small></button></div>` : `<p class="hint">Add shirts to the move first.</p>`}
+      ${passSelect()}
+      <p class="hint">The ball sticks to that player from frame ${f+1} and follows them until the next pass. Use the frame slider to pick the frame first.</p></div>`;
 }
 
 /* ---------- TEAMS ---------- */
