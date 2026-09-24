@@ -153,8 +153,11 @@ async function load(){
       el.innerHTML = `<h2>${esc(name)}</h2>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
+        ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p>` : ''}
         <div class="row"><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
       el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, was}, el)));
+      if(mail) list(`/mailboxes/${mail}/items`).then(w => { const p = el.querySelector('[data-inbox]'); if(p) p.textContent = w.length ? `Inbox: ${w.length} move${w.length>1?'s':''} waiting to be accepted (${w.map(d => { try { return JSON.parse(d.fields.json.stringValue).name; } catch(e){ return '?'; } }).join(', ')})` : 'Inbox: empty'; })
+        .catch(e => { const p = el.querySelector('[data-inbox]'); if(p) p.textContent = 'Inbox: ' + (e.status === 403 || e.status === 404 ? 'no inbox found for this send code' : e.message); });
       box.appendChild(el);
     }
     status('');
