@@ -355,7 +355,7 @@ const APP_ID = 'rtp';
 const POS_NAMES = {1:'Loosehead prop',2:'Hooker',3:'Tighthead prop',4:'Lock',5:'Lock',6:'Blindside flanker',7:'Openside flanker',8:'Number 8',9:'Scrum-half',10:'Fly-half',11:'Left wing',12:'Inside centre',13:'Outside centre',14:'Right wing',15:'Full-back'};
 // Team size: FORMATS[size] lists the standard 15-a-side slots on the pitch, in shirt order. Each slot gives the shirt its
 // position name and starting spot. Shirts are numbered 1..size, except 12 and 13-a-side, which keep the standard
-// numbers (12 has no 6, 7 or 8; 13 has no 6 or 7). Replacements are numbered on from the highest shirt on the pitch.
+// numbers (12 has no 6, 7 or 8; 13 has no 6 or 7; 14 has no 7). Replacements are numbered on from the highest shirt on the pitch.
 const FORMATS = {
   8:  [1,2,3,9,10,12,11,14],             // 3 forwards, 5 backs
   9:  [1,2,3,9,10,12,13,11,14],          // 3 + 6
@@ -365,10 +365,10 @@ const FORMATS = {
   13: [1,2,3,4,5,8,9,10,11,12,13,14,15], // 6 + 7
   14: [1,2,3,4,5,6,8,9,10,11,12,13,14,15],
   15: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]};
-const FORMAT_NOTE = {8:'3 forwards, 5 backs', 9:'3 forwards, 6 backs', 10:'3 forwards, 7 backs', 11:'5 forwards, 6 backs', 12:'5 forwards, 7 backs, no 6, 7 or 8', 13:'6 forwards, 7 backs, no 6 or 7', 14:'7 forwards, 7 backs', 15:'8 forwards, 7 backs'};
+const FORMAT_NOTE = {8:'3 forwards, 5 backs', 9:'3 forwards, 6 backs', 10:'3 forwards, 7 backs', 11:'5 forwards, 6 backs', 12:'5 forwards, 7 backs, no 6, 7 or 8', 13:'6 forwards, 7 backs, no 6 or 7', 14:'7 forwards, 7 backs, no 7', 15:'8 forwards, 7 backs'};
 const teamSize = t => clamp(+(t && t.size) || 15, 8, 15);
 const benchSize = t => t && t.bench != null ? clamp(+t.bench, 0, 12) : 8;
-const STANDARD_NUMBERS = {12:true, 13:true};
+const STANDARD_NUMBERS = {12:true, 13:true, 14:true};
 const pitchNums = t => { const N = teamSize(t); return STANDARD_NUMBERS[N] ? FORMATS[N].slice() : [...Array(N)].map((_,i) => i+1); };
 const benchNums = t => { const top = Math.max(...pitchNums(t)); return [...Array(benchSize(t))].map((_,i) => top+1+i); };
 const allShirts = t => pitchNums(t).concat(benchNums(t));
@@ -1192,7 +1192,7 @@ function renderChain(box, m){
 
 /* ---------- TEAMS ---------- */
 function teamSettings(t, isNew){
-  const sizeOpts = cur => [15,14,13,12,11,10,9,8].map(n => `<option value="${n}"${n===cur?' selected':''}>${n}-a-side · ${FORMAT_NOTE[n]}</option>`).join('');
+  const sizeOpts = cur => [15,13,12,11,10,9,8].concat(cur===14 ? [14] : []).map(n => `<option value="${n}"${n===cur?' selected':''}>${n}-a-side · ${FORMAT_NOTE[n]}</option>`).join('');
   const benchOpts = cur => [...Array(13)].map((_,n) => `<option value="${n}"${n===cur?' selected':''}>${n ? n+' replacement'+(n>1?'s':'') : 'No replacements'}</option>`).join('');
   const preview = n => pitchNums({size:n}).map(k => `<span><b>${k}</b> ${esc(posName(k, {size:n}))}</span>`).join('');
   openSheet(`<div class="eyebrow">${isNew ? 'New team' : 'Team settings'}</div><h2>${esc(t.name)}</h2>
