@@ -36,6 +36,11 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
 .status{font-size:14px;min-height:1.4em;margin:0}
 .status.err{color:#FFB4A6} .status.ok{color:var(--ok)}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
+[hidden]{display:none !important}
+.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
+.tabs button{border:0;border-radius:9px;padding:10px 8px;background:none;color:var(--muted);font:700 14px/1.1 var(--body);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
+.tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.panel{display:flex;flex-direction:column;gap:12px}
 </style>
 </head>
 <body>
@@ -51,16 +56,25 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <div class="row"><button class="btn" id="go">Sign in</button></div>
   </section>
 
-  <div id="admin" hidden style="display:flex;flex-direction:column;gap:14px">
-    <section class="card">
+  <div id="admin" hidden class="panel">
+    <div class="tabs" role="tablist">
+      <button role="tab" id="tabGroups" aria-selected="true" aria-controls="pGroups">Groups</button>
+      <button role="tab" id="tabNew" aria-selected="false" aria-controls="pNew">New group</button>
+    </div>
+    <section class="panel" id="pNew" role="tabpanel" hidden>
+    <div class="card">
       <h2>New group</h2>
       <div class="field"><label class="field-label" for="nName">Group name</label><input id="nName" type="text" placeholder="e.g. Hawks U12 coaches"></div>
       <div class="field"><label class="field-label" for="nCode">Join code (leave blank for a random one)</label><input id="nCode" class="code-in" type="text" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" maxlength="12" placeholder="ABCD-EFGH-JK"></div>
       <div class="row"><button class="btn" id="create">Create group</button></div>
+    </div>
+    <p class="hint">Give the join code to the group's coaches. They enter it when they first open the app, or use Group → Add another group.</p>
     </section>
-    <div class="top"><h2>Groups</h2><button class="btn ghost" id="reload">Refresh</button></div>
-    <div id="groups" style="display:flex;flex-direction:column;gap:12px"></div>
+    <section class="panel" id="pGroups" role="tabpanel">
+    <div class="top"><h2 id="gCount">Groups</h2><button class="btn ghost" id="reload">Refresh</button></div>
+    <div id="groups" class="panel"></div>
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
+    </section>
   </div>
 </main>
 <script>
@@ -129,6 +143,7 @@ async function load(){
   status('Loading groups…');
   try {
     const docs = await list('/groups'), box = $('#groups');
+    $('#gCount').textContent = `Groups · ${docs.length}`;
     box.innerHTML = docs.length ? '' : '<p class="muted">No groups yet.</p>';
     docs.sort((a, b) => (a.fields.name?.stringValue || '').localeCompare(b.fields.name?.stringValue || ''));
     for(const d of docs){
@@ -224,18 +239,26 @@ $('#create').addEventListener('click', async () => {
   try {
     if(await fb('GET', '/groups/'+c)) throw new Error('That code is already used by another group.');
     await commit([create('groups/'+c, {name: str(name)})]);
-    $('#nName').value = ''; $('#nCode').value = ''; status(`Created ${name}. Join code ${fmt(c)}.`, 'ok'); await load();
+    $('#nName').value = ''; $('#nCode').value = ''; tab('groups'); await load(); status(`Created ${name}. Join code ${fmt(c)}.`, 'ok');
   } catch(e){ status(e.message, 'err'); }
   finally { $('#create').disabled = false; }
 });
 tidy($('#nCode'));
+function tab(which){
+  const g = which === 'groups';
+  $('#tabGroups').setAttribute('aria-selected', g); $('#tabNew').setAttribute('aria-selected', !g);
+  $('#pGroups').hidden = !g; $('#pNew').hidden = g;
+  if(!g) $('#nName').focus();
+}
+$('#tabGroups').addEventListener('click', () => tab('groups'));
+$('#tabNew').addEventListener('click', () => tab('new'));
 $('#go').addEventListener('click', signIn);
 $('#pw').addEventListener('keydown', e => { if(e.key === 'Enter') signIn(); });
 $('#reload').addEventListener('click', load);
 $('#out').addEventListener('click', () => { auth = null; keep(); status(''); show(); });
 function show(){
-  $('#signin').hidden = !!auth; $('#admin').hidden = !auth; $('#admin').style.display = auth ? 'flex' : 'none'; $('#out').hidden = !auth;
-  if(auth) load();
+  $('#signin').hidden = !!auth; $('#admin').hidden = !auth; $('#out').hidden = !auth;
+  if(auth){ tab('groups'); load(); }
 }
 show();
 })();
