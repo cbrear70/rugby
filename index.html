@@ -241,6 +241,8 @@ textarea{resize:vertical;min-height:84px}
 .gate-or{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:13px;margin:8px 0 0}
 .gate-or::before,.gate-or::after{content:'';flex:1;height:1px;background:var(--line)}
 .lo{font-size:12px;color:var(--muted);font-weight:500}
+.fmt{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px 12px;font-size:13px;color:var(--muted);background:var(--panel2);border-radius:10px;padding:10px 12px}
+.fmt b{display:inline-block;min-width:20px;color:var(--ink);font-variant-numeric:tabular-nums}
 .toast{position:fixed;left:50%;bottom:150px;transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:9px 16px;border-radius:999px;font-weight:600;font-size:14px;z-index:40;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:90%;text-align:center}
 </style>
 </head>
@@ -351,12 +353,40 @@ textarea{resize:vertical;min-height:84px}
 const FRAMES = 20, LAST = FRAMES - 1;
 const APP_ID = 'rtp';
 const POS_NAMES = {1:'Loosehead prop',2:'Hooker',3:'Tighthead prop',4:'Lock',5:'Lock',6:'Blindside flanker',7:'Openside flanker',8:'Number 8',9:'Scrum-half',10:'Fly-half',11:'Left wing',12:'Inside centre',13:'Outside centre',14:'Right wing',15:'Full-back'};
-const posName = n => POS_NAMES[n] || 'Replacement';
+// Team size: FORMATS[size] lists the standard 15-a-side slots on the pitch, in shirt order. Each slot gives the shirt its
+// position name and starting spot. Shirts are numbered 1..size, except 12 and 13-a-side, which keep the standard
+// numbers (12 has no 6, 7 or 8; 13 has no 6 or 7). Replacements are numbered on from the highest shirt on the pitch.
+const FORMATS = {
+  8:  [1,2,3,9,10,12,11,14],             // 3 forwards, 5 backs
+  9:  [1,2,3,9,10,12,13,11,14],          // 3 + 6
+  10: [1,2,3,9,10,11,12,13,14,15],       // 3 + 7
+  11: [1,2,3,4,5,9,10,12,13,11,14],      // 5 + 6
+  12: [1,2,3,4,5,9,10,11,12,13,14,15],   // 5 + 7
+  13: [1,2,3,4,5,8,9,10,11,12,13,14,15], // 6 + 7
+  14: [1,2,3,4,5,6,8,9,10,11,12,13,14,15],
+  15: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]};
+const FORMAT_NOTE = {8:'3 forwards, 5 backs', 9:'3 forwards, 6 backs', 10:'3 forwards, 7 backs', 11:'5 forwards, 6 backs', 12:'5 forwards, 7 backs, no 6, 7 or 8', 13:'6 forwards, 7 backs, no 6 or 7', 14:'7 forwards, 7 backs', 15:'8 forwards, 7 backs'};
+const teamSize = t => clamp(+(t && t.size) || 15, 8, 15);
+const benchSize = t => t && t.bench != null ? clamp(+t.bench, 0, 12) : 8;
+const STANDARD_NUMBERS = {12:true, 13:true};
+const pitchNums = t => { const N = teamSize(t); return STANDARD_NUMBERS[N] ? FORMATS[N].slice() : [...Array(N)].map((_,i) => i+1); };
+const benchNums = t => { const top = Math.max(...pitchNums(t)); return [...Array(benchSize(t))].map((_,i) => top+1+i); };
+const allShirts = t => pitchNums(t).concat(benchNums(t));
+const shirtTotal = t => teamSize(t) + benchSize(t);
+const slotOf = (n, t = team()) => { const i = pitchNums(t).indexOf(+n); return i < 0 ? null : FORMATS[teamSize(t)][i]; };
+const shirtFor = (slot, t = team()) => { const i = FORMATS[teamSize(t)].indexOf(slot); return i < 0 ? null : pitchNums(t)[i]; };
+const PAIRS = {6:[7,'Flanker'], 7:[6,'Flanker'], 12:[13,'Centre'], 13:[12,'Centre'], 11:[14,'Wing'], 14:[11,'Wing']};
+function posName(n, t = team()){
+  const slot = slotOf(n, t); if(!slot) return 'Replacement';
+  const pr = PAIRS[slot]; return pr && !FORMATS[teamSize(t)].includes(pr[0]) ? pr[1] : POS_NAMES[slot];
+}
+const startersLabel = t => teamSize(t)===15 ? 'Starting XV' : `Starting ${teamSize(t)}`;
 // pitch in metres: x 0..70 (touchline to touchline), y 0..120 (dead-ball to dead-ball). Try lines at y=10 and y=110. Team attacks towards y=0.
 const DEFAULT_POS = {1:[28,71],2:[35,71],3:[42,71],4:[31,76.5],5:[39,76.5],6:[23.5,78],7:[46.5,78],8:[35,82],9:[27,87],10:[19,91],11:[4,104],12:[13.5,95],13:[8,98.5],14:[66,104],15:[35,106]};
 const BLACK='#15171A', YELLOW='#F5C518', BLUE='#1F5FD6', RED='#D62B2B';
 const SWATCHES = [[BLACK,'Black'],[YELLOW,'Yellow'],[BLUE,'Blue'],[RED,'Red'],['#F4F4F2','White'],['#1E9E4A','Green'],['#F07A1A','Orange'],['#7A3FC4','Purple'],['#3FB6E8','Sky blue'],['#7A1F2B','Maroon']];
-function defaultColor(n){ n=+n; if(n<9) return BLACK; if(n===9) return YELLOW; if(n===10) return BLUE; return RED; }
+// under 12-a-side every shirt is black; otherwise forwards black, 9 yellow, 10 blue, everyone else red
+function defaultColor(n, t = team()){ if(teamSize(t) < 12) return BLACK; const s = slotOf(n, t); if(!s) return RED; if(s<9) return BLACK; if(s===9) return YELLOW; if(s===10) return BLUE; return RED; }
 function textOn(hex){ const c=(hex||'#000').replace('#',''); const r=parseInt(c.slice(0,2),16),g=parseInt(c.slice(2,4),16),b=parseInt(c.slice(4,6),16); return (0.299*r+0.587*g+0.114*b)>160?'#111':'#fff'; }
 const SHIRT = 'M-2.2,-5 L-5,-4.1 L-7.2,-1 L-5.1,1.1 L-4.1,0.1 L-4.1,5.2 L4.1,5.2 L4.1,0.1 L5.1,1.1 L7.2,-1 L5,-4.1 L2.2,-5 Q0,-3.3 -2.2,-5 Z';
 const TOK = 0.44; // shirt scale in metres per shirt unit
@@ -384,8 +414,8 @@ let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{ try { 
 const team = () => S.teams.find(t => t.id === S.currentTeamId) || S.teams[0];
 const playerById = (t,id) => t.players.find(p => p.id === id);
 const playerAt = (t,n) => { const s=t.selection[n]; return s && s.playerId ? playerById(t, s.playerId) : null; };
-const colorOf = (t,n) => (t.selection[n] && t.selection[n].color) || defaultColor(n);
-function teamPos(t,n){ const s=t.selection[n]; if(s && s.x!=null) return [s.x, s.y]; return DEFAULT_POS[n] || [35,60]; }
+const colorOf = (t,n) => (t.selection[n] && t.selection[n].color) || defaultColor(n, t);
+function teamPos(t,n){ const s=t.selection[n]; if(s && s.x!=null) return [s.x, s.y]; return DEFAULT_POS[slotOf(n,t)] || [35,60]; }
 function numberOf(t,pid){ for(const k in t.selection) if(t.selection[k] && t.selection[k].playerId===pid) return +k; return null; }
 function setSel(t,n,patch){ t.selection[n] = Object.assign({}, t.selection[n]||{}, patch); save(); }
 function assign(t,n,pid){
@@ -667,7 +697,7 @@ const teamCtl = PitchCtl($('#teamPitch'), {
 });
 function renderTeamPitch(){
   const t = team(); let out = '';
-  for(let n=1;n<=15;n++){ const [x,y] = teamPos(t,n); const p = playerAt(t,n); out += shirtSVG({x, y, n, color: colorOf(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n}); }
+  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = playerAt(t,n); out += shirtSVG({x, y, n, color: colorOf(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n}); }
   teamCtl.layer.innerHTML = out;
   $('#namesChip').classList.toggle('on', S.ui.names!==false);
 }
@@ -675,12 +705,12 @@ function dualTap(onTap, onDouble){ let last={id:null,t:0}, timer; return id => {
 const benchTap = dualTap(n => showSlot(n), n => editSlot(n));
 function renderBench(){
   const t = team(); let h = `<span class="bl">Bench</span>`;
-  for(let n=16;n<=23;n++){ const p = playerAt(t,n); h += `<button data-n="${n}" aria-label="Shirt ${n}${p?', '+esc(p.name):''}">${miniShirt(n, colorOf(t,n), 34)}<small>${p?esc(surname(p.name)):'—'}</small></button>`; }
-  const b = $('#bench'); b.innerHTML = h;
+  for(const n of benchNums(t)){ const p = playerAt(t,n); h += `<button data-n="${n}" aria-label="Shirt ${n}${p?', '+esc(p.name):''}">${miniShirt(n, colorOf(t,n), 34)}<small>${p?esc(surname(p.name)):'—'}</small></button>`; }
+  const b = $('#bench'); b.innerHTML = h; b.hidden = !benchSize(t);
   $$('button', b).forEach(x => x.addEventListener('click', () => benchTap(+x.dataset.n)));
 }
 $('#namesChip').addEventListener('click', () => { S.ui.names = S.ui.names===false; save(); renderTeamPitch(); });
-function teamBox(){ const t = team(); let xs=[], ys=[]; for(let n=1;n<=15;n++){ const [x,y] = teamPos(t,n); xs.push(x); ys.push(y); } return [Math.min(...xs)-6, Math.min(...ys)-6, Math.max(...xs)+6, Math.max(...ys)+8]; }
+function teamBox(){ const t = team(); let xs=[], ys=[]; for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); xs.push(x); ys.push(y); } return [Math.min(...xs)-6, Math.min(...ys)-6, Math.max(...xs)+6, Math.max(...ys)+8]; }
 function zoomTeam(){ return teamCtl.focusBox(...teamBox()); }
 function syncFitChip(){ $('#fitChip').textContent = teamCtl.isFit() ? 'Zoom to team' : 'Whole pitch'; }
 let teamZoomed = false;
@@ -786,17 +816,18 @@ function editPlayer(pid){
 function renderSelect(){
   const t = team(), el = $('#selectBody');
   const picked = n => !!playerAt(t,n);
-  const starters = [...Array(15)].filter((_,i)=>picked(i+1)).length, bench = [...Array(8)].filter((_,i)=>picked(i+16)).length;
+  const N = teamSize(t), B = benchSize(t), onPitch = pitchNums(t), subs = benchNums(t);
+  const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
   const row = n => { const p = playerAt(t,n); return `<div class="srow${p&&p.available===false?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n)}</select></div>`; };
   el.innerHTML = `
-    <div class="section-h"><span>Starting XV · ${starters}/15</span><button class="chip" id="clearSel">Clear team</button></div>
-    ${[...Array(15)].map((_,i)=>row(i+1)).join('')}
-    <div class="section-h"><span>Replacements · ${bench}/8</span></div>
-    ${[...Array(8)].map((_,i)=>row(i+16)).join('')}
+    <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear team</button></div>
+    ${onPitch.map(row).join('')}
+    ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
+    <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Team settings (tap the team name).</p>
     ${t.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => { assign(t, +s.dataset.n, s.value || null); renderSelect(); }));
-  $('#clearSel').addEventListener('click', () => askConfirm('Clear the team?', 'All 23 shirts will be emptied. Your squad list, shirt colours and positions stay.', 'Clear team', () => {
+  $('#clearSel').addEventListener('click', () => askConfirm('Clear the team?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear team', () => {
     for(const n in t.selection) t.selection[n].playerId = null; save(); renderSelect(); toast('Team cleared');
   }));
 }
@@ -1001,7 +1032,8 @@ $('#edPasses').addEventListener('click', () => showMoveIcon('ball'));
 function addIconToMove(m, id){
   const t = team();
   if(id==='ball'){
-    const a = m.icons[9] ? posAt(m.icons[9],0) : teamPos(t,9), b = m.icons[10] ? posAt(m.icons[10],LAST) : teamPos(t,10);
+    const sh = shirtFor(9, t), fh = shirtFor(10, t);
+    const a = m.icons[sh] ? posAt(m.icons[sh],0) : teamPos(t,sh), b = m.icons[fh] ? posAt(m.icons[fh],LAST) : teamPos(t,fh);
     m.icons.ball = {keys:{0:[r1(a[0]+1.3), r1(a[1]-1.3)], [LAST]:[r1(b[0]+1.3), r1(b[1]-1.3)]}};
   } else {
     const s = teamPos(t,+id); m.icons[id] = {keys:{0:[s[0],s[1]], [LAST]:[s[0], r1(clamp(s[1]-15, -2, 122))]}, color:null};
@@ -1012,8 +1044,8 @@ function pickPlayers(){
   const btn = id => { const on = !!m.icons[id]; const p = id==='ball' ? null : playerAt(t,+id);
     return `<button data-pp="${id}" class="${on?'on':''}" aria-pressed="${on}">${id==='ball'?miniBall(34):miniShirt(id, moveColor(m,id), 34)}<small>${id==='ball'?'Ball':p?esc(surname(p.name)):posName(id).split(' ').pop()}</small></button>`; };
   openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Players in this move</h2>
-    <div class="pgrid">${[...Array(15)].map((_,i)=>btn(String(i+1))).join('')}${btn('ball')}</div>
-    <p class="hint">New shirts start at their spot on the Pitch tab and finish 15 metres upfield. The ball runs from 9 to 10 until you change it.</p>
+    <div class="pgrid">${[...new Set(pitchNums(t).map(String).concat(iconIds(m).filter(i=>i!=='ball')))].map(btn).join('')}${btn('ball')}</div>
+    <p class="hint">New shirts start at their spot on the Pitch tab and finish 15 metres upfield. The ball runs from the scrum-half to the fly-half until you change it.</p>
     <button class="btn wide" data-close>Done</button>`,
     el => $$('[data-pp]', el).forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.pp;
@@ -1159,24 +1191,56 @@ function renderChain(box, m){
 }
 
 /* ---------- TEAMS ---------- */
+function teamSettings(t, isNew){
+  const sizeOpts = cur => [15,14,13,12,11,10,9,8].map(n => `<option value="${n}"${n===cur?' selected':''}>${n}-a-side · ${FORMAT_NOTE[n]}</option>`).join('');
+  const benchOpts = cur => [...Array(13)].map((_,n) => `<option value="${n}"${n===cur?' selected':''}>${n ? n+' replacement'+(n>1?'s':'') : 'No replacements'}</option>`).join('');
+  const preview = n => pitchNums({size:n}).map(k => `<span><b>${k}</b> ${esc(posName(k, {size:n}))}</span>`).join('');
+  openSheet(`<div class="eyebrow">${isNew ? 'New team' : 'Team settings'}</div><h2>${esc(t.name)}</h2>
+    <div class="field"><label class="field-label" for="tsName">Team name</label><input id="tsName" type="text" value="${esc(t.name)}"></div>
+    <div class="field"><label class="field-label" for="tsSize">Players on the pitch</label><select id="tsSize">${sizeOpts(teamSize(t))}</select></div>
+    <div class="fmt" id="tsPreview">${preview(teamSize(t))}</div>
+    <div class="field"><label class="field-label" for="tsBench">Replacements</label><select id="tsBench">${benchOpts(benchSize(t))}</select></div>
+    <p class="hint" id="tsWarn"></p>
+    <div class="row-btns"><button class="btn" id="tsSave">${isNew ? 'Save and add squad' : 'Save'}</button><button class="btn ghost" data-close>${isNew ? 'Skip' : 'Cancel'}</button></div>
+    ${isNew ? '' : `<button class="btn danger" id="tmDel">Delete “${esc(t.name)}”</button>`}`,
+    el => {
+      const size = () => +$('#tsSize', el).value, bench = () => +$('#tsBench', el).value;
+      const warn = () => {
+        const keep = allShirts({size:size(), bench:bench()}), lost = Object.keys(t.selection).filter(n => !keep.includes(+n) && t.selection[n].playerId).length;
+        $('#tsPreview', el).innerHTML = preview(size());
+        $('#tsWarn', el).textContent = (size() !== teamSize(t) ? 'Changing the team size moves every shirt back to its standard spot on the Pitch tab. ' : '') +
+          (lost ? `${lost} player${lost>1?'s':''} in shirts this team no longer uses will be taken off the team sheet (they stay in the squad).` : '');
+      };
+      $('#tsSize', el).addEventListener('change', warn); $('#tsBench', el).addEventListener('change', warn); warn();
+      $('#tsSave', el).addEventListener('click', () => {
+        const N = size(), B = bench(), keep = allShirts({size:N, bench:B}), resized = N !== teamSize(t);
+        t.name = $('#tsName', el).value.trim() || t.name; t.size = N; t.bench = B;
+        for(const n in t.selection){ const sl = t.selection[n];
+          if(!keep.includes(+n)) sl.playerId = null;
+          if(resized){ delete sl.x; delete sl.y; } }
+        save(); closeSheet(); teamZoomed = false; renderAll();
+        if(!isNew) toast(resized ? `Now ${N}-a-side` : 'Team settings saved'); // a new team's welcome runs from the sheet's close handler
+      });
+      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its squad list, team selection and all its moves will be deleted from this phone, and from everyone in the group when you sync.' : 'Its squad list, team selection and all its moves will be deleted from this phone. Share it first if you want to keep a copy.', 'Delete team', () => {
+        S.teams = S.teams.filter(x => x.id !== t.id); if(!S.teams.length) S.teams.push(newTeam('My team'));
+        S.currentTeamId = S.teams[0].id; ME.moveId = null; save(); renderAll(); toast('Team deleted');
+      }));
+    }, () => { if(isNew){ showTab('squad'); toast('Team created. Add your squad.'); } });
+}
 $('#teamBtn').addEventListener('click', () => {
   const t = team();
   openSheet(`<div class="eyebrow">Teams on this phone</div><h2>Switch team</h2>
     ${fbOn() ? (syncing() ? `<button class="btn ghost" id="tmGroup">Group: ${esc(S.sync.groupName)} · sync, invite, leave</button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
     <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${x.players.length} players, ${x.moves.length} moves</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
-    <div class="field"><label class="field-label" for="tmName">Rename “${esc(t.name)}”</label><div class="add-row"><input id="tmName" type="text" value="${esc(t.name)}"><button class="btn ghost" id="tmRename">Rename</button></div></div>
+    <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
-    <button class="btn danger" id="tmDel">Delete “${esc(t.name)}”</button>`,
+`,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
       const gb = $('#tmGroup', el); if(gb) gb.addEventListener('click', () => { closeSheet(); syncing() ? showGroup() : showGate(true); });
       $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id===b.dataset.togroup); x.localOnly = false; save(); closeSheet(); toast(x.name+' will go to the group when you sync'); }));
-      $('#tmRename', el).addEventListener('click', () => { t.name = $('#tmName', el).value.trim() || t.name; save(); closeSheet(); renderAll(); toast('Team renamed'); });
-      $('#tmCreate', el).addEventListener('click', () => { const nt = newTeam($('#tmNew', el).value.trim() || 'New team'); S.teams.push(nt); S.currentTeamId = nt.id; ME.moveId = null; save(); closeSheet(); showTab('squad'); toast('Team created. Add your squad.'); });
-      $('#tmDel', el).addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its squad list, team selection and all its moves will be deleted from this phone, and from everyone in the group when you sync.' : 'Its squad list, team selection and all its moves will be deleted from this phone. Share it first if you want to keep a copy.', 'Delete team', () => {
-        S.teams = S.teams.filter(x => x.id !== t.id); if(!S.teams.length) S.teams.push(newTeam('My team'));
-        S.currentTeamId = S.teams[0].id; ME.moveId = null; save(); renderAll(); toast('Team deleted');
-      }));
+      $('#tmSettings', el).addEventListener('click', () => teamSettings(t));
+      $('#tmCreate', el).addEventListener('click', () => { const nt = newTeam($('#tmNew', el).value.trim() || 'New team'); S.teams.push(nt); S.currentTeamId = nt.id; ME.moveId = null; save(); renderAll(); teamSettings(nt, true); });
     });
 });
 
@@ -1204,8 +1268,8 @@ function buildPayload(kind, moveId){
   if(kind==='team') return {app:APP_ID, v:1, kind:'team', data: clone(t)};
   if(kind==='lineup'){
     const sel = {}, players = [];
-    for(let n=1;n<=23;n++){ const s = t.selection[n]; if(!s) continue; const p = playerAt(t,n); sel[n] = {name: p?p.name:null, color:s.color||null, x:s.x, y:s.y}; if(p) players.push({name:p.name, pos:p.pos||''}); }
-    return {app:APP_ID, v:1, kind:'lineup', data:{team:t.name, selection:sel, players}};
+    for(const n of allShirts(t)){ const s = t.selection[n]; if(!s) continue; const p = playerAt(t,n); sel[n] = {name: p?p.name:null, color:s.color||null, x:s.x, y:s.y}; if(p) players.push({name:p.name, pos:p.pos||''}); }
+    return {app:APP_ID, v:1, kind:'lineup', data:{team:t.name, size:teamSize(t), bench:benchSize(t), selection:sel, players}};
   }
   const m = t.moves.find(x=>x.id===moveId);
   const names = {}; for(const id of iconIds(m)) if(id!=='ball'){ const p = playerAt(t,+id); if(p) names[id] = p.name; }
@@ -1219,7 +1283,7 @@ function openShare(pre){
   const moveSel = t.moves.length ? `<select id="shMove" aria-label="Move to share">${t.moves.map(m=>`<option value="${m.id}"${m.id===pre.moveId?' selected':''}>${esc(m.name)}</option>`).join('')}</select>` : '';
   openSheet(`<div class="eyebrow">Send to another coach</div><h2>Share</h2>
     <div class="opts">
-      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${t.players.length}, the 23 shirts, and ${t.moves.length} move${t.moves.length===1?'':'s'}</small></span></label>
+      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${t.players.length}, the ${shirtTotal(t)} shirts, and ${t.moves.length} move${t.moves.length===1?'':'s'}</small></span></label>
       <label class="opt"><input type="radio" name="shk" value="lineup"${pre.kind==='lineup'?' checked':''}><span><b>Team sheet only</b><small>Who is wearing each shirt, colours and positions</small></span></label>
       ${t.moves.length?`<label class="opt"><input type="radio" name="shk" value="move"${pre.kind==='move'?' checked':''}><span style="flex:1;display:flex;flex-direction:column;gap:6px"><b>One move</b>${moveSel}</span></label>`:''}
     </div>
@@ -1277,6 +1341,7 @@ function handleImport(pl){
       el => { $('#ipNew', el).addEventListener('click', addNew); const r = $('#ipRep', el); if(r) r.addEventListener('click', replace); });
   } else if(pl.kind==='lineup'){
     const apply = target => {
+      if(d.size) target.size = d.size; if(d.bench != null) target.bench = d.bench;
       for(const n in d.selection){ const s = d.selection[n]; let pid = null;
         if(s.name){ let p = target.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:'', available:true}; target.players.push(p); } pid = p.id; }
         target.selection[n] = {playerId:pid, color:s.color||null}; if(s.x!=null){ target.selection[n].x = s.x; target.selection[n].y = s.y; } }
@@ -1284,7 +1349,7 @@ function handleImport(pl){
     openSheet(`<div class="eyebrow">Import team sheet</div><h2>${esc(d.team)}</h2><p class="muted">${d.players.length} named players. Players not already in your squad will be added.</p>
       <div class="row-btns"><button class="btn" id="ipCur">Apply to ${esc(t.name)}</button><button class="btn ghost" id="ipNew">Add as new team</button></div><button class="btn ghost" data-close>Cancel</button>`,
       el => {
-        $('#ipCur', el).addEventListener('click', () => { for(let n=1;n<=23;n++) if(t.selection[n]) t.selection[n].playerId = null; apply(t); done('Team sheet applied'); });
+        $('#ipCur', el).addEventListener('click', () => { for(const n in t.selection) t.selection[n].playerId = null; apply(t); done('Team sheet applied'); });
         $('#ipNew', el).addEventListener('click', () => { const nt = newTeam(d.team + ' (shared)'); apply(nt); S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); });
       });
   } else if(pl.kind==='move'){
