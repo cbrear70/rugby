@@ -1596,7 +1596,7 @@ const tokenUid = tok => { try { return JSON.parse(atob(tok.split('.')[1].replace
 const alreadyThere = e => /FAILED_PRECONDITION|ALREADY_EXISTS|exists/i.test(e.message || '');
 async function ensureMailbox(){
   const z = S.sync, uid = tokenUid(await fbToken());
-  const read = async () => { const g = await fb('GET', '/groups/'+z.group); if(!g){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; } return g.fields.mailbox ? g.fields.mailbox.stringValue : ''; };
+  const read = async () => { const g = await fb('GET', '/groups/'+z.group); if(!g){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; } return g.fields.mailbox ? normCode(g.fields.mailbox.stringValue) : ''; };
   let box = await read();
   if(z.memberOf !== z.group + ':' + uid){
     try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}); }
@@ -1615,9 +1615,11 @@ async function ensureMailbox(){
   return box;
 }
 const inboxOnScreen = () => !sheetEl.hidden && !!$('#inList', sheetEl);
-async function checkInbox(){
+async function checkInbox(again){
   if(!syncing() || inboxOnScreen()) return 0;
-  const box = await ensureMailbox(), j = await fb('GET', `/mailboxes/${box}/items?pageSize=50`) || {};
+  const box = await ensureMailbox(); let j;
+  try { j = await fb('GET', `/mailboxes/${box}/items?pageSize=50`) || {}; }
+  catch(e){ if(e.status === 403 && !again){ delete S.sync.memberOf; save(); return checkInbox(true); } throw e; }
   const items = (j.documents||[]).map(d => { const f = d.fields || {}; return {id: d.name.split('/').pop(), json: f.json ? f.json.stringValue : '', fromGroup: f.fromGroup ? f.fromGroup.stringValue : '', fromWho: f.fromWho ? f.fromWho.stringValue : ''}; })
     .filter(it => { try { JSON.parse(it.json).icons; return true; } catch(e){ return false; } });
   if(items.length) showInbox(items);

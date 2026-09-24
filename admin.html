@@ -35,6 +35,7 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
 .codes span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
 .status{font-size:14px;min-height:1.4em;margin:0}
 .status.err{color:#FFB4A6} .status.ok{color:var(--ok)}
+.hint.err{color:#FFB4A6}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 [hidden]{display:none !important}
 .tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
@@ -140,30 +141,63 @@ async function signIn(){
 }
 
 async function load(){
-  status('Loading groups…');
+  const keepMsg = $('#status').textContent; if(!keepMsg) status('Loading groups…');
   try {
-    const docs = await list('/groups'), box = $('#groups');
+    const docs = await list('/groups'), box = $('#groups'), boxesByGroup = {};
+    for(const m of await list('/mailboxes').catch(() => [])){ const g = m.fields?.group?.stringValue; if(g) (boxesByGroup[g] = boxesByGroup[g] || []).push(idOf(m)); }
     $('#gCount').textContent = `Groups · ${docs.length}`;
     box.innerHTML = docs.length ? '' : '<p class="muted">No groups yet.</p>';
     docs.sort((a, b) => (a.fields.name?.stringValue || '').localeCompare(b.fields.name?.stringValue || ''));
     for(const d of docs){
-      const code = idOf(d), f = d.fields || {}, name = f.name?.stringValue || '(no name)', mail = f.mailbox?.stringValue || '';
+      const code = idOf(d), f = d.fields || {}, name = f.name?.stringValue || '(no name)', raw = f.mailbox?.stringValue || '', mail = norm(raw);
       const was = (f.formerly?.arrayValue?.values || []).map(v => v.stringValue);
       const el = document.createElement('section'); el.className = 'card';
       el.innerHTML = `<h2>${esc(name)}</h2>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
-        ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p>` : ''}
+        ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p><div class="row" data-fix hidden><button class="btn" data-a="repair">Repair inbox</button></div>` : ''}
+        ${(boxesByGroup[code] || []).filter(b => b !== mail).map(b => `<p class="hint err" data-stray="${esc(b)}">Send code ${fmt(b)} also leads to this group, but its coaches look in ${mail ? fmt(mail) : 'no inbox'}, so moves sent to ${fmt(b)} never reach them. Checking…</p>
+          <div class="row"><button class="btn" data-a="adopt" data-box="${esc(b)}">Make ${fmt(b)} the send code</button></div>`).join('')}
         <div class="row"><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
-      el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, was}, el)));
-      if(mail) list(`/mailboxes/${mail}/items`).then(w => { const p = el.querySelector('[data-inbox]'); if(p) p.textContent = w.length ? `Inbox: ${w.length} move${w.length>1?'s':''} waiting to be accepted (${w.map(d => { try { return JSON.parse(d.fields.json.stringValue).name; } catch(e){ return '?'; } }).join(', ')})` : 'Inbox: empty'; })
-        .catch(e => { const p = el.querySelector('[data-inbox]'); if(p) p.textContent = 'Inbox: ' + (e.status === 403 || e.status === 404 ? 'no inbox found for this send code' : e.message); });
+      el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, raw, was, box: b.dataset.box}, el)));
+      el.querySelectorAll('[data-stray]').forEach(p => list(`/mailboxes/${p.dataset.stray}/items`).then(w => {
+        p.textContent = p.textContent.replace('Checking…', w.length ? `${w.length} move${w.length>1?'s':''} waiting there.` : 'Nothing waiting there.'); }).catch(() => {}));
+      if(mail) inboxHealth(code, raw).then(h => {
+        const p = el.querySelector('[data-inbox]'), names = h.waiting.map(d => { try { return JSON.parse(d.fields.json.stringValue).name; } catch(e){ return '?'; } });
+        const count = h.waiting.length ? `${h.waiting.length} move${h.waiting.length>1?'s':''} waiting to be accepted (${names.join(', ')})` : 'empty';
+        p.textContent = h.problems.length ? `Inbox problem: ${h.problems.join('; ')}. Moves sent to this group can't be seen by its coaches. ${h.waiting.length ? count + '.' : ''}` : 'Inbox: ' + count;
+        if(h.problems.length){ p.classList.add('err'); el.querySelector('[data-fix]').hidden = false; }
+      }).catch(e => { el.querySelector('[data-inbox]').textContent = 'Inbox: could not check (' + e.message + ')'; });
       box.appendChild(el);
     }
-    status('');
+    if(!keepMsg) status('');
   } catch(e){ status(e.message, 'err'); }
 }
 
+// Is the group's send code linked to an inbox that points back at the group? Coaches can only read an inbox when
+// mailboxes/<send code>.group is exactly the group's join code, and the phone looks under the group's mailbox field.
+async function inboxHealth(code, raw){
+  const box = norm(raw), problems = [];
+  if(raw !== box) problems.push(`the send code is stored as "${raw}" instead of ${box}`);
+  const doc = await fb('GET', '/mailboxes/' + box), owner = doc?.fields?.group?.stringValue;
+  if(!doc) problems.push('there is no inbox for this send code');
+  else if(owner !== code) problems.push(`the inbox is linked to join code "${owner}" instead of ${code}`);
+  let waiting = doc ? await list(`/mailboxes/${box}/items`) : [];
+  if(raw !== box && raw) waiting = waiting.concat(await list(`/mailboxes/${encodeURIComponent(raw)}/items`).catch(() => []));
+  return {box, problems, waiting};
+}
+async function repairInbox(g){
+  const box = g.mail, writes = [
+    {update:{name: NAME('groups/' + g.code), fields:{mailbox: str(box)}}, updateMask:{fieldPaths:['mailbox']}, currentDocument:{exists:true}},
+    {update:{name: NAME('mailboxes/' + box), fields:{group: str(g.code)}}}];
+  // moves that phones filed under a hand-typed version of the code are moved into the real inbox
+  if(g.raw && g.raw !== box){
+    const stray = await list(`/mailboxes/${encodeURIComponent(g.raw)}/items`).catch(() => []);
+    for(const d of stray) writes.push({update:{name: NAME(`mailboxes/${box}/items/${idOf(d)}`), fields: d.fields || {}}}, del(`mailboxes/${g.raw}/items/${idOf(d)}`));
+    writes.push(del('mailboxes/' + g.raw));
+  }
+  await commit(writes);
+}
 // ask for a new code in the group's card (blank = random); resolves to the code, or null if cancelled
 function askCode(el, what, current){
   return new Promise(done => {
@@ -189,6 +223,22 @@ function askCode(el, what, current){
 async function act(what, g, el){
   const busy = on => el.querySelectorAll('button').forEach(b => b.disabled = on);
   try {
+    if(what === 'adopt'){
+      const nb = g.box;
+      if(!confirm(`Make ${fmt(nb)} ${g.name}'s send code?${g.mail ? `\n\nThe old send code ${fmt(g.mail)} stops working, and anything waiting in it moves across.` : ''}`)) return;
+      busy(true); status('Updating the send code…');
+      const old = g.mail && g.mail !== nb ? await list(`/mailboxes/${g.mail}/items`).catch(() => []) : [];
+      await commit([
+        {update:{name: NAME('groups/' + g.code), fields:{mailbox: str(nb)}}, updateMask:{fieldPaths:['mailbox']}, currentDocument:{exists:true}},
+        {update:{name: NAME('mailboxes/' + nb), fields:{group: str(g.code)}}},
+        ...old.flatMap(d => [{update:{name: NAME(`mailboxes/${nb}/items/${idOf(d)}`), fields: d.fields || {}}}, del(`mailboxes/${g.mail}/items/${idOf(d)}`)]),
+        ...(g.mail && g.mail !== nb ? [del('mailboxes/' + g.mail)] : [])]);
+      status(`${g.name}: send code is now ${fmt(nb)}. Coaches see waiting moves on their next sync or Check now.`, 'ok');
+    }
+    if(what === 'repair'){
+      busy(true); status('Repairing the inbox…'); await repairInbox(g);
+      status(`${g.name}: inbox repaired. Send code ${fmt(g.mail)}. Coaches will see waiting moves on their next sync or Check now.`, 'ok');
+    }
     if(what === 'rename'){
       const n = prompt('New name for the group', g.name); if(!n || !n.trim()) return;
       busy(true); await fb('PATCH', `/groups/${g.code}?updateMask.fieldPaths=name&currentDocument.exists=true`, {fields:{name: str(n.trim())}});
@@ -198,11 +248,13 @@ async function act(what, g, el){
       const c = await askCode(el, 'join code', g.code); if(!c) return;
       if(await fb('GET', '/groups/'+c)) return status('That code is already used by another group.', 'err');
       if(c === g.mail) return status('That is this group’s send code. Pick a different join code.', 'err');
+      if(await fb('GET', '/mailboxes/'+c)) return status('That code is already a send code. Join codes and send codes must be different.', 'err');
       if(!confirm(`Change ${g.name}'s join code from ${fmt(g.code)} to ${fmt(c)}?\n\nThe old code stops working straight away. Coaches will be asked for the new code on their next sync and keep all their data. Give the new code only to coaches who should still have access.`)) return;
       busy(true); status('Copying teams and moves…');
       const old = await fb('GET', '/groups/'+g.code), items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`);
-      const fields = Object.assign({}, old.fields, {formerly:{arrayValue:{values: [g.code, ...g.was].map(str)}}});
-      await commit([create('groups/'+c, fields), ...items.map(d => create(`groups/${c}/items/${idOf(d)}`, d.fields || {}))]);
+      const fields = Object.assign({}, old.fields, {formerly:{arrayValue:{values: [...new Set([g.code, ...g.was])].filter(x => x !== c).map(str)}}});
+      await commit([create('groups/'+c, fields), ...items.map(d => create(`groups/${c}/items/${idOf(d)}`, d.fields || {})),
+        ...members.map(d => create(`groups/${c}/members/${idOf(d)}`, d.fields || {}))]);
       if(g.mail) await commit([{update:{name: NAME('mailboxes/'+g.mail), fields:{group: str(c)}}, currentDocument:{exists:true}}]);
       status('Removing the old code…');
       await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)), del('groups/'+g.code)]);
@@ -212,6 +264,7 @@ async function act(what, g, el){
       const c = await askCode(el, 'send code', g.mail); if(!c) return;
       if(c === g.code) return status('That is this group’s join code. Pick a different send code.', 'err');
       if(await fb('GET', '/groups/'+c)) return status('That code is already a group’s join code.', 'err');
+      if(await fb('GET', '/mailboxes/'+c)) return status('That code is already another group’s send code.', 'err');
       if(!confirm(`Change ${g.name}'s send code from ${fmt(g.mail)} to ${fmt(c)}?\n\nOther groups will need the new send code to send moves. Moves already waiting are kept.`)) return;
       busy(true); status('Moving the inbox…');
       const waiting = await list(`/mailboxes/${g.mail}/items`);
@@ -241,6 +294,7 @@ $('#create').addEventListener('click', async () => {
   $('#create').disabled = true;
   try {
     if(await fb('GET', '/groups/'+c)) throw new Error('That code is already used by another group.');
+    if(await fb('GET', '/mailboxes/'+c)) throw new Error('That code is already a send code. Pick a different join code.');
     await commit([create('groups/'+c, {name: str(name)})]);
     $('#nName').value = ''; $('#nCode').value = ''; tab('groups'); await load(); status(`Created ${name}. Join code ${fmt(c)}.`, 'ok');
   } catch(e){ status(e.message, 'err'); }
