@@ -79,6 +79,27 @@ main{flex:1;min-height:0;position:relative}
 .step.warn{border-color:color-mix(in srgb,var(--danger) 60%,transparent)}
 .step-top{display:flex;gap:8px;align-items:center}
 .step-top select{flex:1;width:auto;min-width:0;padding:8px 10px;font-size:15px}
+.sbtn{width:34px;height:34px;flex:none;display:grid;place-items:center;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--ink);padding:0}
+.sbtn:disabled{opacity:.3}
+.sbtn:active{background:var(--line)}
+.sbtn.del{color:var(--danger)}
+.pass-link .ins{margin-left:auto}
+.tlwrap{display:flex;flex-direction:column;gap:3px}
+.tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px}
+.tl{height:30px;border:0;border-radius:4px;background:var(--panel2);padding:0;position:relative;outline:1px solid var(--line);outline-offset:-1px}
+.tl.mv{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
+.tl.key::after{content:'';position:absolute;left:50%;top:4px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 1.5px #1A1405}
+.tl.cur{outline:2px solid var(--ink);outline-offset:0}
+.tl i{position:absolute;left:50%;bottom:4px;width:7px;height:5px;margin-left:-3.5px;border-radius:50%;background:#F6F1E4;box-shadow:0 0 0 1px #3A2A18}
+.tlnums{display:grid;grid-template-columns:repeat(20,1fr);font:600 10px/1 var(--body);color:var(--muted)}
+.tlnums span{text-align:center}
+.tlnums span:nth-child(1){grid-column:1}.tlnums span:nth-child(2){grid-column:5}.tlnums span:nth-child(3){grid-column:10}.tlnums span:nth-child(4){grid-column:15}.tlnums span:nth-child(5){grid-column:20}
+.tlkey{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
+.tlkey span{display:inline-flex;align-items:center;gap:5px}
+.tlkey b{width:12px;height:10px;border-radius:3px;display:inline-block;background:var(--panel2);outline:1px solid var(--line)}
+.tlkey .sw2{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
+.tlkey .sw3{width:8px;height:8px;border-radius:50%;background:var(--accent);outline:1.5px solid #1A1405}
+.tlkey .sw4{width:9px;height:6px;border-radius:50%;background:#F6F1E4;outline:1px solid #3A2A18}
 .sline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
 .sline.bad{color:#FFB4A6}
 .sline .fnum{color:var(--ink);font-variant-numeric:tabular-nums}
@@ -410,6 +431,22 @@ function giveBall(m, p, f, pass){
   tidyCarry(m);
 }
 function removeIcon(m, id){ delete m.icons[id]; tidyCarry(m); if(ME.editing===id) ME.editing = null; }
+// The frames a path actually moves between: still before s (waiting) and after e (arrived).
+const samePt = (a,b) => Math.abs(a[0]-b[0]) < .05 && Math.abs(a[1]-b[1]) < .05;
+function moveWindow(ic){
+  const ks = keyList(ic); let i = 0, j = ks.length-1;
+  while(i < j && samePt(ic.keys[ks[i+1]], ic.keys[ks[0]])) i++;
+  while(j > i && samePt(ic.keys[ks[j-1]], ic.keys[ks[ks.length-1]])) j--;
+  const s = i===0 ? 0 : ks[i], e = j===ks.length-1 ? LAST : ks[j];
+  return {s: i===j ? 0 : s, e: i===j ? LAST : e, still: i===j};
+}
+// squeeze or stretch the run into frames s2..e2, keeping its shape and turning points
+function setMoveWindow(ic, s2, e2){
+  const {s, e} = moveWindow(ic), A = posAt(ic, s), B = posAt(ic, e);
+  const keys = {0:[...A], [s2]:[...A], [e2]:[...B], [LAST]:[...B]};
+  for(const k of keyList(ic)) if(k > s && k < e){ const nk = Math.round(s2 + (k-s)*(e2-s2)/(e-s)); if(nk > s2 && nk < e2) keys[nk] = [...ic.keys[k]]; }
+  ic.keys = keys;
+}
 function iconIds(m){ return Object.keys(m.icons).filter(k=>k!=='ball').sort((a,b)=>a-b).concat(m.icons.ball ? ['ball'] : []); }
 const moveColor = (m,id) => (m.icons[id] && m.icons[id].color) || defaultColor(id);
 
@@ -876,7 +913,7 @@ $('#pathsChip').addEventListener('click', () => { S.ui.paths = S.ui.paths===fals
 $('#edFit').addEventListener('click', () => { if(moveCtl.isFit()) zoomMove(); else { moveCtl.fit(); syncEdFit(); } });
 $('#edDone').addEventListener('click', () => { ME.editing = null; renderBanner(); renderMoveLayer(); });
 $('#edStraight').addEventListener('click', () => { straighten(ME.editing); });
-function straighten(id){ const ic = curMove().icons[id]; const ks = keyList(ic); ic.keys = {0: ic.keys[ks[0]], [LAST]: ic.keys[ks[ks.length-1]]}; save(); renderMoveLayer(); toast('Path straightened'); }
+function straighten(id){ const ic = curMove().icons[id], {s, e} = moveWindow(ic), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [LAST]:[...B]}; save(); renderMoveLayer(); toast('Path straightened'); }
 function startPathEdit(id){ stopPlay(); ME.editing = id; renderBanner(); renderMoveLayer(); const m = curMove(); const ic = m.icons[id]; }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
@@ -921,7 +958,8 @@ function showMoveIcon(id){
   const ks = keyList(ic).map(k=>k+1);
   const custom = ks.filter(k=>k!==1 && k!==FRAMES);
   openSheet(`<div class="det-head">${ball?miniBall(64):bigShirt(id, moveColor(m,id))}<div class="who"><div class="eyebrow">${ball?'Ball':'#'+id+' · '+posName(+id)}</div><h2>${ball?'Ball':p?esc(p.name):'Shirt '+id}</h2>
-    <div class="muted">${custom.length ? 'Custom path through frame'+(custom.length>1?'s ':' ')+custom.join(', ') : 'Straight line from frame 1 to frame 20'}</div></div></div>
+    <div class="muted" id="miSub">${ball ? (custom.length ? 'Custom path through frame'+(custom.length>1?'s ':' ')+custom.join(', ') : 'Straight line from frame 1 to frame 20') : pathSummary(ic)}</div></div></div>
+    ${ball?'':'<div class="field" id="mvBox"></div>'}
     ${ball?'':`<div class="field"><div class="field-label">Shirt colour in this move</div>${swatchRow(ic.color, defaultColor(id))}</div>`}
     ${ball ? '<div class="field" id="chainBox"></div>' : m.icons.ball ? `<div class="field"><div class="field-label">Ball</div>${carrierAt(m,f)===id ? `<p class="hint">Has the ball at frame ${f+1}.</p>` : `<button class="btn ghost" id="miGive">Ball to #${id} from frame ${f+1}</button>`}${passSelect()}</div>` : ''}
     <div class="row-btns"><button class="btn" id="miPath">Edit path</button><button class="btn ghost" id="miStraight"${custom.length?'':' disabled'}>Straighten</button></div>
@@ -930,12 +968,43 @@ function showMoveIcon(id){
     el => {
       if(!ball) wireSwatches(el, c => { ic.color = c; save(); renderMoveLayer(); });
       wirePassSelect(el);
-      if(ball) renderChain($('#chainBox', el), m);
+      if(ball) renderChain($('#chainBox', el), m); else renderMoveDetail($('#mvBox', el), m, id);
       const gb = $('#miGive', el); if(gb) gb.addEventListener('click', () => { giveBall(m, id, f, passLen()); save(); renderMoveLayer(); showMoveIcon(id); toast(`#${id} has the ball from frame ${f+1}`); });
       $('#miPath', el).addEventListener('click', () => { closeSheet(); startPathEdit(id); });
       $('#miStraight', el).addEventListener('click', () => { closeSheet(); straighten(id); });
       $('#miRemove', el).addEventListener('click', () => { removeIcon(m,id); save(); closeSheet(); renderEditor(); });
     });
+}
+function pathSummary(ic){
+  const {s, e, still} = moveWindow(ic), turns = keyList(ic).filter(k => k > s && k < e);
+  if(still) return 'Stands still for the whole move';
+  return (s ? `Still until frame ${s+1}, then runs` : 'Runs') + ` to frame ${e+1}` + (turns.length ? `, turning at frame${turns.length>1?'s':''} ${turns.map(k=>k+1).join(', ')}` : ' in a straight line');
+}
+function renderMoveDetail(box, m, id){
+  const ic = m.icons[id], {s, e, still} = moveWindow(ic), cf = Math.round(ME.frame);
+  const pts = [...Array(FRAMES)].map((_,k) => posAt(ic,k));
+  let dist = 0; for(let k=1;k<FRAMES;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
+  const turns = keyList(ic).filter(k => k > s && k < e);
+  const cells = pts.map((p,k) => { const mv = k>0 && !samePt(p, pts[k-1]), has = m.icons.ball && carrierAt(m,k)===id;
+    return `<button class="tl${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}" data-tf="${k}" aria-label="Frame ${k+1}${mv?', moving':', still'}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
+  box.innerHTML = `<div class="field-label">Movement</div>
+    <div class="tlwrap"><div class="tlgrid">${cells}</div><div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div></div>
+    <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2"></b>Running</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
+    ${still ? `<p class="hint">Doesn't move in this move. Drag the shirt on a later frame to give them a run.</p>` : `
+    <div class="sline">Stays still until frame ${stepper('ws:-1', s+1, 'Stays still until frame')}</div>
+    <div class="sline">Arrives at frame ${stepper('we:-1', e+1, 'Arrives at frame')}</div>
+    <p class="hint">Runs ${Math.round(dist)} m over ${e-s} frame${e-s===1?'':'s'} (frames ${s+1}–${e+1}). The run keeps its shape when you change these.</p>
+    ${turns.length ? `<div class="sline">Turning points: ${turns.map(k => `<button class="chip" data-tdel="${k}" aria-label="Remove turning point at frame ${k+1}">Frame ${k+1} ×</button>`).join('')}</div>` : ''}`}`;
+  const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic); };
+  // jumping frame changes the rest of the sheet (ball button, drag hint), so reopen it
+  $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tf; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
+  $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
+    const [kind, , d] = b.dataset.st.split(':'), dd = +d, w = moveWindow(ic);
+    if(kind==='ws') setMoveWindow(ic, clamp(w.s + dd, 0, w.e - 1), w.e);
+    else setMoveWindow(ic, w.s, clamp(w.e + dd, w.s + 1, LAST));
+    redraw();
+  }));
+  $$('[data-tdel]', box).forEach(b => b.addEventListener('click', () => { delete ic.keys[+b.dataset.tdel]; redraw(); }));
 }
 const passLen = () => S.ui.passLen ?? 3;
 function passSelect(){
@@ -973,20 +1042,32 @@ function renderChain(box, m){
     const fs = chainFrames(ch), n = ch.steps.length;
     html += `<div class="chain">` + ch.steps.map((st,i) => {
       const f = fs[i], last = i===n-1, loose = st.p==='', past = f > LAST, until = f + st.hold;
-      let h = `<div class="step${past?' warn':''}"><div class="step-top">${loose ? miniBall(30) : miniShirt(st.p, moveColor(m,st.p), 30)}<select data-sp="${i}" aria-label="Step ${i+1} player">${opts(st.p)}</select><button class="chip" data-sdel="${i}">Remove</button></div>`;
+      let h = `<div class="step${past?' warn':''}"><div class="step-top">${loose ? miniBall(30) : miniShirt(st.p, moveColor(m,st.p), 30)}<select data-sp="${i}" aria-label="Step ${i+1} player">${opts(st.p)}</select>`+
+        `<button class="sbtn" data-smv="${i}:-1" aria-label="Move earlier"${i?'':' disabled'}><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`+
+        `<button class="sbtn" data-smv="${i}:1" aria-label="Move later"${last?' disabled':''}><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`+
+        `<button class="sbtn del" data-sdel="${i}" aria-label="Remove step"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></div>`;
       h += `<div class="sline">${i ? `${loose ? 'Let go at' : 'Catches it at'} frame <b class="fnum">${f+1}</b>` : `${loose ? 'Loose from' : 'Has it from'} frame ${stepper('start:0', f+1, 'Start frame')}`}</div>`;
       if(past) h += `<div class="sline bad">This starts after frame ${FRAMES}. Shorten an earlier hold or pass.</div>`;
       else if(!last) h += `<div class="sline">${loose ? 'Loose for' : 'Holds it for'} ${stepper('hold:'+i, st.hold, 'Frames held')} frame${st.hold===1?'':'s'}</div><div class="sline">${loose ? 'until' : 'Passes at'} frame ${stepper('until:'+i, until+1, 'Until frame')}</div>`;
       else h += `<div class="sline">${loose ? 'Follows its own path to the end.' : 'Keeps it to the end of the move.'}</div>`;
       h += `</div>`;
-      if(!last) h += ch.steps[i+1].p==='' ? `<div class="pass-link">↓ lets go</div>` : `<div class="pass-link">↓ ${loose ? 'reaches the next player in' : 'pass takes'} ${stepper('pass:'+i, st.pass, 'Pass frames')} frame${st.pass===1?'':'s'}</div>`;
+      const ins = `<button class="chip ins" data-sins="${i}" aria-label="Insert a pass after step ${i+1}">+ Insert</button>`;
+      if(!last) h += ch.steps[i+1].p==='' ? `<div class="pass-link">↓ lets go ${ins}</div>` : `<div class="pass-link">↓ ${loose ? 'reaches the next player in' : 'pass takes'} ${stepper('pass:'+i, st.pass, 'Pass frames')} frame${st.pass===1?'':'s'} ${ins}</div>`;
       return h; }).join('') + `</div>`;
   }
   html += shirts.length ? `<div class="row-btns"><button class="btn ghost" id="chAdd">${ch ? 'Add pass' : 'Start: first player has the ball'}</button>${ch ? `<button class="btn ghost" id="chKick">Add kick / let go</button>` : ''}</div>` : `<p class="hint">Add shirts to the move first.</p>`;
   box.innerHTML = html;
 
   const commit = c => { setChain(m, c); save(); renderMoveLayer(); renderChain(box, m); };
-  const nextShirt = after => { if(!shirts.length) return ''; const i = shirts.indexOf(after); return shirts[(i+1) % shirts.length]; };
+  const nextShirt = (after, avoid) => { if(!shirts.length) return ''; const i = shirts.indexOf(after);
+    for(let k=1;k<=shirts.length;k++){ const p = shirts[(i+k) % shirts.length]; if(p!==avoid || shirts.length<3) return p; } return shirts[0]; };
+  // move a player (and how long they hold it) earlier or later; the pass times stay between the same cards
+  $$('[data-smv]', box).forEach(b => b.addEventListener('click', () => { const [i, d] = b.dataset.smv.split(':').map(Number), c = getChain(m), j = i + d;
+    if(j < 0 || j >= c.steps.length) return;
+    const A = c.steps[i], B = c.steps[j]; [A.p, B.p] = [B.p, A.p]; [A.hold, B.hold] = [B.hold, A.hold]; commit(c); }));
+  // insert a new pass between step i and step i+1; later catches move back by the new player's hold + pass
+  $$('[data-sins]', box).forEach(b => b.addEventListener('click', () => { const c = getChain(m), i = +b.dataset.sins, prev = c.steps[i], next = c.steps[i+1];
+    c.steps.splice(i+1, 0, {p: nextShirt(prev.p || '', next && next.p), hold: 2, pass: passLen()}); commit(c); }));
   $$('[data-sp]', box).forEach(sel => sel.addEventListener('change', () => { const c = getChain(m); c.steps[+sel.dataset.sp].p = sel.value; commit(c); }));
   $$('[data-sdel]', box).forEach(b => b.addEventListener('click', () => { const c = getChain(m), i = +b.dataset.sdel;
     if(i===0 && c.steps.length>1) c.start = chainFrames(c)[1];
