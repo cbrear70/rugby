@@ -407,8 +407,23 @@ function surname(name){ const p=String(name||'').trim().split(/\s+/); return p.l
 const KEY = 'rugbyTeamPicker.v1';
 let S = load();
 function load(){
-  try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; return d; } } } catch(e){}
+  try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; return pooledMoves(d); } } } catch(e){}
   return seed();
+}
+// Moves used to belong to one team; now every team shares one library in S.moves. Merge old per-team lists once.
+function pooledMoves(d){
+  if(!Array.isArray(d.moves)) d.moves = [];
+  for(const t of d.teams){
+    for(const m of t.moves || []){
+      if(t.localOnly && d.sync && d.sync.group) m.localOnly = true;
+      const same = d.moves.find(x => x.id === m.id);
+      if(same && JSON.stringify(same) === JSON.stringify(m)) continue;
+      if(same) m.id = Math.random().toString(36).slice(2,9) + Date.now().toString(36).slice(-4);
+      d.moves.push(m);
+    }
+    delete t.moves;
+  }
+  return d;
 }
 let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} syncDot(); }, 250); }
 const team = () => S.teams.find(t => t.id === S.currentTeamId) || S.teams[0];
@@ -423,7 +438,7 @@ function assign(t,n,pid){
   if(pid){ for(const k in t.selection){ if(+k!==+n && t.selection[k] && t.selection[k].playerId===pid){ t.selection[k].playerId = cur; } } }
   setSel(t,n,{playerId: pid||null});
 }
-function newTeam(name){ return {id:uid(), name:name||'New team', players:[], selection:{}, moves:[]}; }
+function newTeam(name){ return {id:uid(), name:name||'New team', players:[], selection:{}}; }
 
 function seed(){
   const names = [['Tom Hadley','Prop'],['Rhys Palmer','Hooker'],['Sam Okafor','Prop'],['Jack Whitmore','Lock'],['Luke Brennan','Lock'],['Owen Fisher','Flanker'],['Dan Mercer','Flanker'],['Callum Reid','Number 8, Flanker'],['Ben Ashworth','Scrum-half'],['Harry Lowe','Fly-half'],['Josh Keane','Wing'],['Matt Doyle','Centre'],['Will Carrick','Centre'],['Alfie Brooks','Wing'],['Ethan Price','Full-back, Wing'],['Joe Tanner','Hooker'],['Finn Gallagher','Prop'],['Nathan Cole','Prop'],['Ollie Stroud','Lock, Flanker'],['Kieran Walsh','Flanker'],['George Pym','Scrum-half'],['Aaron Vail','Fly-half, Centre'],['Liam Hext','Wing, Full-back'],['Max Rowley','Centre'],['Ryan Dunne','Prop'],['Isaac Burnell','Lock']];
@@ -431,10 +446,9 @@ function seed(){
   players[24].available = false; players[24].notes = 'Away this weekend';
   players[25].available = false; players[25].notes = 'Hamstring, back in two weeks';
   players[9].notes = 'Goal kicker';
-  const t = {id:uid(), name:'Example RFC (sample)', players, selection:{}, moves:[]};
+  const t = {id:uid(), name:'Example RFC (sample)', players, selection:{}};
   for(let n=1;n<=23;n++) t.selection[n] = {playerId: players[n-1].id};
-  t.moves.push(sampleMove());
-  return {v:1, currentTeamId:t.id, teams:[t], ui:{names:true, paths:true}};
+  return {v:1, currentTeamId:t.id, teams:[t], moves:[sampleMove()], ui:{names:true, paths:true}};
 }
 function sampleMove(){
   const m = {id:uid(), name:'Crash ball 12', desc:'Off first-phase ball: 9 to 10, 10 hits 12 running a hard line off his inside shoulder. 13 holds width to fix the outside defender.', icons:{}};
@@ -834,7 +848,7 @@ function renderSelect(){
 
 /* ---------- MOVES TAB ---------- */
 const ME = {moveId:null, frame:0, playing:false, editing:null, speed:1, loop:false, raf:0};
-const curMove = () => team().moves.find(m => m.id === ME.moveId);
+const curMove = () => S.moves.find(m => m.id === ME.moveId);
 function moveThumb(m){
   let xs=[], ys=[], paths='';
   for(const id of iconIds(m)){ const pts=[...Array(FRAMES)].map((_,k)=>iconPos(m,id,k)); pts.forEach(p=>{xs.push(p[0]); ys.push(p[1]);});
@@ -849,24 +863,26 @@ function renderMoves(){
   const edit = !!curMove();
   $('#movesList').hidden = edit; $('#moveEditor').hidden = !edit;
   if(edit){ renderEditor(); return; }
-  const t = team(), el = $('#movesList');
+  const mv = S.moves, el = $('#movesList');
   el.innerHTML = `<button class="btn wide" id="newMove">New move</button>
-    <div class="section-h"><span>Moves · ${t.moves.length}</span></div>
-    ${t.moves.length ? t.moves.map(m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length;
+    <div class="section-h"><span>Moves · ${mv.length}</span><span>${S.teams.length > 1 ? 'Shared by all teams' : ''}</span></div>
+    ${mv.length ? mv.map(m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length;
       return `<div class="mcard"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
         ${m.desc?`<div class="mdesc">${esc(m.desc)}</div>`:''}
-        <div class="mmeta">${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${FRAMES} frames</div>
-        <div class="mact"><button class="chip" data-share="${m.id}">Share</button><button class="chip" data-dup="${m.id}">Duplicate</button><button class="chip" data-del="${m.id}">Delete</button></div>
+        <div class="mmeta">${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${FRAMES} frames${syncing() && m.localOnly ? ' · this phone only' : ''}</div>
+        <div class="mact"><button class="chip" data-share="${m.id}">Share</button>${syncing() && m.localOnly ? `<button class="chip" data-togroup="${m.id}">Share with my group</button>` : ''}${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another group</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button><button class="chip" data-del="${m.id}">Delete</button></div>
       </div></div>`; }).join('') : `<div class="empty">No moves yet. Tap New move, pick the shirts involved, then drag each one to its start and finish.</div>`}`;
   $('#newMove').addEventListener('click', () => {
-    const m = {id:uid(), name:'New move', desc:'', icons:{}}; t.moves.unshift(m); save();
+    const m = {id:uid(), name:'New move', desc:'', icons:{}}; mv.unshift(m); save();
     openMove(m.id); pickPlayers();
   });
   $$('[data-open]', el).forEach(b => b.addEventListener('click', () => openMove(b.dataset.open)));
   $$('[data-share]', el).forEach(b => b.addEventListener('click', () => openShare({kind:'move', moveId:b.dataset.share})));
-  $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { const m = clone(t.moves.find(x=>x.id===b.dataset.dup)); m.id = uid(); m.name += ' (copy)'; t.moves.splice(t.moves.findIndex(x=>x.id===b.dataset.dup)+1, 0, m); save(); renderMoves(); toast('Move duplicated'); }));
-  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = t.moves.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', 'This move and all its frames will be deleted from this team.', 'Delete move', () => { t.moves = t.moves.filter(x=>x!==m); save(); renderMoves(); toast('Move deleted'); }); }));
+  $$('[data-send]', el).forEach(b => b.addEventListener('click', () => sendToGroup(mv.find(x => x.id===b.dataset.send))));
+  $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const m = mv.find(x => x.id===b.dataset.togroup); delete m.localOnly; save(); renderMoves(); toast(m.name+' will go to the group when you sync'); }));
+  $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { const m = clone(mv.find(x=>x.id===b.dataset.dup)); m.id = uid(); m.name += ' (copy)'; mv.splice(mv.findIndex(x=>x.id===b.dataset.dup)+1, 0, m); save(); renderMoves(); toast('Move duplicated'); }));
+  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = mv.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() ? 'This move will be deleted for every team, and from everyone in the group when you sync.' : 'This move will be deleted for every team on this phone.', 'Delete move', () => { S.moves = S.moves.filter(x=>x!==m); save(); renderMoves(); toast('Move deleted'); }); }));
 }
 function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
 function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<FRAMES;k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
@@ -1021,10 +1037,12 @@ $('#edTitle').addEventListener('click', () => {
     <div class="field"><label class="field-label" for="mvName">Name</label><input id="mvName" type="text" value="${esc(m.name)}" placeholder="e.g. Loop 10-12, Lineout 4-man drive"></div>
     <div class="field"><label class="field-label" for="mvDesc">Description</label><textarea id="mvDesc" placeholder="Calls, triggers, who does what">${esc(m.desc)}</textarea></div>
     <div class="row-btns"><button class="btn" id="mvSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
-    <button class="btn ghost" id="mvShare">Share this move</button>`,
+    <button class="btn ghost" id="mvShare">Share this move</button>
+    ${fbOn() ? '<button class="btn ghost" id="mvSend">Send to another group</button>' : ''}`,
     el => {
       $('#mvSave', el).addEventListener('click', () => { m.name = $('#mvName', el).value.trim() || 'Untitled move'; m.desc = $('#mvDesc', el).value.trim(); save(); closeSheet(); renderEditor(); });
       $('#mvShare', el).addEventListener('click', () => openShare({kind:'move', moveId:m.id}));
+      const sg = $('#mvSend', el); if(sg) sg.addEventListener('click', () => sendToGroup(m));
     });
 });
 $('#edPlayers').addEventListener('click', () => pickPlayers());
@@ -1231,7 +1249,7 @@ $('#teamBtn').addEventListener('click', () => {
   const t = team();
   openSheet(`<div class="eyebrow">Teams on this phone</div><h2>Switch team</h2>
     ${fbOn() ? (syncing() ? `<button class="btn ghost" id="tmGroup">Group: ${esc(S.sync.groupName)} · sync, invite, leave</button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
-    <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${x.players.length} players, ${x.moves.length} moves</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
+    <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${x.players.length} players</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
 `,
@@ -1265,27 +1283,27 @@ async function decodeCode(text){
 }
 function buildPayload(kind, moveId){
   const t = team();
-  if(kind==='team') return {app:APP_ID, v:1, kind:'team', data: clone(t)};
+  if(kind==='team') return {app:APP_ID, v:1, kind:'team', data: Object.assign(clone(t), {localOnly: undefined, moves: S.moves.map(m => Object.assign(clone(m), {localOnly: undefined}))})};
   if(kind==='lineup'){
     const sel = {}, players = [];
     for(const n of allShirts(t)){ const s = t.selection[n]; if(!s) continue; const p = playerAt(t,n); sel[n] = {name: p?p.name:null, color:s.color||null, x:s.x, y:s.y}; if(p) players.push({name:p.name, pos:p.pos||''}); }
     return {app:APP_ID, v:1, kind:'lineup', data:{team:t.name, size:teamSize(t), bench:benchSize(t), selection:sel, players}};
   }
-  const m = t.moves.find(x=>x.id===moveId);
+  const m = S.moves.find(x=>x.id===moveId);
   const names = {}; for(const id of iconIds(m)) if(id!=='ball'){ const p = playerAt(t,+id); if(p) names[id] = p.name; }
-  return {app:APP_ID, v:1, kind:'move', data: Object.assign(clone(m), {fromTeam:t.name, names})};
+  return {app:APP_ID, v:1, kind:'move', data: Object.assign(clone(m), {fromTeam:t.name, names, localOnly: undefined})};
 }
 const linkBase = () => location.origin + location.pathname;
 const canLink = () => /^https?:$/.test(location.protocol) && !INFRAME;
 const canShare = () => !INFRAME && !!navigator.share;
 function openShare(pre){
   const t = team(); pre = pre || {kind:'team'};
-  const moveSel = t.moves.length ? `<select id="shMove" aria-label="Move to share">${t.moves.map(m=>`<option value="${m.id}"${m.id===pre.moveId?' selected':''}>${esc(m.name)}</option>`).join('')}</select>` : '';
+  const moveSel = S.moves.length ? `<select id="shMove" aria-label="Move to share">${S.moves.map(m=>`<option value="${m.id}"${m.id===pre.moveId?' selected':''}>${esc(m.name)}</option>`).join('')}</select>` : '';
   openSheet(`<div class="eyebrow">Send to another coach</div><h2>Share</h2>
     <div class="opts">
-      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${t.players.length}, the ${shirtTotal(t)} shirts, and ${t.moves.length} move${t.moves.length===1?'':'s'}</small></span></label>
+      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${t.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} move${S.moves.length===1?'':'s'}</small></span></label>
       <label class="opt"><input type="radio" name="shk" value="lineup"${pre.kind==='lineup'?' checked':''}><span><b>Team sheet only</b><small>Who is wearing each shirt, colours and positions</small></span></label>
-      ${t.moves.length?`<label class="opt"><input type="radio" name="shk" value="move"${pre.kind==='move'?' checked':''}><span style="flex:1;display:flex;flex-direction:column;gap:6px"><b>One move</b>${moveSel}</span></label>`:''}
+      ${S.moves.length?`<label class="opt"><input type="radio" name="shk" value="move"${pre.kind==='move'?' checked':''}><span style="flex:1;display:flex;flex-direction:column;gap:6px"><b>One move</b>${moveSel}</span></label>`:''}
     </div>
     <div class="row-btns">
       ${canShare()?'<button class="btn" id="shLink">Send link</button><button class="btn ghost" id="shFile">Send file</button>':''}
@@ -1297,7 +1315,7 @@ function openShare(pre){
     el => {
       const kind = () => (el.querySelector('input[name=shk]:checked')||{}).value || 'team';
       const payload = () => buildPayload(kind(), ($('#shMove', el)||{}).value);
-      const label = () => { const k = kind(); return k==='team' ? t.name : k==='lineup' ? t.name+' team sheet' : 'Move: '+(t.moves.find(m=>m.id===($('#shMove', el)||{}).value)||{}).name; };
+      const label = () => { const k = kind(); return k==='team' ? t.name : k==='lineup' ? t.name+' team sheet' : 'Move: '+(S.moves.find(m=>m.id===($('#shMove', el)||{}).value)||{}).name; };
       const showCode = code => { const ta = $('#shCode', el); ta.value = code; ta.hidden = false; ta.focus(); ta.select(); };
       const copy = async (text, ok) => { try { await navigator.clipboard.writeText(text); toast(ok); } catch(e){ showCode(text); toast('Select the text and copy it'); } };
       const sm = $('#shMove', el); if(sm) sm.addEventListener('change', () => { const r = el.querySelector('input[value=move]'); if(r) r.checked = true; });
@@ -1333,9 +1351,10 @@ function handleImport(pl){
     // imports keep the sender's id so the next share of the same team lines up with this copy.
     // Copies made before that (new id, maybe "(shared)" on the name) are matched by name instead.
     const existing = S.teams.find(x=>x.id===d.id) || S.teams.find(x=>baseName(x.name)===baseName(d.name));
-    const addNew = () => { const nt = clone(d); if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); };
-    const replace = () => { const i = S.teams.indexOf(existing); S.teams[i] = clone(d); S.currentTeamId = d.id; done('Team updated'); };
-    openSheet(`<div class="eyebrow">Import team</div><h2>${esc(d.name)}</h2><p class="muted">${d.players.length} players, ${Object.values(d.selection||{}).filter(s=>s&&s.playerId).length} shirts picked, ${d.moves.length} moves.</p>
+    const takeMoves = () => { for(const m of d.moves || []){ const i = S.moves.findIndex(x => x.id===m.id); if(i>=0) S.moves[i] = clone(m); else S.moves.push(clone(m)); } };
+    const addNew = () => { takeMoves(); const nt = clone(d); delete nt.moves; if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); };
+    const replace = () => { takeMoves(); const i = S.teams.indexOf(existing), nt = clone(d); delete nt.moves; S.teams[i] = nt; S.currentTeamId = d.id; done('Team updated'); };
+    openSheet(`<div class="eyebrow">Import team</div><h2>${esc(d.name)}</h2><p class="muted">${d.players.length} players, ${Object.values(d.selection||{}).filter(s=>s&&s.playerId).length} shirts picked, ${(d.moves||[]).length} moves.</p>
       ${existing?`<p class="hint">Replacing swaps your copy of ${esc(existing.name)} (squad, team sheet and moves) for this one.</p>`:''}
       <div class="row-btns">${existing?`<button class="btn" id="ipRep">Replace ${existing.id===d.id?'my copy':esc(existing.name)}</button>`:''}<button class="btn ${existing?'ghost':''}" id="ipNew">Add as new team</button></div><button class="btn ghost" data-close>Cancel</button>`,
       el => { $('#ipNew', el).addEventListener('click', addNew); const r = $('#ipRep', el); if(r) r.addEventListener('click', replace); });
@@ -1353,19 +1372,19 @@ function handleImport(pl){
         $('#ipNew', el).addEventListener('click', () => { const nt = newTeam(d.team + ' (shared)'); apply(nt); S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); });
       });
   } else if(pl.kind==='move'){
-    const old = t.moves.find(x=>x.id===d.id) || t.moves.find(x=>baseName(x.name)===baseName(d.name));
+    const mv = S.moves, old = mv.find(x=>x.id===d.id) || mv.find(x=>baseName(x.name)===baseName(d.name));
     openSheet(`<div class="eyebrow">Import move${d.fromTeam?' from '+esc(d.fromTeam):''}</div><h2>${esc(d.name)}</h2>${d.desc?`<p class="muted">${esc(d.desc)}</p>`:''}
       <p class="hint">Shirts follow the numbers in your own team, so #10 will show your fly-half.</p>
-      ${old?`<p class="hint">You already have ${esc(old.name)} in ${esc(t.name)}. Replace it with this version, or keep both.</p>`:''}
-      <div class="row-btns">${old?`<button class="btn" id="ipRep">Replace ${esc(old.name)}</button>`:''}<button class="btn${old?' ghost':''}" id="ipAdd">${old?'Keep both':'Add to '+esc(t.name)}</button><button class="btn ghost" data-close>Cancel</button></div>`,
+      ${old?`<p class="hint">You already have ${esc(old.name)}. Replace it with this version, or keep both.</p>`:''}
+      <div class="row-btns">${old?`<button class="btn" id="ipRep">Replace ${esc(old.name)}</button>`:''}<button class="btn${old?' ghost':''}" id="ipAdd">${old?'Keep both':'Add move'}</button><button class="btn ghost" data-close>Cancel</button></div>`,
       el => {
         const fresh = () => { const m = clone(d); delete m.fromTeam; delete m.names; return m; };
         $('#ipAdd', el).addEventListener('click', () => {
-          const m = fresh(); if(t.moves.some(x=>x.id===m.id)) m.id = uid(); if(t.moves.some(x=>x.name===m.name)) m.name += ' (shared)';
-          t.moves.unshift(m); save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Move added');
+          const m = fresh(); if(mv.some(x=>x.id===m.id)) m.id = uid(); if(mv.some(x=>x.name===m.name)) m.name += ' (shared)';
+          mv.unshift(m); save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Move added');
         });
         const r = $('#ipRep', el); if(r) r.addEventListener('click', () => {
-          const m = fresh(); t.moves[t.moves.indexOf(old)] = m; save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Move updated');
+          const m = fresh(); mv[mv.indexOf(old)] = m; save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Move updated');
         });
       });
   } else throw new Error('Unknown share type.');
@@ -1427,29 +1446,31 @@ async function listItems(code){
   } while(page);
   return out;
 }
+// Items: 't_<teamId>' is a team without moves; 'mv_<moveId>' is a move in the group's shared library.
+// 'm_<teamId>_<moveId>' is the old per-team move format: never pulled, and retired (marked deleted) by whoever synced it.
 function localItems(){
   const out = {};
   for(const t of S.teams){ if(t.localOnly) continue;
     const core = Object.assign({}, t); delete core.moves; delete core.localOnly;
     out['t_'+t.id] = {kind:'team', teamId:t.id, json: JSON.stringify(core)};
-    for(const m of t.moves) out['m_'+t.id+'_'+m.id] = {kind:'move', teamId:t.id, json: JSON.stringify(m)};
   }
+  for(const m of S.moves){ if(m.localOnly) continue; const mm = Object.assign({}, m); delete mm.localOnly; out['mv_'+m.id] = {kind:'move', teamId:'', json: JSON.stringify(mm)}; }
   return out;
 }
-const itemTeam = id => id.startsWith('t_') ? id.slice(2) : id.slice(2, id.indexOf('_', 2));
+const itemTeam = id => id.startsWith('t_') ? id.slice(2) : id.startsWith('m_') ? id.slice(2, id.indexOf('_', 2)) : '';
 function pendingChanges(){
   if(!syncing()) return 0;
-  const base = S.sync.base || {}, loc = localItems(), localOnly = new Set(S.teams.filter(t => t.localOnly).map(t => t.id)); let n = 0;
+  const base = S.sync.base || {}, loc = localItems(), localOnly = new Set(S.teams.filter(t => t.localOnly).map(t => 't_'+t.id).concat(S.moves.filter(m => m.localOnly).map(m => 'mv_'+m.id))); let n = 0;
   for(const id in loc) if(hashStr(loc[id].json) !== base[id]) n++;
-  for(const id in base) if(!loc[id] && !localOnly.has(itemTeam(id))) n++;
+  for(const id in base) if(!loc[id] && !id.startsWith('m_') && !localOnly.has(id)) n++;
   return n;
 }
 
 // choices: {teamId: 'mine'|'theirs'} for teams changed on both sides. Returns {needs:[...]} when a choice is required.
 async function syncNow(choices = {}, retry = true){
   const z = S.sync, code = z.group, remote = await listItems(code), local = localItems(), base = z.base || {};
-  const localOnly = new Set(S.teams.filter(t => t.localOnly).map(t => t.id));
-  const ids = [...new Set([...Object.keys(local), ...Object.keys(remote), ...Object.keys(base)])].filter(id => !localOnly.has(itemTeam(id)));
+  const localOnly = new Set(S.teams.filter(t => t.localOnly).map(t => 't_'+t.id).concat(S.moves.filter(m => m.localOnly).map(m => 'mv_'+m.id)));
+  const ids = [...new Set([...Object.keys(local), ...Object.keys(remote), ...Object.keys(base)])].filter(id => !localOnly.has(id));
   const live = id => remote[id] && !remote[id].deleted ? remote[id] : null;
   const decide = id => {
     const L = local[id], R = live(id), B = base[id] || null;
@@ -1461,28 +1482,20 @@ async function syncNow(choices = {}, retry = true){
     if(!L) return 'pull'; if(!R) return 'push'; // edited on one side, deleted on the other: keep the edit
     return 'both';
   };
-  const push = [], pull = [], copies = [], needs = [], newBase = {};
+  const push = [], pull = [], copies = [], needs = [], newBase = {}, legacy = [];
   const keep = id => { if(local[id]) newBase[id] = hashStr(local[id].json); };
-  // teams first: a team brought back keeps all its moves; a deleted team takes its moves with it
-  const keepTeams = new Set(), dropTeams = new Set();
-  for(const id of ids.filter(i => i.startsWith('t_'))){
-    let d = decide(id); const tid = itemTeam(id);
-    if(d==='both'){ const c = choices[tid]; if(!c){ needs.push({teamId:tid, name: JSON.parse(local[id].json).name, by: remote[id].by}); continue; } d = c==='mine' ? 'push' : 'pull'; }
-    if(d==='same'){ keep(id); continue; }
-    if(d==='push' && remote[id] && remote[id].deleted) keepTeams.add(tid);
-    if((d==='push' && !local[id]) || (d==='pull' && !live(id))) dropTeams.add(tid);
-    (d==='push' ? push : pull).push(id);
-  }
-  if(needs.length) return {needs};
-  for(const id of ids.filter(i => i.startsWith('m_'))){
-    const tid = itemTeam(id);
-    if(dropTeams.has(tid)){ if(local['t_'+tid]) pull.push(id); else if(live(id)) push.push(id); continue; }
+  for(const id of ids){
+    // old per-team format: take in any move not seen before (it goes back up as mv_), then retire it on a later sync
+    if(id.startsWith('m_')){ if(base[id] && live(id)) push.push(id); else if(live(id)) legacy.push(id); continue; }
     let d = decide(id);
-    if(keepTeams.has(tid) && local[id]) d = 'push';
+    if(d==='both' && id.startsWith('t_')){ const tid = itemTeam(id), c = choices[tid];
+      if(!c){ needs.push({teamId:tid, name: JSON.parse(local[id].json).name, by: remote[id].by}); continue; }
+      d = c==='mine' ? 'push' : 'pull'; }
     if(d==='same'){ keep(id); continue; }
     if(d==='both'){ pull.push(id); copies.push(id); continue; }
     (d==='push' ? push : pull).push(id);
   }
+  if(needs.length) return {needs};
   // each write carries a precondition, so if someone syncs in between this run starts again instead of overwriting them
   const who = z.who || '', now = String(Date.now()), writes = [];
   const write = (id, item) => {
@@ -1493,31 +1506,125 @@ async function syncNow(choices = {}, retry = true){
   for(const id of push){ write(id, local[id]); keep(id); }
   // a move changed on both sides: theirs keeps the name, ours is saved alongside as "(my version)" so nothing is lost
   const copyMoves = [];
-  for(const id of copies){ const tid = itemTeam(id), m = JSON.parse(local[id].json); m.id = uid(); m.name += ' (my version)';
-    const nid = 'm_'+tid+'_'+m.id, item = {kind:'move', teamId:tid, json: JSON.stringify(m)};
-    write(nid, item); newBase[nid] = hashStr(item.json); copyMoves.push({tid, m}); }
+  for(const id of copies){ const m = JSON.parse(local[id].json); m.id = uid(); m.name += ' (my version)';
+    const nid = 'mv_'+m.id, item = {kind:'move', teamId:'', json: JSON.stringify(m)};
+    write(nid, item); newBase[nid] = hashStr(item.json); copyMoves.push(m); }
   try { for(let i=0;i<writes.length;i+=400) await fb('POST', ':commit', {writes: writes.slice(i, i+400)}); }
   catch(e){ if(retry && (e.status===409 || e.status===400 || /FAILED_PRECONDITION|ABORTED/.test(e.message))) return syncNow(choices, false); throw e; }
-  // apply what came from the group: teams, then their moves
+  // apply what came from the group
   let got = 0;
-  for(const id of pull.filter(i => i.startsWith('t_'))){
-    const R = live(id), tid = itemTeam(id), i = S.teams.findIndex(t => t.id===tid);
-    if(!R){ if(i>=0){ S.teams.splice(i,1); got++; } continue; }
-    const t = Object.assign({}, JSON.parse(R.json), {moves: i>=0 ? S.teams[i].moves : []});
-    if(i>=0) S.teams[i] = t; else S.teams.push(t); newBase[id] = hashStr(R.json); got++;
+  for(const id of pull){
+    const R = live(id);
+    if(id.startsWith('t_')){
+      const tid = itemTeam(id), i = S.teams.findIndex(t => t.id===tid);
+      if(!R){ if(i>=0){ S.teams.splice(i,1); got++; } continue; }
+      if(i>=0) S.teams[i] = JSON.parse(R.json); else S.teams.push(JSON.parse(R.json));
+    } else {
+      const mid = id.slice(3), i = S.moves.findIndex(m => m.id===mid);
+      if(!R){ if(i>=0){ S.moves.splice(i,1); got++; } continue; }
+      if(i>=0) S.moves[i] = JSON.parse(R.json); else S.moves.unshift(JSON.parse(R.json));
+    }
+    newBase[id] = hashStr(R.json); got++;
   }
-  for(const id of pull.filter(i => i.startsWith('m_'))){
-    const R = live(id), tid = itemTeam(id), t = S.teams.find(x => x.id===tid); if(!t) continue;
-    const mid = id.slice(3 + tid.length), i = t.moves.findIndex(m => m.id===mid);
-    if(!R){ if(i>=0){ t.moves.splice(i,1); got++; } continue; }
-    const m = JSON.parse(R.json); if(i>=0) t.moves[i] = m; else t.moves.unshift(m); newBase[id] = hashStr(R.json); got++;
-  }
-  for(const {tid, m} of copyMoves){ const t = S.teams.find(x => x.id===tid); if(t) t.moves.unshift(m); }
+  for(const id of legacy){ const m = JSON.parse(live(id).json); if(!S.moves.some(x => x.id===m.id)){ S.moves.push(m); got++; } newBase[id] = hashStr(live(id).json); }
+  S.moves.unshift(...copyMoves);
   if(!S.teams.length) S.teams.push(Object.assign(newTeam('My team'), {localOnly:true}));
   if(!S.teams.some(t => t.id===S.currentTeamId)) S.currentTeamId = S.teams[0].id;
-  if(ME.moveId && !team().moves.some(m => m.id===ME.moveId)){ ME.moveId = null; ME.editing = null; }
+  if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; }
   z.base = newBase; z.lastSync = Date.now(); save();
   return {sent: push.length + copyMoves.length, got, copies: copyMoves.length};
+}
+
+/* Sending moves between groups. Each group has two codes: the private join code (full access) and a public send code
+   that only lets others drop a move into the group's inbox. mailboxes/<send code> holds {group: join code}; only the
+   security rules can read it. Phones register under groups/<code>/members/<uid>, and only members can read the inbox.
+   The first member to sync sets up the send code, so the admin only ever creates the group itself. */
+const CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const newCode = () => [...crypto.getRandomValues(new Uint8Array(10))].map(x => CODE_ABC[x % 32]).join('');
+const tokenUid = tok => { try { return JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).user_id; } catch(e){ return ''; } };
+const alreadyThere = e => /FAILED_PRECONDITION|ALREADY_EXISTS|exists/i.test(e.message || '');
+async function ensureMailbox(){
+  const z = S.sync, uid = tokenUid(await fbToken());
+  if(z.memberOf !== z.group + ':' + uid){
+    try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}); }
+    catch(e){ if(!alreadyThere(e)) throw e; }
+    z.memberOf = z.group + ':' + uid; save();
+  }
+  if(z.mailbox) return z.mailbox;
+  const read = async () => { const g = await fb('GET', '/groups/'+z.group); return g && g.fields.mailbox ? g.fields.mailbox.stringValue : ''; };
+  let box = await read();
+  if(!box){
+    box = newCode();
+    try { await fb('PATCH', `/groups/${z.group}?updateMask.fieldPaths=mailbox&currentDocument.exists=true`, {fields:{mailbox:{stringValue: box}}}); }
+    catch(e){ box = await read(); if(!box) throw e; } // another member got there first
+  }
+  try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('mailboxes/'+box), fields:{group:{stringValue: z.group}}}, currentDocument:{exists:false}}]}); }
+  catch(e){ if(!alreadyThere(e) && e.status!==403) throw e; }
+  z.mailbox = box; save();
+  return box;
+}
+async function checkInbox(){
+  if(!syncing() || INBOX_OPEN) return;
+  const box = await ensureMailbox(), j = await fb('GET', `/mailboxes/${box}/items?pageSize=50`) || {};
+  const items = (j.documents||[]).map(d => { const f = d.fields || {}; return {id: d.name.split('/').pop(), json: f.json ? f.json.stringValue : '', fromGroup: f.fromGroup ? f.fromGroup.stringValue : '', fromWho: f.fromWho ? f.fromWho.stringValue : ''}; })
+    .filter(it => { try { JSON.parse(it.json).icons; return true; } catch(e){ return false; } });
+  if(items.length) showInbox(items);
+}
+let INBOX_OPEN = false;
+function showInbox(items){
+  INBOX_OPEN = true; let accepted = 0;
+  const card = it => { const m = JSON.parse(it.json);
+    return `<div class="mcard" data-in="${esc(it.id)}"><div class="thumb">${moveThumb(m)}</div><div class="mbody">
+      <div class="mname">${esc(m.name)}</div>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
+      <div class="mmeta">From ${esc(it.fromWho || 'a coach')}${it.fromGroup ? ', '+esc(it.fromGroup) : ''}</div>
+      <div class="mact"><button class="chip on" data-acc="${esc(it.id)}">Accept</button><button class="chip" data-dec="${esc(it.id)}">Decline</button></div></div></div>`; };
+  const finish = () => { INBOX_OPEN = false; if(accepted){ renderAll(); runSync(); } };
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Moves sent to your group</h2>
+    <p class="muted">Accepted moves are added for every team in your group. Declined moves are thrown away.</p>
+    <div id="inList">${items.map(card).join('')}</div>
+    <button class="btn ghost wide" data-close>Decide later</button>`,
+    el => {
+      const done = async (id, accept) => {
+        const it = items.find(x => x.id === id), row = el.querySelector(`[data-in="${CSS.escape(id)}"]`);
+        $$('button', row).forEach(b => b.disabled = true);
+        try { await fb('DELETE', `/mailboxes/${S.sync.mailbox}/items/${id}`); }
+        catch(e){ if(e.status !== 404){ toast(niceErr(e)); $$('button', row).forEach(b => b.disabled = false); return; } }
+        if(accept){
+          const m = JSON.parse(it.json); if(S.moves.some(x => x.id === m.id)) m.id = uid();
+          if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another group'})`;
+          S.moves.unshift(m); save(); accepted++;
+        }
+        row.remove(); toast(accept ? 'Move added' : 'Move declined');
+        if(!$('#inList', el).children.length) closeSheet();
+      };
+      $$('[data-acc]', el).forEach(b => b.addEventListener('click', () => done(b.dataset.acc, true)));
+      $$('[data-dec]', el).forEach(b => b.addEventListener('click', () => done(b.dataset.dec, false)));
+    }, finish);
+}
+function sendToGroup(m){
+  const recent = (S.ui.sendTo || []).slice(0, 4);
+  openSheet(`<div class="eyebrow">Send to another group</div><h2>${esc(m.name)}</h2>
+    <p class="muted">Enter the other group's <b>send code</b>. They are asked to accept the move the next time one of their coaches opens the app.</p>
+    <div class="field"><label class="field-label" for="sgCode">Their send code</label><input id="sgCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
+    ${recent.length ? `<div class="mact">${recent.map(c => `<button class="chip" data-rc="${c}">${fmtCode(c)}</button>`).join('')}</div>` : ''}
+    <div class="row-btns"><button class="btn" id="sgGo">Send move</button><button class="btn ghost" data-close>Cancel</button></div>
+    <p class="hint" id="sgErr" role="alert"></p>`,
+    el => {
+      $$('[data-rc]', el).forEach(b => b.addEventListener('click', () => { $('#sgCode', el).value = fmtCode(b.dataset.rc); }));
+      $('#sgGo', el).addEventListener('click', async () => {
+        const code = normCode($('#sgCode', el).value), err = t => { $('#sgErr', el).textContent = t; };
+        if(code.length !== 10) return err('Enter the 10-character send code.');
+        if(syncing() && code === S.sync.mailbox) return err('That is your own group’s send code.');
+        if(syncing() && code === S.sync.group) return err('That is your group’s join code. Ask the other group for their send code.');
+        $('#sgGo', el).disabled = true; err('Sending…');
+        const z = S.sync || {}, fields = {json:{stringValue: JSON.stringify(Object.assign({}, m, {localOnly: undefined}))}, fromGroup:{stringValue: z.groupName || ''}, fromWho:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}};
+        try {
+          await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`mailboxes/${code}/items/${uid()}`), fields}, currentDocument:{exists:false}}]});
+          S.ui.sendTo = [code].concat((S.ui.sendTo || []).filter(c => c !== code)).slice(0, 6); save();
+          closeSheet(); toast('Move sent. They will be asked to accept it.');
+        } catch(e){ $('#sgGo', el).disabled = false; err(e.status===403 ? 'No group has that send code. Check it with the other group.' : niceErr(e)); }
+      });
+    });
 }
 
 let SYNCING = false;
@@ -1528,6 +1635,7 @@ async function runSync(choices){
     if(r.needs){ SYNCING = false; askTeamConflicts(r.needs, choices || {}); return; }
     stopPlay(); renderAll();
     toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} move${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
+    checkInbox().catch(() => {});
   } catch(e){
     // the admin removed the group: say so rather than showing a permissions error
     let gone = false; if(e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
@@ -1582,32 +1690,46 @@ function showGate(canClose){
   const c = $('#gtClose', g); if(c) c.addEventListener('click', () => { g.hidden = true; });
 }
 // On joining, choose which of this phone's teams go to the group. Samples, and names the group already has, start unticked.
+const isSampleMove = m => m.name === 'Crash ball 12' && /^Off first-phase ball: 9 to 10/.test(m.desc || '');
 async function chooseUploads(){
   let remote = {}; try { remote = await listItems(S.sync.group); } catch(e){}
-  const groupNames = new Set(Object.values(remote).filter(r => r.kind==='team' && !r.deleted).map(r => baseName(JSON.parse(r.json).name)));
-  const mine = S.teams.filter(t => !remote['t_'+t.id]);
-  if(!mine.length){ runSync(); return; }
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share your teams?</h2>
-    <p class="muted">Ticked teams go to the group when you sync. Unticked teams stay on this phone only, and you can share them later from the team menu.</p>
-    <div class="opts">${mine.map(t => { const dup = groupNames.has(baseName(t.name)), sample = /\(sample\)/i.test(t.name);
-      return `<label class="opt"><input type="checkbox" data-up="${t.id}"${dup||sample?'':' checked'}><span><b>${esc(t.name)}</b><small>${t.players.length} players, ${t.moves.length} moves${dup?' · the group already has a team with this name':''}${sample?' · sample data':''}</small></span></label>`; }).join('')}</div>
+  const live = Object.values(remote).filter(r => !r.deleted && r.json), names = kind => new Set(live.filter(r => r.kind===kind).map(r => baseName(JSON.parse(r.json).name)));
+  const teamNames = names('team'), moveNames = names('move');
+  const inGroup = id => remote[id] && !remote[id].deleted;
+  const teams = S.teams.filter(t => !inGroup('t_'+t.id)), moves = S.moves.filter(m => !inGroup('mv_'+m.id));
+  if(!teams.length && !moves.length){ runSync(); return; }
+  const opt = (kind, id, name, info, dup, sample) => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · the group already has one with this name':''}${sample?' · sample data':''}</small></span></label>`;
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share with the group?</h2>
+    <p class="muted">Ticked items go to the group when you sync. Unticked ones stay on this phone only; you can share them later.</p>
+    ${teams.length ? `<div class="field-label">Teams</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, t.players.length+' players', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
+    ${moves.length ? `<div class="field-label">Moves</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
     <button class="btn wide" id="upGo">Sync now</button>`,
-    el => $('#upGo', el).addEventListener('click', () => { $$('[data-up]', el).forEach(c => { const t = S.teams.find(x => x.id===c.dataset.up); if(t) t.localOnly = !c.checked; }); save(); closeSheet(); runSync(); }));
+    el => $('#upGo', el).addEventListener('click', () => {
+      $$('[data-up]', el).forEach(c => { const [k, id] = c.dataset.up.split(':'), x = (k==='t' ? S.teams : S.moves).find(y => y.id===id); if(x) x.localOnly = !c.checked; });
+      save(); closeSheet(); runSync(); }));
 }
 function showGroup(){
   const z = S.sync, n = pendingChanges(), link = linkBase() + '#join=' + fmtCode(z.group);
   openSheet(`<div class="eyebrow">Your group</div><h2>${esc(z.groupName)}</h2>
-    <div class="field"><div class="field-label">Group code</div><div class="gcode">${fmtCode(z.group)}</div></div>
+    <div class="field"><div class="field-label">Join code · only for your own coaches</div><div class="gcode">${fmtCode(z.group)}</div></div>
+    <div class="field"><div class="field-label">Send code · give this to other groups</div><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div>
+      <p class="hint">Other groups use it to send you moves. It can't be used to see or change anything in your group.</p></div>
     <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
-    <div class="row-btns"><button class="btn" id="gpSync">Sync now</button><button class="btn ghost" id="gpInvite">Invite a coach</button></div>
+    <div class="row-btns"><button class="btn" id="gpSync">Sync now</button><button class="btn ghost" id="gpInvite">Invite a coach</button><button class="btn ghost" id="gpSend">Share send code</button></div>
     <div class="field"><label class="field-label" for="gpWho">Your name in the group</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
     <button class="btn danger" id="gpLeave">Leave group</button>
-    <p class="hint">Anyone with the code can see and change the group's teams, so only give it to your coaches.</p>`,
+    <p class="hint">Anyone with the join code can see and change the group's teams and moves, so only give it to your coaches.</p>`,
     el => {
       $('#gpSync', el).addEventListener('click', () => { closeSheet(); runSync(); });
       $('#gpInvite', el).addEventListener('click', async () => {
         const text = `Join ${z.groupName} in Rugby Team Picker. Open this link, or enter code ${fmtCode(z.group)}: ${link}`;
         try { if(canShare()) await navigator.share({title: z.groupName, text}); else { await navigator.clipboard.writeText(text); toast('Invite copied'); } } catch(e){ if(e.name!=='AbortError') toast('Code: '+fmtCode(z.group)); }
+      });
+      if(!z.mailbox) ensureMailbox().then(b => { const g = $('#gpBox', el); if(g) g.textContent = fmtCode(b); }).catch(() => { const g = $('#gpBox', el); if(g) g.textContent = 'Sync first'; });
+      $('#gpSend', el).addEventListener('click', async () => {
+        let box = z.mailbox; try { box = box || await ensureMailbox(); } catch(e){ return toast(niceErr(e)); }
+        const text = `To send a move to ${z.groupName} in Rugby Team Picker, use send code ${fmtCode(box)}`;
+        try { if(canShare()) await navigator.share({title: z.groupName, text}); else { await navigator.clipboard.writeText(text); toast('Send code copied'); } } catch(e){ if(e.name!=='AbortError') toast('Send code: '+fmtCode(box)); }
       });
       $('#gpWhoSave', el).addEventListener('click', () => { z.who = $('#gpWho', el).value.trim() || z.who; save(); toast('Name saved'); });
       $('#gpLeave', el).addEventListener('click', () => askConfirm('Leave '+z.groupName+'?', 'Your teams stay on this phone but stop syncing. You need the code to join again.', 'Leave group', () => {
@@ -1625,9 +1747,9 @@ window.addEventListener('hashchange', checkLinkImport);
 if('serviceWorker' in navigator && location.protocol==='https:' && !INFRAME){ navigator.serviceWorker.register('sw.js').catch(()=>{}); }
 syncDot();
 function checkJoinLink(){ if(fbOn() && /join=/.test(location.hash)) showGate(syncing()); }
-if(fbOn() && !syncing()) showGate(false); else checkJoinLink();
+if(fbOn() && !syncing()) showGate(false); else { checkJoinLink(); if(fbOn()) setTimeout(() => checkInbox().catch(() => {}), 1200); }
 window.addEventListener('hashchange', checkJoinLink);
-window.__rtp = {get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate};
+window.__rtp = {get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup};
 })();
 </script>
 
