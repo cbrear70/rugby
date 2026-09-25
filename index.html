@@ -644,6 +644,10 @@ function PitchCtl(svg, h){
   }
   svg.addEventListener('pointerdown', e => {
     e.preventDefault();
+    // A first finger means no other finger is down. iOS sometimes never reports a finger lifting when the shirt it
+    // touched is redrawn (as happens every frame during playback), which left a "ghost" finger that turned the next
+    // one-finger touch into a pinch. Start clean.
+    if(e.isPrimary){ pts.clear(); pinch = null; g = null; }
     pts.set(e.pointerId, {x:e.clientX, y:e.clientY});
     try { svg.setPointerCapture(e.pointerId); } catch(_){}
     if(pts.size === 2){
@@ -703,6 +707,7 @@ function PitchCtl(svg, h){
   }
   svg.addEventListener('pointerup', e => up(e,false));
   svg.addEventListener('pointercancel', e => up(e,true));
+  svg.addEventListener('lostpointercapture', e => up(e,true)); // the browser stopped tracking this finger
   function toggleZoom(at){ const fz = fitZ(); if(view.z > fz*1.3){ view.z = fz; } else { view.z = fz*2.4; view.cx = at[0]; view.cy = at[1]; } apply(); }
   return {
     layer, refresh: apply,
@@ -1351,7 +1356,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 09:56</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 10:09</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
