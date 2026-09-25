@@ -364,7 +364,7 @@ textarea{resize:vertical;min-height:84px}
           <button class="icon-btn" id="tNext" aria-label="Next frame"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M18 5v14M6 5l9 7-9 7z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
           <input type="range" id="tSlider" min="0" max="19" step="1" value="0" aria-label="Frame">
           <div class="fcount" id="tCount">1<small>of 20</small></div>
-          <button class="chip" id="tSpeed">1×</button>
+          <button class="chip" id="tSpeed">½</button>
           <button class="chip" id="tLoop">Loop</button>
         </div>
       </div>
@@ -400,7 +400,9 @@ const lastOf = m => framesOf(m) - 1;
 // Drill categories; drills made before categories count as Backs
 const CATS = [['forwards','Forwards'], ['backs','Backs'], ['penalty','Penalty'], ['skills','Skills']];
 const catOf = m => CATS.some(c => c[0] === (m && m.cat)) ? m.cat : 'backs';
-const FRAME_MS = 640; // playback: ms per frame at 1×, so a move takes about 12 s
+const FRAME_MS = 250; // each frame is 0.25 s of match time; playback at Real plays it at that speed
+const secs = n => { const t = n * FRAME_MS / 1000; return (Number.isInteger(t) ? t : t.toFixed(2).replace(/0+$/, '')) + ' s'; };
+const PLAY_SPEEDS = [[0.5, '½'], [0.25, '¼'], [1, 'Real']];
 const APP_ID = 'rtp';
 const POS_NAMES = {1:'Loosehead prop',2:'Hooker',3:'Tighthead prop',4:'Lock',5:'Lock',6:'Blindside flanker',7:'Openside flanker',8:'Number 8',9:'Scrum-half',10:'Fly-half',11:'Left wing',12:'Inside centre',13:'Outside centre',14:'Right wing',15:'Full-back'};
 // Team size: FORMATS[size] lists the standard 15-a-side slots on the pitch, in shirt order. Each slot gives the shirt its
@@ -936,7 +938,7 @@ function renderSelect(){
 }
 
 /* ---------- MOVES TAB ---------- */
-const ME = {moveId:null, frame:0, playing:false, editing:null, speed:1, loop:false, raf:0};
+const ME = {moveId:null, frame:0, playing:false, editing:null, speed: PLAY_SPEEDS.some(x => x[0] === S.ui.playSpeed) ? S.ui.playSpeed : 0.5, loop:false, raf:0};
 const curMove = () => S.moves.find(m => m.id === ME.moveId);
 function moveThumb(m){
   let xs=[], ys=[], paths='';
@@ -958,7 +960,7 @@ function renderMoves(){
       return `<div class="mcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
         ${m.desc?`<div class="mdesc">${esc(m.desc)}</div>`:''}
-        <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames</div>
+        <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames · ${secs(framesOf(m))}</div>
         <div class="mact">${draft ? `<button class="chip on" data-togroup="${m.id}">Share with group</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another group</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button></div>
       </div></div>`; };
   const drafts = grp ? mv.filter(m => m.draft) : [], shared = grp ? mv.filter(m => !m.draft) : mv;
@@ -1070,7 +1072,7 @@ function updateTransport(){
   $('#tCount').innerHTML = `${f+1}<small>of ${framesOf(curMove())}</small>`;
   $('#tPlayIcon').innerHTML = ME.playing ? '<path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" fill="currentColor"/>' : '<path d="M7 4l13 8-13 8z" fill="currentColor"/>';
   $('#tPlay').setAttribute('aria-label', ME.playing ? 'Pause' : 'Play');
-  $('#tSpeed').textContent = ME.speed + '×';
+  $('#tSpeed').textContent = PLAY_SPEEDS.find(x => x[0] === ME.speed)[1]; $('#tSpeed').setAttribute('aria-label', 'Playback speed: ' + (ME.speed === 1 ? 'real time' : PLAY_SPEEDS.find(x => x[0] === ME.speed)[1] + ' speed'));
   $('#tLoop').classList.toggle('on', ME.loop);
 }
 function play(){
@@ -1091,7 +1093,7 @@ $('#tPlay').addEventListener('click', () => ME.playing ? stopPlay() : play());
 $('#tPrev').addEventListener('click', () => { stopPlay(); ME.frame = Math.max(0, Math.round(ME.frame)-1); renderMoveLayer(); updateTransport(); });
 $('#tNext').addEventListener('click', () => { stopPlay(); ME.frame = Math.min(lastOf(curMove()), Math.round(ME.frame)+1); renderMoveLayer(); updateTransport(); });
 $('#tSlider').addEventListener('input', e => { stopPlay(); ME.frame = +e.target.value; renderMoveLayer(); updateTransport(); });
-$('#tSpeed').addEventListener('click', () => { ME.speed = ME.speed===1 ? 2 : ME.speed===2 ? 0.5 : 1; updateTransport(); });
+$('#tSpeed').addEventListener('click', () => { const i = PLAY_SPEEDS.findIndex(x => x[0] === ME.speed); ME.speed = PLAY_SPEEDS[(i + 1) % PLAY_SPEEDS.length][0]; S.ui.playSpeed = ME.speed; save(); updateTransport(); });
 $('#tLoop').addEventListener('click', () => { ME.loop = !ME.loop; updateTransport(); });
 $('#showChip').addEventListener('click', () => showVisibility());
 // Show / hide on the move pitch: a master paths switch, then shirts and paths per shirt colour (and the ball).
@@ -1142,7 +1144,7 @@ $('#edTitle').addEventListener('click', () => {
     <div class="field"><label class="field-label" for="mvName">Name</label><input id="mvName" type="text" value="${esc(m.name)}" placeholder="e.g. Loop 10-12, Lineout 4-man drive"></div>
     <div class="field"><label class="field-label" for="mvDesc">Description</label><textarea id="mvDesc" placeholder="Calls, triggers, who does what">${esc(m.desc)}</textarea></div>
     <div class="field"><div class="field-label">Category</div><div class="cats" id="mvCat">${CATS.map(([k,l]) => `<button type="button" class="chip${catOf(m)===k?' on':''}" data-cat="${k}">${l}</button>`).join('')}</div></div>
-    <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames${n===20?' (standard)':''}</option>`).join('')}</select>
+    <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames · ${secs(n)}${n===20?' (standard)':''}</option>`).join('')}</select>
       <p class="hint">Extra frames are added at the end: everyone holds their last position until you give them more to do. Shortening cuts frames off the end.</p></div>
     <div class="row-btns"><button class="btn" id="mvSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn ghost" id="mvShare">Share this drill</button>
@@ -1278,8 +1280,8 @@ function setPause(m, id, a, b, len){
 }
 // Speeds, in metres per frame: 0 still, 1 jog, 2 run, 3 sprint. A frame's speed comes from how far the player
 // actually moves in it, so the timeline always matches the pitch. Setting a speed re-times a stretch of path.
-const SPEEDS = [['Still', 0], ['Jog', 0.6], ['Run', 1.2], ['Sprint', 2.0]];
-const speedLevel = d => d < 0.05 ? 0 : d < 0.9 ? 1 : d < 1.6 ? 2 : 3;
+const SPEEDS = [['Still', 0], ['Jog', 0.4], ['Run', 1.2], ['Sprint', 2.0]];     // metres per frame: 1 : 3 : 5 = 1.6, 4.8, 8 m/s
+const speedLevel = d => d < 0.05 ? 0 : d < 0.8 ? 1 : d < 1.6 ? 2 : 3;
 // Re-time frames a..b of a player's path to last n frames, keeping its shape: points in between are spread in
 // proportion, everything after b moves earlier or later. Lengthens the drill if needed; false if over the limit.
 function retime(m, id, a, b, n){
@@ -1406,7 +1408,7 @@ function renderMoveDetail(box, m, id){
     <div class="tlwrap"><div class="tlgrid">${cells}</div>${F === 20 ? '<div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div>' : `<div class="hint">${F} frames, 20 to a row</div>`}</div>
     ${act}
     <p class="hint" style="margin:0">${tapSpeed ? 'Each tap steps the speed: still, jog, run, sprint. Speed changes one step per frame, so later frames adjust and the player speeds up or slows down gradually.' : sel == null ? 'Tap a frame to pause the player there, change a pause, or set a whole stretch\'s speed.' : ''}</p>
-    <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2 j"></b>Jog</span><span><b class="sw2 r"></b>Run</span><span><b class="sw2 s"></b>Sprint</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
+    <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2 j"></b>Jog 1.6 m/s</span><span><b class="sw2 r"></b>Run 4.8 m/s</span><span><b class="sw2 s"></b>Sprint 8 m/s</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
     ${still ? `<p class="hint">Doesn't move in this drill yet. Add a run below, or drag the shirt on a later frame.</p>` : `
     <div class="runs">${runs.map((r, i) => `<div class="run"><b>Run ${i+1}</b> frames ${r.s+1}–${r.e+1} · ${Math.round(runLength(ic, r))} m${i && r.s > runs[i-1].e ? ` · after waiting ${r.s - runs[i-1].e} frame${r.s - runs[i-1].e === 1 ? '' : 's'}` : ''}</div>`).join('')}</div>
     <div class="sline">Stays still until frame ${stepper('ws:-1', s+1, 'Stays still until frame')}</div>
@@ -1593,7 +1595,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 12:52</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 13:05</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
