@@ -78,6 +78,11 @@ main{flex:1;min-height:0;position:relative}
 .pitch .path.ed{stroke-width:.6;opacity:1}
 .pitch .fdot{fill:rgba(255,255,255,.25);stroke:#fff;stroke-width:.22}
 .pitch .fdot.key{fill:var(--accent);stroke:#1A1405}
+.pitch .fdot.sp0{fill:var(--still);stroke:#fff}
+.pitch .fdot.sp1{fill:var(--jog)}
+.pitch .fdot.sp2{fill:var(--run)}
+.pitch .fdot.sp3{fill:var(--sprint)}
+.pitch .fdot.key{stroke:#fff;stroke-width:.45}
 .pitch .fdot.cur{stroke:#fff;stroke-width:.45;fill:#fff}
 .pitch .fdot.key.cur{fill:var(--accent);stroke:#fff}
 .pitch .pdot{stroke:none}
@@ -1031,7 +1036,7 @@ function renderEditor(){
 }
 function renderBanner(){
   const b = $('#edBanner'); b.hidden = !ME.editing;
-  if(ME.editing){ const m = curMove(); const nm = ME.editing==='ball' ? 'the ball' : '#'+ME.editing; $('#edBannerText').textContent = `Editing the path of ${nm}. Drag any frame dot. Double-tap a gold dot to clear it.`; }
+  if(ME.editing){ const m = curMove(); const nm = ME.editing==='ball' ? 'the ball' : '#'+ME.editing; $('#edBannerText').textContent = `Editing the path of ${nm}. Drag any frame dot (coloured by speed). Double-tap a large dot to clear it.`; }
 }
 function renderMoveLayer(){
   const m = curMove(); if(!m) return;
@@ -1047,7 +1052,8 @@ function renderMoveLayer(){
       if(!isEd && !dim){ const s = pts[0], e = pts[lastOf(m)]; paths += `<circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/>`; }
     }
     if(isEd){
-      dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k); return `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${held?.5:ic.keys[k]?1.05:.75}" class="fdot${held?' held':ic.keys[k]?' key':''}${k===cf?' cur':''}"/>`; }).join('');
+      dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k), nx = pts[Math.min(k+1, pts.length-1)], lv = k < pts.length-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0;
+        return `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${held?.5:ic.keys[k]?1.05:.75}" class="fdot${held?' held':ic.keys[k]?' key':''} sp${lv}${k===cf?' cur':''}"/>`; }).join('');
       dots += `<text x="${pts[0][0]}" y="${pts[0][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">1</text><text x="${pts[lastOf(m)][0]}" y="${pts[lastOf(m)][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">${framesOf(m)}</text>`;
     }
     const p = iconPos(m, id, f);
@@ -1289,27 +1295,29 @@ function retime(m, id, a, b, n){
   return true;
 }
 // The speed level of each frame (frame k's speed is its movement from k to k+1). The last frame has none.
-function levelsOf(m, ic){ const F = framesOf(m), P = [...Array(F)].map((_,k) => posAt(ic,k));
-  return P.map((p,k) => k < F-1 ? speedLevel(Math.hypot(P[k+1][0]-p[0], P[k+1][1]-p[1])) : 0); }
-// Rebuild a player's keyframes from speed levels, keeping their path: each frame they move SPEEDS[level] metres along
-// it. If the levels don't get them to the end, they carry on at their last speed (the drill lengthens if needed,
-// up to 100 frames); once at the end they stand still. Keys go where the speed changes and at corners of the path.
-function bakeLevels(m, id, lv){
+function stepsOf(m, ic){ const F = framesOf(m), P = [...Array(F)].map((_,k) => posAt(ic,k));
+  return P.slice(0, -1).map((p,k) => Math.hypot(P[k+1][0]-p[0], P[k+1][1]-p[1])); } // metres moved in each frame
+function levelsOf(m, ic){ return stepsOf(m, ic).map(speedLevel).concat([0]); }
+// Rebuild a player's keyframes from how far they move in each frame (d[k] metres in frame k), keeping their path.
+// If that doesn't get them to the end, they carry on at the pace of their last moving frame (the drill lengthens if
+// needed, up to 100 frames); once at the end they stand still. Keys go where the pace changes and at path corners.
+function bakeSteps(m, id, d){
   const ic = m.icons[id], G = [];
   for(const k of keyList(ic)){ const q = ic.keys[k]; if(!G.length || !samePt(G[G.length-1], q)) G.push(q); }
   if(G.length < 2) return;
   const cum = [0]; for(let i=1;i<G.length;i++) cum.push(cum[i-1] + Math.hypot(G[i][0]-G[i-1][0], G[i][1]-G[i-1][1]));
   const total = cum[cum.length-1], seg = d => { let i = 0; while(i < G.length-2 && d > cum[i+1] + 1e-6) i++; return i; };
   const at = d => { d = Math.min(total, Math.max(0, d)); const i = seg(d), L = cum[i+1] - cum[i] || 1, t = (d - cum[i]) / L; return [G[i][0] + (G[i+1][0]-G[i][0])*t, G[i][1] + (G[i+1][1]-G[i][1])*t]; };
-  const prof = lv.slice(0, -1); while(prof.length && !prof[prof.length-1]) prof.pop();
-  let covered = prof.reduce((a, v) => a + SPEEDS[v][1], 0);
-  while(covered < total - 0.05 && prof.length < FRAMES_MAX - 1){ const v = Math.max(1, prof[prof.length-1] || 1); prof.push(v); covered += SPEEDS[v][1]; }
+  const prof = d.slice(); while(prof.length && prof[prof.length-1] < 0.05) prof.pop();
+  let covered = prof.reduce((a, v) => a + v, 0);
+  const pace = Math.max(SPEEDS[1][1], prof.length ? prof[prof.length-1] : SPEEDS[1][1]);
+  while(covered < total - 0.05 && prof.length < FRAMES_MAX - 1){ prof.push(pace); covered += pace; }
   if(prof.length + 1 > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil((prof.length + 1) / 5) * 5));
-  const F = framesOf(m), dist = [0]; for(let k=0;k<F-1;k++) dist.push(Math.min(total, dist[k] + SPEEDS[prof[k] || 0][1]));
-  const keys = {0: at(0).map(r1)}, lvAt = k => dist[k+1] > dist[k] + 1e-6 ? (prof[k] || 0) : 0;
+  const F = framesOf(m), dist = [0]; for(let k=0;k<F-1;k++) dist.push(Math.min(total, dist[k] + (prof[k] || 0)));
+  const keys = {0: at(0).map(r1)}, stepAt = k => dist[k+1] - dist[k];
   let arrived = false;
   for(let k=1;k<F;k++){
-    const change = lvAt(k) !== lvAt(k-1), corner = seg(dist[k]) !== seg(dist[k-1]) && dist[k] < total - 1e-6;
+    const change = k < F-1 && Math.abs(stepAt(k) - stepAt(k-1)) > 0.02, corner = seg(dist[k]) !== seg(dist[k-1]) && dist[k] < total - 1e-6;
     if(!arrived && dist[k] >= total - 1e-6){ keys[k] = at(total).map(r1); arrived = true; }
     else if(change || corner) keys[k] = at(dist[k]).map(r1);
   }
@@ -1319,11 +1327,29 @@ function bakeLevels(m, id, lv){
 // Tap a frame to step its speed. It can only differ by one step from the frame before, and later frames are pulled
 // into line one step at a time (so a stop becomes slowing down, a burst becomes speeding up).
 function stepSpeed(m, id, k){
-  const ic = m.icons[id], lv = levelsOf(m, ic); if(k >= lv.length - 1) return false;
+  const ic = m.icons[id], d = stepsOf(m, ic), orig = d.slice(), lv = d.map(speedLevel); if(k >= d.length) return false;
+  // the run (unbroken moving stretch) this frame is in, and how far it goes
+  let a = k, b = k;
+  if(d[k] >= .05){ while(a > 0 && d[a-1] >= .05) a--; while(b < d.length-1 && d[b+1] >= .05) b++; }
+  const runDist = d[k] >= .05 ? d.slice(a, b+1).reduce((x, y) => x + y, 0) : 0;
+  const usual = d[k] >= .05 ? d.slice(a, b+1).sort((x, y) => x - y)[Math.floor((b - a + 1) / 2)] : 0; // the run's typical pace
   const prev = k > 0 ? lv[k-1] : null, allowed = prev == null ? [0,1,2,3] : [prev-1, prev, prev+1].filter(v => v >= 0 && v <= 3);
-  const i = allowed.indexOf(lv[k]); lv[k] = allowed[(i + 1) % allowed.length];
-  for(let j=k+1;j<lv.length-1;j++) lv[j] = Math.max(lv[j-1] - 1, Math.min(lv[j-1] + 1, lv[j]));
-  bakeLevels(m, id, lv); return true;
+  const i = allowed.indexOf(lv[k]); lv[k] = allowed[(i + 1) % allowed.length]; d[k] = SPEEDS[lv[k]][1];
+  // later frames in the same run change only while they break the one-step rule (speeding up or slowing down
+  // gradually); the rest keep exactly the distance they had
+  for(let j=k+1, changed=true; j<=b && changed; j++){ const v = Math.max(lv[j-1] - 1, Math.min(lv[j-1] + 1, lv[j])); changed = v !== lv[j]; if(changed){ lv[j] = v; d[j] = SPEEDS[v][1]; } }
+  if(runDist > 0){
+    // the run still ends where it did: faster arrives sooner, slower takes extra frames at its closing pace, and
+    // everything after (pauses, later runs) moves earlier or later to match
+    const seg = []; let cov = 0;
+    for(let j=a; j<=b && cov < runDist - 1e-6; j++){
+      if(j === b && j > k && d[j] === orig[j] && orig[j] < usual * 0.9) break; // the old short arrival frame: re-made below
+      const st = Math.min(d[j], runDist - cov); if(st > 0){ seg.push(st); cov += st; } else seg.push(0); }
+    const pace = Math.max(SPEEDS[1][1], usual);
+    while(cov < runDist - 0.05 && seg.length < FRAMES_MAX){ const st = Math.min(pace, runDist - cov); seg.push(st); cov += st; }
+    d.splice(a, b - a + 1, ...seg);
+  }
+  bakeSteps(m, id, d); return true;
 }
 // is key k a real change of direction (not just a change of speed along a straight line)?
 function isTurn(ic, k){
@@ -1567,7 +1593,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 12:28</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 12:52</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
