@@ -112,6 +112,16 @@ main{flex:1;min-height:0;position:relative}
 .vtg input:disabled{opacity:.35}
 .tlwrap{display:flex;flex-direction:column;gap:3px}
 .tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px;row-gap:4px}
+.tlgrid.paint{touch-action:none}
+.tl.pv{outline:2px solid #fff;outline-offset:-2px}
+.tl.pv0{background:var(--still)} .tl.pv1{background:var(--jog)} .tl.pv2{background:var(--run)} .tl.pv3{background:var(--sprint)}
+.brushes{gap:6px}
+.chip.brush::before{content:'';display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px;outline:1px solid rgba(255,255,255,.35)}
+.chip.brush.sp0::before{background:var(--still)} .chip.brush.sp1::before{background:var(--jog)} .chip.brush.sp2::before{background:var(--run)} .chip.brush.sp3::before{background:var(--sprint)}
+.chip.brush.sp0.on{background:var(--still);border-color:#fff;color:#fff}
+.chip.brush.sp1.on{background:var(--jog);border-color:var(--jog);color:#fff}
+.chip.brush.sp2.on{background:var(--run);border-color:var(--run);color:#fff}
+.chip.brush.sp3.on{background:var(--sprint);border-color:var(--sprint);color:#1A1405}
 .tl{height:30px;border:0;border-radius:4px;background:var(--panel2);padding:0;position:relative;outline:1px solid var(--line);outline-offset:-1px}
 .tl.mv{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
 .tl.sp0{background:var(--still)}
@@ -1332,30 +1342,39 @@ function bakeSteps(m, id, d){
 }
 // Tap a frame to step its speed. It can only differ by one step from the frame before, and later frames are pulled
 // into line one step at a time (so a stop becomes slowing down, a burst becomes speeding up).
-function stepSpeed(m, id, k){
-  const ic = m.icons[id], d = stepsOf(m, ic), orig = d.slice(), lv = d.map(speedLevel); if(k >= d.length) return false;
-  // the run (unbroken moving stretch) this frame is in, and how far it goes
-  let a = k, b = k;
-  if(d[k] >= .05){ while(a > 0 && d[a-1] >= .05) a--; while(b < d.length-1 && d[b+1] >= .05) b++; }
-  const runDist = d[k] >= .05 ? d.slice(a, b+1).reduce((x, y) => x + y, 0) : 0;
-  const usual = d[k] >= .05 ? d.slice(a, b+1).sort((x, y) => x - y)[Math.floor((b - a + 1) / 2)] : 0; // the run's typical pace
-  const prev = k > 0 ? lv[k-1] : null, allowed = prev == null ? [0,1,2,3] : [prev-1, prev, prev+1].filter(v => v >= 0 && v <= 3);
-  const i = allowed.indexOf(lv[k]); lv[k] = allowed[(i + 1) % allowed.length]; d[k] = SPEEDS[lv[k]][1];
-  // later frames in the same run change only while they break the one-step rule (speeding up or slowing down
-  // gradually); the rest keep exactly the distance they had
-  for(let j=k+1, changed=true; j<=b && changed; j++){ const v = Math.max(lv[j-1] - 1, Math.min(lv[j-1] + 1, lv[j])); changed = v !== lv[j]; if(changed){ lv[j] = v; d[j] = SPEEDS[v][1]; } }
-  if(runDist > 0){
-    // the run still ends where it did: faster arrives sooner, slower takes extra frames at its closing pace, and
-    // everything after (pauses, later runs) moves earlier or later to match
-    const seg = []; let cov = 0;
-    for(let j=a; j<=b && cov < runDist - 1e-6; j++){
-      if(j === b && j > k && d[j] === orig[j] && orig[j] < usual * 0.9) break; // the old short arrival frame: re-made below
-      const st = Math.min(d[j], runDist - cov); if(st > 0){ seg.push(st); cov += st; } else seg.push(0); }
+// Paint speeds onto frames: painted[k] = level for frame k. Painted frames get exactly that speed. Each original run
+// still ends at its end point: painted slower (or with a pause) it takes more frames at its usual pace, painted
+// faster it arrives sooner, and later pauses and runs move to match. Movement painted into a pause starts the next
+// run early; into the final wait (nowhere left to go) it's ignored. Returns false if nothing could change.
+function paintSpeeds(m, id, painted){
+  const ic = m.icons[id], d0 = stepsOf(m, ic), lv = d0.map(speedLevel);
+  const want = k => painted.has(k) ? SPEEDS[painted.get(k)][1] : d0[k];
+  // split the frames into still stretches and runs, as they are now
+  const segs = []; for(let k=0;k<d0.length;k++){ const mv = d0[k] >= .05, last = segs[segs.length-1];
+    if(last && last.mv === mv) last.ks.push(k); else segs.push({mv, ks:[k]}); }
+  const out = [];
+  for(let i=0;i<segs.length;i++){
+    const sg = segs[i];
+    if(!sg.mv){
+      // a pause: frames from the first one painted moving onward join the next run (it starts earlier)
+      const next = segs.slice(i+1).find(x => x.mv), first = sg.ks.findIndex(k => want(k) >= .05);
+      if(first >= 0 && next){ for(const k of sg.ks.slice(0, first)) out.push(0); next.pre = sg.ks.slice(first); }
+      else for(const k of sg.ks) out.push(0);
+      continue;
+    }
+    const ks = (sg.pre || []).concat(sg.ks), R = sg.ks.reduce((a, k) => a + d0[k], 0);
+    const usual = sg.ks.map(k => d0[k]).sort((x, y) => x - y)[Math.floor(sg.ks.length / 2)];
+    const lastK = sg.ks[sg.ks.length-1], shortEnd = !painted.has(lastK) && sg.ks.length > 1 && d0[lastK] < usual * 0.9;
+    let cov = 0;
+    for(const k of ks){
+      if(cov >= R - 1e-6) break;
+      if(k === lastK && shortEnd) break;                         // the old short arrival frame: re-made below
+      const st = Math.min(want(k), R - cov); out.push(st); cov += st;
+    }
     const pace = Math.max(SPEEDS[1][1], usual);
-    while(cov < runDist - 0.05 && seg.length < FRAMES_MAX){ const st = Math.min(pace, runDist - cov); seg.push(st); cov += st; }
-    d.splice(a, b - a + 1, ...seg);
+    while(cov < R - 0.05 && out.length < FRAMES_MAX){ const st = Math.min(pace, R - cov); out.push(st); cov += st; }
   }
-  bakeSteps(m, id, d); return true;
+  bakeSteps(m, id, out); return true;
 }
 // is key k a real change of direction (not just a change of speed along a straight line)?
 function isTurn(ic, k){
@@ -1406,12 +1425,13 @@ function renderMoveDetail(box, m, id){
     </div>`;
   const cells = pts.map((p,k) => { const nx = pts[Math.min(k+1, F-1)], lv = k < F-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0, mv = lv > 0, has = m.icons.ball && carrierAt(m,k)===id;
     return `<button class="tl sp${lv}${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}${k===sel?' sel':''}" data-tf="${k}" aria-label="Frame ${k+1}, ${SPEEDS[lv][0].toLowerCase()}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
-  const tapSpeed = ME.tlMode !== 'select';
+  const tapSpeed = ME.tlMode !== 'select', brush = ME.brush ?? null;
   box.innerHTML = `<div class="field-label">Movement</div>
-    <div class="sline tlmode">Tap a frame to <button class="chip${tapSpeed?' on':''}" data-tlmode="speed">change its speed</button><button class="chip${tapSpeed?'':' on'}" data-tlmode="select">select it</button></div>
-    <div class="tlwrap"><div class="tlgrid">${cells}</div>${F === 20 ? '<div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div>' : `<div class="hint">${F} frames, 20 to a row</div>`}</div>
+    <div class="sline tlmode"><button class="chip${tapSpeed?' on':''}" data-tlmode="speed">Paint speeds</button><button class="chip${tapSpeed?'':' on'}" data-tlmode="select">Select a frame</button></div>
+    ${tapSpeed ? `<div class="sline brushes">${SPEEDS.map(([nm], v) => `<button class="chip brush sp${v}${brush===v?' on':''}" data-brush="${v}">${nm}</button>`).join('')}</div>` : ''}
+    <div class="tlwrap"><div class="tlgrid${tapSpeed?' paint':''}">${cells}</div>${F === 20 ? '<div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div>' : `<div class="hint">${F} frames, 20 to a row</div>`}</div>
     ${act}
-    <p class="hint" style="margin:0">${tapSpeed ? 'Each tap steps the speed: still, jog, run, sprint. Speed changes one step per frame, so later frames adjust and the player speeds up or slows down gradually.' : sel == null ? 'Tap a frame to pause the player there, change a pause, or set a whole stretch\'s speed.' : ''}</p>
+    <p class="hint" style="margin:0">${tapSpeed ? (brush == null ? 'Pick a speed, then tap or swipe along frames to paint them. Or press on a frame and drag: the frames you pass over take its speed.' : `Tap or swipe along frames to paint them ${SPEEDS[brush][0].toLowerCase()}. Tap ${SPEEDS[brush][0]} again to drag-copy instead.`) + ' Each run still ends where it does; later runs move to fit.' : sel == null ? 'Tap a frame to pause the player there, change a pause, or set a whole stretch\'s speed.' : ''}</p>
     <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2 j"></b>Jog 1.6 m/s</span><span><b class="sw2 r"></b>Run 4.8 m/s</span><span><b class="sw2 s"></b>Sprint 8 m/s</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
     ${still ? `<p class="hint">Doesn't move in this drill yet. Add a run below, or drag the shirt on a later frame.</p>` : `
     <div class="runs">${runs.map((r, i) => `<div class="run"><b>Run ${i+1}</b> frames ${r.s+1}–${r.e+1} · ${Math.round(runLength(ic, r))} m${i && r.s > runs[i-1].e ? ` · after waiting ${r.s - runs[i-1].e} frame${r.s - runs[i-1].e === 1 ? '' : 's'}` : ''}</div>`).join('')}</div>
@@ -1427,10 +1447,29 @@ function renderMoveDetail(box, m, id){
     </div>`;
   const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic, lastOf(m)); };
   // tapping a frame selects it; "Show this frame" moves the pitch there (which changes the rest of the sheet, so reopen it)
-  $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => {
-    const k = +b.dataset.tf;
-    if(tapSpeed){ const before = framesOf(m); if(!stepSpeed(m, id, k)) return toast('The last frame has no speed: it is where they end up.'); lengthened(before); redraw(); return; }
-    ME.tlSel = k === ME.tlSel ? null : k; renderMoveDetail(box, m, id); }));
+  if(!tapSpeed) $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => { const k = +b.dataset.tf; ME.tlSel = k === ME.tlSel ? null : k; renderMoveDetail(box, m, id); }));
+  $$('[data-brush]', box).forEach(b => b.addEventListener('click', () => { ME.brush = ME.brush === +b.dataset.brush ? null : +b.dataset.brush; renderMoveDetail(box, m, id); }));
+  // painting: press on a frame and swipe; frames passed over take the brush speed (or, with no brush, the first frame's)
+  const grid = $('.tlgrid.paint', box);
+  if(grid){
+    const lastIdx = F - 2, cellAt = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest && el.closest('.tlgrid.paint .tl'); };
+    let job = null;
+    const mark = el => { const k = +el.dataset.tf; if(k > lastIdx || job.cells.has(k)) return; job.cells.set(k, job.level); el.classList.add('pv', 'pv' + job.level); };
+    grid.addEventListener('pointerdown', e => {
+      const el = e.target.closest('.tl'); if(!el) return; e.preventDefault();
+      const k = +el.dataset.tf, lv = brush != null ? brush : levelsOf(m, ic)[k];
+      job = {level: lv, cells: new Map(), start: k, moved: false};
+      try { grid.setPointerCapture(e.pointerId); } catch(_){}
+      if(brush != null) mark(el);
+    });
+    grid.addEventListener('pointermove', e => { if(!job) return; const el = cellAt(e.clientX, e.clientY); if(el && +el.dataset.tf !== job.start){ job.moved = true; mark(el); } });
+    const finish = e => {
+      if(!job) return; const jb = job; job = null;
+      if(!jb.cells.size){ if(brush == null && !jb.moved) toast('Pick a speed to paint, or drag from a frame to spread its speed.'); else if(jb.start > lastIdx) toast('The last frame is where they end up: it has no speed.'); return; }
+      const before = framesOf(m); paintSpeeds(m, id, jb.cells); lengthened(before); redraw();
+    };
+    grid.addEventListener('pointerup', finish); grid.addEventListener('pointercancel', () => { job = null; renderMoveDetail(box, m, id); });
+  }
   $$('[data-tlmode]', box).forEach(b => b.addEventListener('click', () => { ME.tlMode = b.dataset.tlmode; if(ME.tlMode === 'speed') ME.tlSel = null; renderMoveDetail(box, m, id); }));
   $$('[data-tlgo]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tlgo; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
   const lengthened = before => { if(framesOf(m) > before) toast(`Drill is now ${framesOf(m)} frames`); };
@@ -1599,7 +1638,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 13:38</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:07</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
