@@ -1037,11 +1037,13 @@ const moveCtl = PitchCtl($('#movePitch'), {
   },
   tap: id => {
     if(id.startsWith('c:')) return showCone(id.slice(2));
+    if(id.startsWith('start:') || id.startsWith('end:')) return showMoveIcon(id.split(':')[1]);
     if(id.startsWith('dot:')){ ME.frame = +id.slice(4); renderMoveLayer(); updateTransport(); return; }
     showMoveIcon(id.slice(2));
   },
   doubleTap: id => {
     if(id.startsWith('c:')) return showCone(id.slice(2));
+    if(id.startsWith('start:') || id.startsWith('end:')) return startPathEdit(id.split(':')[1]);
     if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==lastOf(curMove()) && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
     startPathEdit(id.slice(2));
   },
@@ -1052,6 +1054,7 @@ const moveCtl = PitchCtl($('#movePitch'), {
   },
   drag: (id, x, y) => {
     const m = curMove(); if(!m) return;
+    if(id.startsWith('start:') || id.startsWith('end:')){ moveEnd(m, id, x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('c:')){ const c = (m.cones || []).find(q => q.id === id.slice(2)); if(c) moveCone(m, c, x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('dot:')){ const k = +id.slice(4); m.icons[ME.editing].keys[k] = [x,y]; ME.frame = k; }
     else { const iid = id.slice(2), f = Math.round(ME.frame); ME.frame = f; if(iid==='ball' && !ballFree(m,f)) return; m.icons[iid].keys[f] = [x,y]; }
@@ -1060,6 +1063,7 @@ const moveCtl = PitchCtl($('#movePitch'), {
   dragEnd: id => {
     const m = curMove(); if(!m || !(m.cones || []).length) return;
     let ic, k;
+    if(id.startsWith('start:') || id.startsWith('end:')){ const iid = id.split(':')[1], c = nearestCone(m, endPoint(m, id)); if(c){ moveEnd(m, id, c.x, c.y); save(); renderMoveLayer(); toast('Snapped to the ' + (CONES.find(x => x[0] === c.c) || CONES[0])[2].toLowerCase() + ' cone'); } return; }
     if(id.startsWith('dot:')){ ic = m.icons[ME.editing]; k = +id.slice(4); }
     else if(id.startsWith('i:')){ ic = m.icons[id.slice(2)]; k = Math.round(ME.frame); }
     else return;
@@ -1067,6 +1071,15 @@ const moveCtl = PitchCtl($('#movePitch'), {
     ic.keys[k] = [c.x, c.y]; save(); renderMoveLayer(); toast('Snapped to the ' + (CONES.find(x => x[0] === c.c) || CONES[0])[2].toLowerCase() + ' cone');
   },
 });
+// Move where a player starts (every keyframe up to the start of their movement) or finishes (from the end of their
+// movement on), without changing their timing.
+function moveEnd(m, hid, x, y){
+  const [which, id] = hid.split(':'), ic = m.icons[id]; if(!ic) return;
+  const L = lastOf(m), w = moveWindow(ic, L), ks = keyList(ic);
+  if(which === 'start'){ const edge = w.still ? L : w.s; for(const k of ks) if(k <= edge) ic.keys[k] = [x, y]; }
+  else { const edge = w.still ? L : w.e; for(const k of ks) if(k >= edge) ic.keys[k] = [x, y]; if(!ic.keys[L]) ic.keys[L] = [x, y]; }
+}
+const endPoint = (m, hid) => { const [which, id] = hid.split(':'), ic = m.icons[id]; return which === 'start' ? posAt(ic, 0) : posAt(ic, lastOf(m)); };
 // cones panel (toolbar) and a single cone's sheet
 function showCones(){
   const m = curMove(); if(!m) return; m.cones = m.cones || [];
@@ -1122,7 +1135,9 @@ function renderMoveLayer(){
     const pts = [...Array(framesOf(m))].map((_,k)=>iconPos(m,id,k));
     if(!hidePath){
       paths += `<polyline points="${pts.map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')}" class="path${isEd?' ed':''}${dim?' dim':''}" stroke="${col}" ${id==='ball'?'stroke-dasharray="1 .8"':''}/>`;
-      if(!isEd && !dim){ const s = pts[0], e = pts[lastOf(m)]; paths += `<circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/>`; }
+      if(!isEd && !dim){ const s = pts[0], e = pts[lastOf(m)], grab = id !== 'ball' && !hideTok;
+        paths += `<g${grab ? ` data-hit="start:${id}" data-x="${s[0]}" data-y="${s[1]}"` : ''}><circle cx="${s[0]}" cy="${s[1]}" r="1.4" fill="transparent"/><circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/></g>`
+          + `<g${grab ? ` data-hit="end:${id}" data-x="${e[0]}" data-y="${e[1]}"` : ''}><circle cx="${e[0]}" cy="${e[1]}" r="1.4" fill="transparent"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/></g>`; }
     }
     if(isEd){
       dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k), nx = pts[Math.min(k+1, pts.length-1)], lv = k < pts.length-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0;
@@ -1261,7 +1276,8 @@ function addIconToMove(m, id){
     const a = m.icons[sh] ? posAt(m.icons[sh],0) : teamPos(t,sh), b = m.icons[fh] ? posAt(m.icons[fh],lastOf(m)) : teamPos(t,fh);
     m.icons.ball = {keys:{0:[r1(a[0]+1.3), r1(a[1]-1.3)], [lastOf(m)]:[r1(b[0]+1.3), r1(b[1]-1.3)]}};
   } else {
-    const s = teamPos(t,+id); m.icons[id] = {keys:{0:[s[0],s[1]], [lastOf(m)]:[s[0], r1(clamp(s[1]-15, -2, 122))]}, color:null};
+    const s = teamPos(t,+id), L = lastOf(m), e = Math.min(L, 12), fin = [s[0], r1(clamp(s[1]-15, -2, 122))];
+    m.icons[id] = {keys:{0:[s[0],s[1]], [e]:fin, [L]:[...fin]}, color:null};
   }
 }
 function pickPlayers(){
@@ -1270,7 +1286,7 @@ function pickPlayers(){
     return `<button data-pp="${id}" class="${on?'on':''}" aria-pressed="${on}">${id==='ball'?miniBall(34):miniShirt(id, moveColor(m,id), 34)}<small>${id==='ball'?'Ball':p?esc(surname(p.name)):posName(id).split(' ').pop()}</small></button>`; };
   openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Players in this drill</h2>
     <div class="pgrid">${[...new Set(pitchNums(t).map(String).concat(iconIds(m).filter(i=>i!=='ball')))].map(btn).join('')}${btn('ball')}</div>
-    <p class="hint">New shirts start at their spot on the Pitch tab and finish 15 metres upfield. The ball runs from the scrum-half to the fly-half until you change it.</p>
+    <p class="hint">New shirts start at their spot on the Pitch tab and run 15 metres upfield over the first 12 frames (3 s), then stand still. Change when and how long in their Movement panel. The ball runs from the scrum-half to the fly-half until you change it.</p>
     <button class="btn wide" data-close>Done</button>`,
     el => $$('[data-pp]', el).forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.pp;
@@ -1498,9 +1514,9 @@ function renderMoveDetail(box, m, id){
     <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2 j"></b>Jog 1.6 m/s</span><span><b class="sw2 r"></b>Run 4.8 m/s</span><span><b class="sw2 s"></b>Sprint 8 m/s</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
     ${still ? `<p class="hint">Doesn't move in this drill yet. Add a run below, or drag the shirt on a later frame.</p>` : `
     <div class="runs">${runs.map((r, i) => `<div class="run"><b>Run ${i+1}</b> frames ${r.s+1}–${r.e+1} · ${Math.round(runLength(ic, r))} m${i && r.s > runs[i-1].e ? ` · after waiting ${r.s - runs[i-1].e} frame${r.s - runs[i-1].e === 1 ? '' : 's'}` : ''}</div>`).join('')}</div>
-    <div class="sline">Stays still until frame ${stepper('ws:-1', s+1, 'Stays still until frame')}</div>
-    <div class="sline">${runs.length > 1 ? 'Finishes the last run at' : 'Arrives at'} frame ${stepper('we:-1', e+1, 'Arrives at frame')}</div>
-    <p class="hint">${runs.length > 1 ? `Runs ${Math.round(dist)} m in all.` : `Runs ${Math.round(dist)} m over ${e-s} frame${e-s===1?'':'s'} (frames ${s+1}–${e+1}).`} Changing these keeps the shape of the ${runs.length > 1 ? 'runs' : 'run'}.</p>
+    <div class="sline">Starts moving at frame ${stepper('ws:-1', s+1, 'Starts moving at frame')}</div>
+    <div class="sline">${runs.length > 1 ? 'All runs take' : 'Run takes'} ${stepper('wd:-1', e-s, 'Frames the run takes')} frames · arrives at frame ${e+1}</div>
+    <p class="hint">${Math.round(dist)} m${runs.length > 1 ? ' in all' : ''}, ${secs(e-s)}. Changing the start moves the ${runs.length > 1 ? 'runs' : 'run'} later or earlier; changing the frames speeds ${runs.length > 1 ? 'them' : 'it'} up or slows ${runs.length > 1 ? 'them' : 'it'} down. Before and after, they stand still. Drag the ring or dot at either end of the path on the pitch to move where they start or finish.</p>
     ${turns.length ? `<div class="sline">Turning points: ${turns.map(k => `<button class="chip" data-tdel="${k}" aria-label="Remove turning point at frame ${k+1}">Frame ${k+1} ×</button>`).join('')}</div>` : ''}`}
     <div class="addrun">
       <div class="field-label">${still ? 'Add a run' : `Add run ${runs.length + 1}`}</div>
@@ -1557,8 +1573,13 @@ function renderMoveDetail(box, m, id){
       if(!setPause(m, id, a, b2, len)) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
       lengthened(before); redraw(); return; }
     if(kind==='aw' || kind==='al'){ if(kind==='aw') form.wait = clamp(form.wait + dd, 0, 40); else form.len = clamp(form.len + dd, 1, 40); renderMoveDetail(box, m, id); return; }
-    if(kind==='ws') setMoveWindow(ic, clamp(w.s + dd, 0, w.e - 1), w.e, L);
-    else setMoveWindow(ic, w.s, clamp(w.e + dd, w.s + 1, L), L);
+    // start: the whole movement shifts, keeping its length; frames: the length changes, keeping the start
+    const len = w.e - w.s, before = framesOf(m);
+    let ns = w.s, ne = w.e;
+    if(kind==='ws'){ ns = Math.max(0, w.s + dd); ne = ns + len; } else { ne = w.s + Math.max(1, len + dd); }
+    if(ne > FRAMES_MAX - 1) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
+    if(ne > lastOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil((ne + 1) / 5) * 5));
+    setMoveWindow(ic, ns, ne, lastOf(m)); lengthened(before);
     redraw();
   }));
   $$('[data-tdel]', box).forEach(b => b.addEventListener('click', () => { delete ic.keys[+b.dataset.tdel]; redraw(); }));
@@ -1701,7 +1722,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:21</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:33</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
