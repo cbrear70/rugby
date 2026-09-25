@@ -76,8 +76,15 @@ main{flex:1;min-height:0;position:relative}
 .pitch .path{fill:none;stroke-width:.45;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
 .pitch .path.dim{opacity:.15}
 .pitch .path.ed{stroke-width:.6;opacity:1}
-.pitch .fdot{fill:rgba(255,255,255,.25);stroke:#fff;stroke-width:.22}
+.pitch .fdot{fill:rgba(255,255,255,.25);stroke:#fff;stroke-width:.22;pointer-events:none} /* dots are picked by position, so taps pass through to the shirt */
+.pitch .path{pointer-events:none}
 .pitch .fdot.key{fill:var(--accent);stroke:#1A1405}
+.pitch .path.runsel{fill:none;stroke:#fff;stroke-width:1.1;opacity:.55;stroke-linecap:round;stroke-linejoin:round}
+.pitch .fdot.out{opacity:.3}
+.banner-runs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.banner .banner-runs .chip.on{background:var(--accent-ink);color:var(--accent);border-color:var(--accent-ink)}
+.tl.insel{box-shadow:inset 0 -4px 0 #fff}
+.runtabs{display:flex;flex-wrap:wrap;gap:6px}
 .pitch .fdot.sp0{fill:var(--still);stroke:#fff}
 .pitch .fdot.sp1{fill:var(--jog)}
 .pitch .fdot.sp2{fill:var(--run)}
@@ -1033,21 +1040,23 @@ const moveCtl = PitchCtl($('#movePitch'), {
     if(!ME.editing) return null;
     const m = curMove(), ic = m && m.icons[ME.editing]; if(!ic) return null;
     let best = null, bd = 1e9;
-    for(let k=0;k<framesOf(m);k++){ if(ME.editing==='ball' && !ballFree(m,k)) continue; const p = iconPos(m,ME.editing,k); const d = Math.hypot(p[0]-x, p[1]-y) - (ic.keys[k]?0.4:0); if(d < bd){ bd = d; best = {id:'dot:'+k, x:p[0], y:p[1]}; } }
+    // a touch on the middle of the selected shirt goes to the shirt (tap, double-tap, drag), not the dots under it
+    const here = iconPos(m, ME.editing, Math.round(ME.frame)); if(Math.hypot(here[0]-x, here[1]-y) < 1.8) return null;
+    for(let k=0;k<framesOf(m);k++){ if(k === Math.round(ME.frame)) continue; if(ME.editing==='ball' && !ballFree(m,k)) continue; const p = iconPos(m,ME.editing,k); const d = Math.hypot(p[0]-x, p[1]-y) - (ic.keys[k]?0.4:0); if(d < bd){ bd = d; best = {id:'dot:'+k, x:p[0], y:p[1]}; } }
     const lim = Math.max(2.2, 16/moveCtl.scale);
     return bd <= lim ? best : null;
   },
   tap: id => {
     if(id.startsWith('c:')) return showCone(id.slice(2));
-    if(id.startsWith('start:') || id.startsWith('end:')) return showMoveIcon(id.split(':')[1]);
+    if(id.startsWith('start:') || id.startsWith('end:')) return startPathEdit(id.split(':')[1]);
     if(id.startsWith('dot:')){ ME.frame = +id.slice(4); renderMoveLayer(); updateTransport(); return; }
-    showMoveIcon(id.slice(2));
+    startPathEdit(id.slice(2)); // select the player and show their path
   },
   doubleTap: id => {
     if(id.startsWith('c:')) return showCone(id.slice(2));
-    if(id.startsWith('start:') || id.startsWith('end:')) return startPathEdit(id.split(':')[1]);
+    if(id.startsWith('start:') || id.startsWith('end:')) return showMoveIcon(id.split(':')[1]);
     if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==lastOf(curMove()) && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
-    startPathEdit(id.slice(2));
+    showMoveIcon(id.slice(2)); // runs, timing and speeds
   },
   dragStart: id => {
     if(ME.playing) stopPlay();
@@ -1122,9 +1131,16 @@ function renderEditor(){
   $('#edHint').textContent = ids.length ? `Drag at frame 1 = start, frame ${framesOf(m)} = finish` : 'Tap Players to add shirts and the ball';
   renderBanner(); renderMoveLayer(); updateTransport();
 }
+// The run picked for editing (ME.runSel = {id, i}); null = all of the player's movement
+function runSelOf(m, id){ const r = ME.runSel; if(!r || r.id !== id || !m.icons[id]) return null; const runs = runsOf(m.icons[id], lastOf(m)); return runs.length > 1 && r.i < runs.length ? r.i : null; }
 function renderBanner(){
   const b = $('#edBanner'); b.hidden = !ME.editing;
-  if(ME.editing){ const m = curMove(); const nm = ME.editing==='ball' ? 'the ball' : '#'+ME.editing; $('#edBannerText').textContent = `Editing the path of ${nm}. Drag any frame dot (coloured by speed). Double-tap a large dot to clear it.`; }
+  if(ME.editing){ const m = curMove(), id = ME.editing, nm = id==='ball' ? 'the ball' : '#'+id;
+    const runs = id === 'ball' ? [] : runsOf(m.icons[id], lastOf(m)), sel = runSelOf(m, id);
+    $('#edBannerText').innerHTML = `<b>${nm}</b> · drag frame dots to reshape${id==='ball' ? '' : '; double-tap the shirt for runs and timing'}.`
+      + (runs.length > 1 ? `<span class="banner-runs"><button class="chip${sel==null?' on':''}" data-rsel="-1">All</button>${runs.map((r, i) => `<button class="chip${sel===i?' on':''}" data-rsel="${i}">Run ${i+1}</button>`).join('')}</span>` : '');
+    $$('[data-rsel]', b).forEach(c => c.addEventListener('click', () => { const i = +c.dataset.rsel; ME.runSel = i < 0 ? null : {id, i}; renderBanner(); renderMoveLayer(); }));
+  }
 }
 function renderMoveLayer(){
   const m = curMove(); if(!m) return;
@@ -1142,18 +1158,21 @@ function renderMoveLayer(){
           + `<g${grab ? ` data-hit="end:${id}" data-x="${e[0]}" data-y="${e[1]}"` : ''}><circle cx="${e[0]}" cy="${e[1]}" r="1.4" fill="transparent"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/></g>`; }
     }
     if(isEd){
-      dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k), nx = pts[Math.min(k+1, pts.length-1)], lv = k < pts.length-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0;
-        return `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${held?.5:ic.keys[k]?1.05:.75}" class="fdot${held?' held':ic.keys[k]?' key':''} sp${lv}${k===cf?' cur':''}"/>`; }).join('');
+      const rsel = runSelOf(m, id), rr = rsel == null ? null : runsOf(ic, lastOf(m))[rsel];
+      if(rr) paths += `<polyline points="${pts.slice(rr.s, rr.e + 1).map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')}" class="path runsel"/>`;
+      dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k), nx = pts[Math.min(k+1, pts.length-1)], lv = k < pts.length-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0, out = rr && (k < rr.s || k > rr.e);
+        return `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${held?.5:ic.keys[k]?1.05:.75}" class="fdot${held?' held':ic.keys[k]?' key':''} sp${lv}${k===cf?' cur':''}${out?' out':''}"/>`; }).join('');
       dots += `<text x="${pts[0][0]}" y="${pts[0][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">1</text><text x="${pts[lastOf(m)][0]}" y="${pts[lastOf(m)][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">${framesOf(m)}</text>`;
     }
     const p = iconPos(m, id, f);
     const p2 = playerAt(t, +id);
-    const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: dim?null:'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 ? surname(p2.name) : '', hit: dim?null:'i:'+id, dim, ghost:isEd});
+    const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: 'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 ? surname(p2.name) : '', hit: 'i:'+id, dim, ghost:isEd});
     if(isEd) edTok = tok; else if(!hideTok) toks += tok; // ball is last in iconIds, so it draws on top
   }
   const cones = (m.cones || []).map(c => coneSVG(c, !!ME.editing)).join('');
   moveCtl.layer.innerHTML = paths + toks + edTok + cones + dots; // cones on top (small grab area) so one under a shirt can still be moved
   syncShowChip();
+  if(iconIds(m).length) $('#edHint').textContent = ME.editing ? 'Tap another shirt to switch, Done to finish' : `Tap a shirt for its path · double-tap to edit · ${framesOf(m)} frames`;
 }
 function updateTransport(){
   const f = Math.round(ME.frame);
@@ -1226,7 +1245,7 @@ $('#edFit').addEventListener('click', () => { if(moveCtl.isFit()) zoomMove(); el
 $('#edDone').addEventListener('click', () => { ME.editing = null; renderBanner(); renderMoveLayer(); });
 $('#edStraight').addEventListener('click', () => { straighten(ME.editing); });
 function straighten(id){ const last = lastOf(curMove()), ic = curMove().icons[id], {s, e} = moveWindow(ic, last), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [last]:[...B]}; delete ic.breaks; save(); renderMoveLayer(); toast('Path straightened'); }
-function startPathEdit(id){ stopPlay(); ME.editing = id; renderBanner(); renderMoveLayer(); const m = curMove(); const ic = m.icons[id]; }
+function startPathEdit(id){ stopPlay(); if(ME.editing !== id && (!ME.runSel || ME.runSel.id !== id)) ME.runSel = null; ME.editing = id; renderBanner(); renderMoveLayer(); }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
   openSheet(`<div class="eyebrow">Drill details</div>
@@ -1308,7 +1327,7 @@ function showMoveIcon(id){
     ${ball ? '<div class="field" id="chainBox"></div>' : m.icons.ball ? `<div class="field"><div class="field-label">Ball</div>${carrierAt(m,f)===id ? `<p class="hint">Has the ball at frame ${f+1}.</p>` : `<button class="btn ghost" id="miGive">Ball to #${id} from frame ${f+1}</button>`}${passSelect()}</div>` : ''}
     <div class="row-btns"><button class="btn" id="miPath">Edit path</button><button class="btn ghost" id="miStraight"${custom.length?'':' disabled'}>Straighten</button></div>
     <div class="row-btns"><button class="btn danger" id="miRemove">Remove from drill</button><button class="btn ghost" data-close>Close</button></div>
-    <p class="hint">You are on frame ${f+1}. ${ball && !ballFree(m,f) ? `The ball is ${carrierAt(m,f) ? 'with #'+carrierAt(m,f) : 'being passed'} at this frame, so it follows the players.` : `Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}.`} Double-tap it to edit all ${framesOf(m)} frames.</p>`,
+    <p class="hint">You are on frame ${f+1}. ${ball && !ballFree(m,f) ? `The ball is ${carrierAt(m,f) ? 'with #'+carrierAt(m,f) : 'being passed'} at this frame, so it follows the players.` : `Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}.`} Tap a shirt on the pitch to see its path and frame dots; double-tap it for this panel.</p>`,
     el => {
       if(!ball) wireSwatches(el, c => { ic.color = c; save(); renderMoveLayer(); });
       wirePassSelect(el);
@@ -1348,6 +1367,11 @@ function addRun(m, id, wait, len){
 }
 // Shift a player's movement after frame `after` by n frames (n > 0 inserts a pause there, n < 0 closes one up).
 // Their position at `after` is pinned so they stand still through the gap. Lengthens the drill if needed.
+function trimHold(m, ic){
+  const L = lastOf(m); let ks = keyList(ic);
+  while(ks.length > 1 && ks[ks.length-1] > L && samePt(ic.keys[ks[ks.length-1]], ic.keys[ks[ks.length-2]])){ delete ic.keys[ks[ks.length-1]]; ks = keyList(ic); }
+  const last = ks[ks.length-1]; if(last < L) ic.keys[L] = [...ic.keys[last]];
+}
 function shiftAfter(m, id, after, n){
   const ic = m.icons[id], at = posAt(ic, after), keys = {}, lastKey = Math.max(...keyList(ic));
   if(lastKey + n > FRAMES_MAX - 1 && n > 0) return false;
@@ -1356,6 +1380,7 @@ function shiftAfter(m, id, after, n){
   if(n > 0) keys[after + n] = [r1(at[0]), r1(at[1])];
   ic.keys = keys;
   if(ic.breaks) ic.breaks = ic.breaks.map(b => b > after ? b + n : b);
+  trimHold(m, ic);
   const need = Math.max(...keyList(ic)) + 1;
   if(need > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil(need / 5) * 5));
   return true;
@@ -1387,6 +1412,7 @@ function retime(m, id, a, b, n){
   for(const k of keyList(ic)){ let nk = map(k); if(nk <= prev) nk = prev + 1; keys[nk] = ic.keys[k]; prev = nk; }
   ic.keys = keys;
   if(ic.breaks) ic.breaks = ic.breaks.map(map);
+  trimHold(m, ic);
   const need = Math.max(...keyList(ic)) + 1;
   if(need > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil(need / 5) * 5));
   return true;
@@ -1483,7 +1509,7 @@ function renderMoveDetail(box, m, id){
   const F = framesOf(m), L = F - 1, ic = m.icons[id], {s, e, still} = moveWindow(ic, L), cf = Math.round(ME.frame);
   const pts = [...Array(F)].map((_,k) => posAt(ic,k));
   let dist = 0; for(let k=1;k<F;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
-  const runs = runsOf(ic, L), turns = keyList(ic).filter(k => runs.some(r => k > r.s && k < r.e) && isTurn(ic, k));
+  const runs = runsOf(ic, L), turns = keyList(ic).filter(k => runs.some(r => k > r.s && k < r.e) && isTurn(ic, k)), rsel = runSelOf(m, id), rselR = rsel == null ? null : runs[rsel];
   const form = ME.runForm = ME.runForm || {wait: 0, len: 15};
   // the selected frame and what it is: inside a run, in a pause between runs, before the first run, or after the last
   if(ME.tlFor !== m.id + ':' + id){ ME.tlSel = null; ME.tlFor = m.id + ':' + id; }
@@ -1505,7 +1531,7 @@ function renderMoveDetail(box, m, id){
       ${inRun < 0 && gap < 0 ? `<p class="hint">${runs.length && sel >= runs[runs.length-1].e ? 'To keep going from here, use Add run below.' : 'To start them later or sooner, use Stays still until frame.'}</p>` : ''}
     </div>`;
   const cells = pts.map((p,k) => { const nx = pts[Math.min(k+1, F-1)], lv = k < F-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0, mv = lv > 0, has = m.icons.ball && carrierAt(m,k)===id;
-    return `<button class="tl sp${lv}${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}${k===sel?' sel':''}" data-tf="${k}" aria-label="Frame ${k+1}, ${SPEEDS[lv][0].toLowerCase()}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
+    return `<button class="tl sp${lv}${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}${k===sel?' sel':''}${rselR && k >= rselR.s && k < rselR.e ? ' insel' : ''}" data-tf="${k}" aria-label="Frame ${k+1}, ${SPEEDS[lv][0].toLowerCase()}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
   const tapSpeed = ME.tlMode !== 'select', brush = ME.brush ?? null;
   box.innerHTML = `<div class="field-label">Movement</div>
     <div class="sline tlmode"><button class="chip${tapSpeed?' on':''}" data-tlmode="speed">Paint speeds</button><button class="chip${tapSpeed?'':' on'}" data-tlmode="select">Select a frame</button></div>
@@ -1516,9 +1542,14 @@ function renderMoveDetail(box, m, id){
     <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2 j"></b>Jog 1.6 m/s</span><span><b class="sw2 r"></b>Run 4.8 m/s</span><span><b class="sw2 s"></b>Sprint 8 m/s</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
     ${still ? `<p class="hint">Doesn't move in this drill yet. Add a run below, or drag the shirt on a later frame.</p>` : `
     <div class="runs">${runs.map((r, i) => `<div class="run"><b>Run ${i+1}</b> frames ${r.s+1}–${r.e+1} · ${Math.round(runLength(ic, r))} m${i && r.s > runs[i-1].e ? ` · after waiting ${r.s - runs[i-1].e} frame${r.s - runs[i-1].e === 1 ? '' : 's'}` : ''}</div>`).join('')}</div>
+    ${runs.length > 1 ? `<div class="sline">Edit <span class="runtabs"><button class="chip${rsel==null?' on':''}" data-rtab="-1">All runs</button>${runs.map((r, i) => `<button class="chip${rsel===i?' on':''}" data-rtab="${i}">Run ${i+1}</button>`).join('')}</span></div>` : ''}
+    ${rsel != null ? (() => { const r = runs[rsel], lo = rsel ? runs[rsel-1].e : 0; return `
+    <div class="sline">Run ${rsel+1} starts at frame ${stepper('rs:-1', r.s+1, 'Run starts at frame')}</div>
+    <div class="sline">and takes ${stepper('rd:-1', r.e-r.s, 'Frames this run takes')} frames · arrives at frame ${r.e+1}</div>
+    <p class="hint">${Math.round(runLength(ic, r))} m, ${secs(r.e-r.s)}. ${rsel ? `It can start as soon as run ${rsel} ends (frame ${lo+1}).` : ''} Later runs move to fit.</p>`; })() : `
     <div class="sline">Starts moving at frame ${stepper('ws:-1', s+1, 'Starts moving at frame')}</div>
     <div class="sline">${runs.length > 1 ? 'All runs take' : 'Run takes'} ${stepper('wd:-1', e-s, 'Frames the run takes')} frames · arrives at frame ${e+1}</div>
-    <p class="hint">${Math.round(dist)} m${runs.length > 1 ? ' in all' : ''}, ${secs(e-s)}. Changing the start moves the ${runs.length > 1 ? 'runs' : 'run'} later or earlier; changing the frames speeds ${runs.length > 1 ? 'them' : 'it'} up or slows ${runs.length > 1 ? 'them' : 'it'} down. Before and after, they stand still. Drag the ring or dot at either end of the path on the pitch to move where they start or finish.</p>
+    <p class="hint">${Math.round(dist)} m${runs.length > 1 ? ' in all' : ''}, ${secs(e-s)}. Changing the start moves the ${runs.length > 1 ? 'runs' : 'run'} later or earlier; changing the frames speeds ${runs.length > 1 ? 'them' : 'it'} up or slows ${runs.length > 1 ? 'them' : 'it'} down. Before and after, they stand still. Drag the ring or dot at either end of the path on the pitch to move where they start or finish.</p>`}
     ${turns.length ? `<div class="sline">Turning points: ${turns.map(k => `<button class="chip" data-tdel="${k}" aria-label="Remove turning point at frame ${k+1}">Frame ${k+1} ×</button>`).join('')}</div>` : ''}`}
     <div class="addrun">
       <div class="field-label">${still ? 'Add a run' : `Add run ${runs.length + 1}`}</div>
@@ -1551,6 +1582,7 @@ function renderMoveDetail(box, m, id){
     };
     grid.addEventListener('pointerup', finish); grid.addEventListener('pointercancel', () => { job = null; renderMoveDetail(box, m, id); });
   }
+  $$('[data-rtab]', box).forEach(b => b.addEventListener('click', () => { const i = +b.dataset.rtab; ME.runSel = i < 0 ? null : {id, i}; renderMoveDetail(box, m, id); renderMoveLayer(); if(ME.editing === id) renderBanner(); }));
   $$('[data-tlmode]', box).forEach(b => b.addEventListener('click', () => { ME.tlMode = b.dataset.tlmode; if(ME.tlMode === 'speed') ME.tlSel = null; renderMoveDetail(box, m, id); }));
   $$('[data-tlgo]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tlgo; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
   const lengthened = before => { if(framesOf(m) > before) toast(`Drill is now ${framesOf(m)} frames`); };
@@ -1570,6 +1602,10 @@ function renderMoveDetail(box, m, id){
   const np = $('#tlNoPause', box); if(np) np.addEventListener('click', () => { setPause(m, id, runs[gap].e, runs[gap+1].s, 0); ME.tlSel = runs[gap].e; redraw(); });
   $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
     const [kind, , d] = b.dataset.st.split(':'), dd = +d, w = moveWindow(ic, L);
+    if(kind==='rs' || kind==='rd'){ const r = runs[rsel], lo = rsel ? runs[rsel-1].e : 0, before = framesOf(m);
+      const ok = kind==='rs' ? setPause(m, id, lo, r.s, Math.max(0, r.s + dd - lo)) : retime(m, id, r.s, r.e, Math.max(1, r.e - r.s + dd));
+      if(!ok) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
+      lengthened(before); redraw(); return; }
     if(kind==='pl'){ ME.pauseLen = clamp(pauseLen + dd, 1, 30); renderMoveDetail(box, m, id); return; }
     if(kind==='pg'){ const a = runs[gap].e, b2 = runs[gap+1].s, len = clamp(b2 - a + dd, 1, 60), before = framesOf(m);
       if(!setPause(m, id, a, b2, len)) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
@@ -1735,7 +1771,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:53</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 16:13</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
