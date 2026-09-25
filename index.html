@@ -115,6 +115,9 @@ main{flex:1;min-height:0;position:relative}
 .tlnums{display:grid;grid-template-columns:repeat(20,1fr);font:600 10px/1 var(--body);color:var(--muted)}
 .tlnums span{text-align:center}
 .tlnums span:nth-child(1){grid-column:1}.tlnums span:nth-child(2){grid-column:5}.tlnums span:nth-child(3){grid-column:10}.tlnums span:nth-child(4){grid-column:15}.tlnums span:nth-child(5){grid-column:20}
+.runs{display:flex;flex-direction:column;gap:4px;font-size:14px;color:var(--muted)}
+.runs b{color:var(--ink);margin-right:4px}
+.addrun{display:flex;flex-direction:column;gap:8px;margin-top:6px;padding-top:10px;border-top:1px solid var(--line)}
 .tlkey{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--muted)}
 .tlkey span{display:inline-flex;align-items:center;gap:5px}
 .tlkey b{width:12px;height:10px;border-radius:3px;display:inline-block;background:var(--panel2);outline:1px solid var(--line)}
@@ -571,6 +574,7 @@ function setMoveWindow(ic, s2, e2, last = FRAMES_DEFAULT - 1){
   const keys = {0:[...A], [s2]:[...A], [e2]:[...B], [last]:[...B]};
   for(const k of keyList(ic)) if(k > s && k < e){ const nk = Math.round(s2 + (k-s)*(e2-s2)/(e-s)); if(nk > s2 && nk < e2) keys[nk] = [...ic.keys[k]]; }
   ic.keys = keys;
+  if(ic.breaks){ ic.breaks = ic.breaks.filter(b => b > s && b < e).map(b => Math.round(s2 + (b-s)*(e2-s2)/(e-s))).filter(b => keys[b]); if(!ic.breaks.length) delete ic.breaks; }
 }
 function iconIds(m){ return Object.keys(m.icons).filter(k=>k!=='ball').sort((a,b)=>a-b).concat(m.icons.ball ? ['ball'] : []); }
 const moveColor = (m,id) => (m.icons[id] && m.icons[id].color) || defaultColor(id);
@@ -1107,7 +1111,7 @@ function showVisibility(){
 $('#edFit').addEventListener('click', () => { if(moveCtl.isFit()) zoomMove(); else { moveCtl.fit(); syncEdFit(); } });
 $('#edDone').addEventListener('click', () => { ME.editing = null; renderBanner(); renderMoveLayer(); });
 $('#edStraight').addEventListener('click', () => { straighten(ME.editing); });
-function straighten(id){ const last = lastOf(curMove()), ic = curMove().icons[id], {s, e} = moveWindow(ic, last), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [last]:[...B]}; save(); renderMoveLayer(); toast('Path straightened'); }
+function straighten(id){ const last = lastOf(curMove()), ic = curMove().icons[id], {s, e} = moveWindow(ic, last), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [last]:[...B]}; delete ic.breaks; save(); renderMoveLayer(); toast('Path straightened'); }
 function startPathEdit(id){ stopPlay(); ME.editing = id; renderBanner(); renderMoveLayer(); const m = curMove(); const ic = m.icons[id]; }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
@@ -1139,6 +1143,7 @@ function setFrames(m, n){
   if(n === framesOf(m)) return;
   if(newLast < oldLast) for(const ic of Object.values(m.icons)){
     const at = posAt(ic, newLast); for(const k of keyList(ic)) if(k > newLast) delete ic.keys[k]; ic.keys[newLast] = [r1(at[0]), r1(at[1])];
+    if(ic.breaks){ ic.breaks = ic.breaks.filter(b => b < newLast); if(!ic.breaks.length) delete ic.breaks; }
   }
   if(n === FRAMES_DEFAULT) delete m.frames; else m.frames = n;
   if(ME.frame > newLast) ME.frame = newLast;
@@ -1194,36 +1199,87 @@ function showMoveIcon(id){
       $('#miRemove', el).addEventListener('click', () => { removeIcon(m,id); save(); closeSheet(); renderEditor(); });
     });
 }
+// A player's runs: the stretches of frames where they move, split wherever they stand still for a while.
+function runsOf(ic, last = FRAMES_DEFAULT - 1){
+  const ks = keyList(ic).filter(k => k <= last), out = [], brk = new Set(ic.breaks || []);
+  for(let i=0;i<ks.length-1;i++){ const a = ks[i], b = ks[i+1];
+    if(samePt(ic.keys[a], ic.keys[b])) continue;
+    const prev = out[out.length-1]; if(prev && prev.e === a && !brk.has(a)) prev.e = b; else out.push({s:a, e:b}); }
+  return out;
+}
+const runLength = (ic, r) => { let d = 0; for(let k=r.s+1;k<=r.e;k++){ const a = posAt(ic,k-1), b = posAt(ic,k); d += Math.hypot(b[0]-a[0], b[1]-a[1]); } return d; };
+// Add a run off the end of the last one: wait some frames, then run for some frames, carrying on in the same direction
+// for about 10 m (or 10 m upfield for a first run). Lengthens the drill if it needs more frames (up to 100).
+function addRun(m, id, wait, len){
+  const ic = m.icons[id], runs = runsOf(ic, lastOf(m)), from = runs.length ? runs[runs.length-1].e : 0;
+  let st = from + wait, en = st + len;
+  if(en > lastOf(m)) setFrames(m, Math.ceil((en + 1) / 5) * 5);
+  const L = lastOf(m); en = Math.min(en, L); st = Math.min(st, en - 1);
+  if(en <= from) return null;
+  const P = posAt(ic, from); let v = [0, -10];
+  if(runs.length){ const A = posAt(ic, runs[runs.length-1].s), dx = P[0]-A[0], dy = P[1]-A[1], d = Math.hypot(dx, dy); if(d > .5) v = [dx/d*10, dy/d*10]; }
+  const Q = [r1(clamp(P[0]+v[0], -2, 72)), r1(clamp(P[1]+v[1], -2, 122))];
+  for(const k of keyList(ic)) if(k > from) delete ic.keys[k];
+  ic.keys[from] = [r1(P[0]), r1(P[1])]; if(st > from) ic.keys[st] = [r1(P[0]), r1(P[1])];
+  ic.keys[en] = Q; if(en < L) ic.keys[L] = [...Q];
+  ic.breaks = (ic.breaks || []).filter(b => b < from).concat(runs.length && st === from ? [st] : []);
+  if(!ic.breaks.length) delete ic.breaks;
+  return {s: st, e: en, n: runs.length + 1};
+}
+function removeLastRun(m, id){
+  const ic = m.icons[id], L = lastOf(m), runs = runsOf(ic, L); if(!runs.length) return;
+  const r = runs[runs.length-1], P = posAt(ic, r.s);
+  for(const k of keyList(ic)) if(k > r.s) delete ic.keys[k];
+  ic.keys[L] = [r1(P[0]), r1(P[1])];
+  if(ic.breaks){ ic.breaks = ic.breaks.filter(b => b < r.s); if(!ic.breaks.length) delete ic.breaks; }
+}
 function pathSummary(ic, last = FRAMES_DEFAULT - 1){
-  const {s, e, still} = moveWindow(ic, last), turns = keyList(ic).filter(k => k > s && k < e);
+  const {s, e, still} = moveWindow(ic, last), turns = keyList(ic).filter(k => k > s && k < e), runs = runsOf(ic, last);
   if(still) return 'Stands still for the whole drill';
+  if(runs.length > 1) return `${runs.length} runs: ` + runs.map(r => `frames ${r.s+1}–${r.e+1}`).join(', then ');
   return (s ? `Still until frame ${s+1}, then runs` : 'Runs') + ` to frame ${e+1}` + (turns.length ? `, turning at frame${turns.length>1?'s':''} ${turns.map(k=>k+1).join(', ')}` : ' in a straight line');
 }
 function renderMoveDetail(box, m, id){
   const F = framesOf(m), L = F - 1, ic = m.icons[id], {s, e, still} = moveWindow(ic, L), cf = Math.round(ME.frame);
   const pts = [...Array(F)].map((_,k) => posAt(ic,k));
   let dist = 0; for(let k=1;k<F;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
-  const turns = keyList(ic).filter(k => k > s && k < e);
+  const runs = runsOf(ic, L), turns = keyList(ic).filter(k => runs.some(r => k > r.s && k < r.e));
+  const form = ME.runForm = ME.runForm || {wait: 0, len: 8};
   const cells = pts.map((p,k) => { const mv = k>0 && !samePt(p, pts[k-1]), has = m.icons.ball && carrierAt(m,k)===id;
     return `<button class="tl${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}" data-tf="${k}" aria-label="Frame ${k+1}${mv?', moving':', still'}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
   box.innerHTML = `<div class="field-label">Movement</div>
     <div class="tlwrap"><div class="tlgrid">${cells}</div>${F === 20 ? '<div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div>' : `<div class="hint">${F} frames, 20 to a row</div>`}</div>
     <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2"></b>Running</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
-    ${still ? `<p class="hint">Doesn't move in this drill. Drag the shirt on a later frame to give them a run.</p>` : `
+    ${still ? `<p class="hint">Doesn't move in this drill yet. Add a run below, or drag the shirt on a later frame.</p>` : `
+    <div class="runs">${runs.map((r, i) => `<div class="run"><b>Run ${i+1}</b> frames ${r.s+1}–${r.e+1} · ${Math.round(runLength(ic, r))} m${i && r.s > runs[i-1].e ? ` · after waiting ${r.s - runs[i-1].e} frame${r.s - runs[i-1].e === 1 ? '' : 's'}` : ''}</div>`).join('')}</div>
     <div class="sline">Stays still until frame ${stepper('ws:-1', s+1, 'Stays still until frame')}</div>
-    <div class="sline">Arrives at frame ${stepper('we:-1', e+1, 'Arrives at frame')}</div>
-    <p class="hint">Runs ${Math.round(dist)} m over ${e-s} frame${e-s===1?'':'s'} (frames ${s+1}–${e+1}). The run keeps its shape when you change these.</p>
-    ${turns.length ? `<div class="sline">Turning points: ${turns.map(k => `<button class="chip" data-tdel="${k}" aria-label="Remove turning point at frame ${k+1}">Frame ${k+1} ×</button>`).join('')}</div>` : ''}`}`;
+    <div class="sline">${runs.length > 1 ? 'Finishes the last run at' : 'Arrives at'} frame ${stepper('we:-1', e+1, 'Arrives at frame')}</div>
+    <p class="hint">${runs.length > 1 ? `Runs ${Math.round(dist)} m in all.` : `Runs ${Math.round(dist)} m over ${e-s} frame${e-s===1?'':'s'} (frames ${s+1}–${e+1}).`} Changing these keeps the shape of the ${runs.length > 1 ? 'runs' : 'run'}.</p>
+    ${turns.length ? `<div class="sline">Turning points: ${turns.map(k => `<button class="chip" data-tdel="${k}" aria-label="Remove turning point at frame ${k+1}">Frame ${k+1} ×</button>`).join('')}</div>` : ''}`}
+    <div class="addrun">
+      <div class="field-label">${still ? 'Add a run' : `Add run ${runs.length + 1}`}</div>
+      <div class="sline">${still ? 'Start after' : 'Wait'} ${stepper('aw:-1', form.wait, 'Frames to wait')} frame${form.wait===1?'':'s'}, then run for ${stepper('al:-1', form.len, 'Frames to run')} frame${form.len===1?'':'s'}</div>
+      <div class="row-btns"><button class="btn ghost" id="runAdd">${still ? 'Add run' : `Add run ${runs.length + 1}`}</button>${runs.length ? `<button class="btn ghost" id="runDel">Remove last run</button>` : ''}</div>
+      <p class="hint">The new run starts where ${still ? 'they stand' : 'the last one finishes'}${still ? '' : ' and carries on the same way'}. You're taken to its last frame: drag the shirt to where it should finish. The drill gets longer if it needs to (up to ${FRAMES_MAX} frames).</p>
+    </div>`;
   const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic, L); };
   // jumping frame changes the rest of the sheet (ball button, drag hint), so reopen it
   $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tf; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
   $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
     const [kind, , d] = b.dataset.st.split(':'), dd = +d, w = moveWindow(ic, L);
+    if(kind==='aw' || kind==='al'){ if(kind==='aw') form.wait = clamp(form.wait + dd, 0, 40); else form.len = clamp(form.len + dd, 1, 40); renderMoveDetail(box, m, id); return; }
     if(kind==='ws') setMoveWindow(ic, clamp(w.s + dd, 0, w.e - 1), w.e, L);
     else setMoveWindow(ic, w.s, clamp(w.e + dd, w.s + 1, L), L);
     redraw();
   }));
   $$('[data-tdel]', box).forEach(b => b.addEventListener('click', () => { delete ic.keys[+b.dataset.tdel]; redraw(); }));
+  $('#runAdd', box).addEventListener('click', () => {
+    const before = framesOf(m), r = addRun(m, id, form.wait, form.len);
+    if(!r) return toast(`No room for another run: the drill is already ${FRAMES_MAX} frames.`);
+    stopPlay(); ME.frame = r.e; save(); closeSheet(); renderEditor();
+    toast(`Run ${r.n} added, frames ${r.s+1}–${r.e+1}${framesOf(m) > before ? ` (drill is now ${framesOf(m)} frames)` : ''}. Drag #${id} to where it finishes.`);
+  });
+  const rd = $('#runDel', box); if(rd) rd.addEventListener('click', () => { removeLastRun(m, id); redraw(); });
 }
 const passLen = () => S.ui.passLen ?? 3;
 function passSelect(){
@@ -1356,7 +1412,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 10:09</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 10:38</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
