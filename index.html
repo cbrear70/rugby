@@ -20,7 +20,7 @@
 :root{
   color-scheme: dark;
   --bg:#0E1712; --panel:#15231B; --panel2:#1C2E23; --line:#2A4032;
-  --ink:#EDF3EE; --muted:#95AA9B; --accent:#F2C230; --accent-ink:#1A1405; --danger:#E4573F; --ok:#5BC77A;
+  --ink:#EDF3EE; --muted:#95AA9B; --accent:#F2C230; --accent-ink:#1A1405; --danger:#E4573F; --ok:#5BC77A; --jog:#4FD1A5; --sprint:#E4573F;
   --display:"Saira Condensed","Arial Narrow",-apple-system,system-ui,sans-serif;
   --body:"Barlow",-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
 }
@@ -109,8 +109,23 @@ main{flex:1;min-height:0;position:relative}
 .tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px;row-gap:4px}
 .tl{height:30px;border:0;border-radius:4px;background:var(--panel2);padding:0;position:relative;outline:1px solid var(--line);outline-offset:-1px}
 .tl.mv{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
+.tl.sp1{background:color-mix(in srgb,var(--jog) 60%,var(--panel2))}
+.tl.sp2{background:color-mix(in srgb,var(--accent) 60%,var(--panel2))}
+.tl.sp3{background:color-mix(in srgb,var(--sprint) 70%,var(--panel2))}
+.tlkey .sw2.j{background:color-mix(in srgb,var(--jog) 60%,var(--panel2))}
+.tlkey .sw2.r{background:color-mix(in srgb,var(--accent) 60%,var(--panel2))}
+.tlkey .sw2.s{background:color-mix(in srgb,var(--sprint) 70%,var(--panel2))}
+.chip.spd.sp1.on{background:var(--jog);border-color:var(--jog);color:#0E1712}
+.chip.spd.sp2.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip.spd.sp3.on{background:var(--sprint);border-color:var(--sprint);color:#fff}
 .tl.key::after{content:'';position:absolute;left:50%;top:4px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 1.5px #1A1405}
 .tl.cur{outline:2px solid var(--ink);outline-offset:0}
+.tl.sel{outline:3px solid var(--accent);outline-offset:1px;z-index:1}
+.tlact{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line))}
+.tlact-h{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;font-size:14px;color:var(--muted)}
+.tlact-h b{color:var(--ink)}
+.tlact-h .chip{margin-left:auto}
+.btn.sm{padding:6px 10px;font-size:13px}
 .tl i{position:absolute;left:50%;bottom:4px;width:7px;height:5px;margin-left:-3.5px;border-radius:50%;background:#F6F1E4;box-shadow:0 0 0 1px #3A2A18}
 .tlnums{display:grid;grid-template-columns:repeat(20,1fr);font:600 10px/1 var(--body);color:var(--muted)}
 .tlnums span{text-align:center}
@@ -565,7 +580,7 @@ function moveWindow(ic, last = FRAMES_DEFAULT - 1){
   const ks = keyList(ic); let i = 0, j = ks.length-1;
   while(i < j && samePt(ic.keys[ks[i+1]], ic.keys[ks[0]])) i++;
   while(j > i && samePt(ic.keys[ks[j-1]], ic.keys[ks[ks.length-1]])) j--;
-  const s = i===0 ? 0 : ks[i], e = j===ks.length-1 ? last : Math.min(ks[j], last);
+  const s = i===0 ? 0 : ks[i], e = Math.min(ks[j], last); // arrives at their last moving keyframe, not necessarily the drill's end
   return {s: i===j ? 0 : s, e: i===j ? last : e, still: i===j};
 }
 // squeeze or stretch the run into frames s2..e2, keeping its shape and turning points
@@ -1226,6 +1241,97 @@ function addRun(m, id, wait, len){
   if(!ic.breaks.length) delete ic.breaks;
   return {s: st, e: en, n: runs.length + 1};
 }
+// Shift a player's movement after frame `after` by n frames (n > 0 inserts a pause there, n < 0 closes one up).
+// Their position at `after` is pinned so they stand still through the gap. Lengthens the drill if needed.
+function shiftAfter(m, id, after, n){
+  const ic = m.icons[id], at = posAt(ic, after), keys = {}, lastKey = Math.max(...keyList(ic));
+  if(lastKey + n > FRAMES_MAX - 1 && n > 0) return false;
+  for(const k of keyList(ic)){ if(k <= after) keys[k] = ic.keys[k]; else if(k + n > after) keys[k + n] = ic.keys[k]; }
+  keys[after] = [r1(at[0]), r1(at[1])];
+  if(n > 0) keys[after + n] = [r1(at[0]), r1(at[1])];
+  ic.keys = keys;
+  if(ic.breaks) ic.breaks = ic.breaks.map(b => b > after ? b + n : b);
+  const need = Math.max(...keyList(ic)) + 1;
+  if(need > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil(need / 5) * 5));
+  return true;
+}
+function insertPause(m, id, k, n){ return shiftAfter(m, id, k, n); }
+// a pause is the still stretch between run i and run i+1: frames a (end of run i) to b (start of run i+1)
+function setPause(m, id, a, b, len){
+  const ic = m.icons[id], delta = len - (b - a); if(!delta) return true;
+  if(delta > 0) return shiftAfter(m, id, a, delta);
+  // shorter: drop the still frames inside the pause and pull everything from b onwards back
+  const keys = {};
+  for(const k of keyList(ic)){ if(k <= a) keys[k] = ic.keys[k]; else if(k >= b) keys[k + delta] = ic.keys[k]; }
+  ic.keys = keys;
+  if(ic.breaks) ic.breaks = ic.breaks.map(x => x >= b ? x + delta : x);
+  if(len === 0){ ic.breaks = [...new Set((ic.breaks || []).concat([a]))]; } // no pause left: keep them as two runs
+  return true;
+}
+// Speeds, in metres per frame: 0 still, 1 jog, 2 run, 3 sprint. A frame's speed comes from how far the player
+// actually moves in it, so the timeline always matches the pitch. Setting a speed re-times a stretch of path.
+const SPEEDS = [['Still', 0], ['Jog', 0.6], ['Run', 1.2], ['Sprint', 2.0]];
+const speedLevel = d => d < 0.05 ? 0 : d < 0.9 ? 1 : d < 1.6 ? 2 : 3;
+// Re-time frames a..b of a player's path to last n frames, keeping its shape: points in between are spread in
+// proportion, everything after b moves earlier or later. Lengthens the drill if needed; false if over the limit.
+function retime(m, id, a, b, n){
+  const ic = m.icons[id], delta = n - (b - a); if(!delta) return true;
+  if(Math.max(...keyList(ic)) + delta > FRAMES_MAX - 1) return false;
+  const keys = {}, map = k => k <= a ? k : k > b ? k + delta : a + Math.max(1, Math.round((k - a) * n / (b - a)));
+  let prev = -1;
+  for(const k of keyList(ic)){ let nk = map(k); if(nk <= prev) nk = prev + 1; keys[nk] = ic.keys[k]; prev = nk; }
+  ic.keys = keys;
+  if(ic.breaks) ic.breaks = ic.breaks.map(map);
+  const need = Math.max(...keyList(ic)) + 1;
+  if(need > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil(need / 5) * 5));
+  return true;
+}
+// The speed level of each frame (frame k's speed is its movement from k to k+1). The last frame has none.
+function levelsOf(m, ic){ const F = framesOf(m), P = [...Array(F)].map((_,k) => posAt(ic,k));
+  return P.map((p,k) => k < F-1 ? speedLevel(Math.hypot(P[k+1][0]-p[0], P[k+1][1]-p[1])) : 0); }
+// Rebuild a player's keyframes from speed levels, keeping their path: each frame they move SPEEDS[level] metres along
+// it. If the levels don't get them to the end, they carry on at their last speed (the drill lengthens if needed,
+// up to 100 frames); once at the end they stand still. Keys go where the speed changes and at corners of the path.
+function bakeLevels(m, id, lv){
+  const ic = m.icons[id], G = [];
+  for(const k of keyList(ic)){ const q = ic.keys[k]; if(!G.length || !samePt(G[G.length-1], q)) G.push(q); }
+  if(G.length < 2) return;
+  const cum = [0]; for(let i=1;i<G.length;i++) cum.push(cum[i-1] + Math.hypot(G[i][0]-G[i-1][0], G[i][1]-G[i-1][1]));
+  const total = cum[cum.length-1], seg = d => { let i = 0; while(i < G.length-2 && d > cum[i+1] + 1e-6) i++; return i; };
+  const at = d => { d = Math.min(total, Math.max(0, d)); const i = seg(d), L = cum[i+1] - cum[i] || 1, t = (d - cum[i]) / L; return [G[i][0] + (G[i+1][0]-G[i][0])*t, G[i][1] + (G[i+1][1]-G[i][1])*t]; };
+  const prof = lv.slice(0, -1); while(prof.length && !prof[prof.length-1]) prof.pop();
+  let covered = prof.reduce((a, v) => a + SPEEDS[v][1], 0);
+  while(covered < total - 0.05 && prof.length < FRAMES_MAX - 1){ const v = Math.max(1, prof[prof.length-1] || 1); prof.push(v); covered += SPEEDS[v][1]; }
+  if(prof.length + 1 > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil((prof.length + 1) / 5) * 5));
+  const F = framesOf(m), dist = [0]; for(let k=0;k<F-1;k++) dist.push(Math.min(total, dist[k] + SPEEDS[prof[k] || 0][1]));
+  const keys = {0: at(0).map(r1)}, lvAt = k => dist[k+1] > dist[k] + 1e-6 ? (prof[k] || 0) : 0;
+  let arrived = false;
+  for(let k=1;k<F;k++){
+    const change = lvAt(k) !== lvAt(k-1), corner = seg(dist[k]) !== seg(dist[k-1]) && dist[k] < total - 1e-6;
+    if(!arrived && dist[k] >= total - 1e-6){ keys[k] = at(total).map(r1); arrived = true; }
+    else if(change || corner) keys[k] = at(dist[k]).map(r1);
+  }
+  keys[F-1] = at(dist[F-1]).map(r1);
+  ic.keys = keys; delete ic.breaks;
+}
+// Tap a frame to step its speed. It can only differ by one step from the frame before, and later frames are pulled
+// into line one step at a time (so a stop becomes slowing down, a burst becomes speeding up).
+function stepSpeed(m, id, k){
+  const ic = m.icons[id], lv = levelsOf(m, ic); if(k >= lv.length - 1) return false;
+  const prev = k > 0 ? lv[k-1] : null, allowed = prev == null ? [0,1,2,3] : [prev-1, prev, prev+1].filter(v => v >= 0 && v <= 3);
+  const i = allowed.indexOf(lv[k]); lv[k] = allowed[(i + 1) % allowed.length];
+  for(let j=k+1;j<lv.length-1;j++) lv[j] = Math.max(lv[j-1] - 1, Math.min(lv[j-1] + 1, lv[j]));
+  bakeLevels(m, id, lv); return true;
+}
+// is key k a real change of direction (not just a change of speed along a straight line)?
+function isTurn(ic, k){
+  const ks = keyList(ic), i = ks.indexOf(k); if(i <= 0 || i >= ks.length-1) return false;
+  const a = ic.keys[ks[i-1]], b = ic.keys[k], c = ic.keys[ks[i+1]], u = [b[0]-a[0], b[1]-a[1]], v = [c[0]-b[0], c[1]-b[1]];
+  const lu = Math.hypot(...u), lv = Math.hypot(...v); if(lu < .05 || lv < .05) return false;
+  return Math.acos(Math.max(-1, Math.min(1, (u[0]*v[0] + u[1]*v[1]) / (lu*lv)))) > 0.14; // about 8 degrees
+}
+// the straight stretch (between two keyframes) that frame f is part of
+function legAt(ic, f){ const ks = keyList(ic); for(let i=0;i<ks.length-1;i++) if(f >= ks[i] && f < ks[i+1]) return {s: ks[i], e: ks[i+1]}; return null; }
 function removeLastRun(m, id){
   const ic = m.icons[id], L = lastOf(m), runs = runsOf(ic, L); if(!runs.length) return;
   const r = runs[runs.length-1], P = posAt(ic, r.s);
@@ -1234,7 +1340,7 @@ function removeLastRun(m, id){
   if(ic.breaks){ ic.breaks = ic.breaks.filter(b => b < r.s); if(!ic.breaks.length) delete ic.breaks; }
 }
 function pathSummary(ic, last = FRAMES_DEFAULT - 1){
-  const {s, e, still} = moveWindow(ic, last), turns = keyList(ic).filter(k => k > s && k < e), runs = runsOf(ic, last);
+  const {s, e, still} = moveWindow(ic, last), turns = keyList(ic).filter(k => k > s && k < e && isTurn(ic, k)), runs = runsOf(ic, last);
   if(still) return 'Stands still for the whole drill';
   if(runs.length > 1) return `${runs.length} runs: ` + runs.map(r => `frames ${r.s+1}–${r.e+1}`).join(', then ');
   return (s ? `Still until frame ${s+1}, then runs` : 'Runs') + ` to frame ${e+1}` + (turns.length ? `, turning at frame${turns.length>1?'s':''} ${turns.map(k=>k+1).join(', ')}` : ' in a straight line');
@@ -1243,13 +1349,36 @@ function renderMoveDetail(box, m, id){
   const F = framesOf(m), L = F - 1, ic = m.icons[id], {s, e, still} = moveWindow(ic, L), cf = Math.round(ME.frame);
   const pts = [...Array(F)].map((_,k) => posAt(ic,k));
   let dist = 0; for(let k=1;k<F;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
-  const runs = runsOf(ic, L), turns = keyList(ic).filter(k => runs.some(r => k > r.s && k < r.e));
+  const runs = runsOf(ic, L), turns = keyList(ic).filter(k => runs.some(r => k > r.s && k < r.e) && isTurn(ic, k));
   const form = ME.runForm = ME.runForm || {wait: 0, len: 8};
-  const cells = pts.map((p,k) => { const mv = k>0 && !samePt(p, pts[k-1]), has = m.icons.ball && carrierAt(m,k)===id;
-    return `<button class="tl${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}" data-tf="${k}" aria-label="Frame ${k+1}${mv?', moving':', still'}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
+  // the selected frame and what it is: inside a run, in a pause between runs, before the first run, or after the last
+  if(ME.tlFor !== m.id + ':' + id){ ME.tlSel = null; ME.tlFor = m.id + ':' + id; }
+  const sel = ME.tlMode === 'select' && ME.tlSel != null && ME.tlSel <= L ? ME.tlSel : null, pauseLen = ME.pauseLen = ME.pauseLen || 3;
+  const inRun = sel == null ? -1 : runs.findIndex(r => sel >= r.s && sel < r.e);
+  const gap = sel == null ? -1 : runs.findIndex((r, i) => i < runs.length - 1 && sel >= r.e && sel < runs[i+1].s);
+  const act = sel == null ? '' : `<div class="tlact">
+      <div class="tlact-h"><b>Frame ${sel+1}</b> · ${inRun >= 0 ? `running (run ${inRun+1})` : gap >= 0 ? `pause between run ${gap+1} and run ${gap+2}` : runs.length && sel >= runs[runs.length-1].e ? 'finished running' : 'waiting to start'}
+        <button class="chip" data-tlgo="${sel}">Show this frame</button></div>
+      ${inRun >= 0 ? (() => { const lg = legAt(ic, sel), whole = !!ME.speedWhole, span = whole ? runs[inRun] : lg,
+          dist = whole ? runLength(ic, span) : Math.hypot(ic.keys[lg.e][0]-ic.keys[lg.s][0], ic.keys[lg.e][1]-ic.keys[lg.s][1]), now = speedLevel(dist / (span.e - span.s));
+          return `<div class="sline">Speed ${[1,2,3].map(v => `<button class="chip spd sp${v}${now===v?' on':''}" data-speed="${v}">${SPEEDS[v][0]}</button>`).join('')}</div>
+          <div class="sline"><label class="check" style="font-weight:500;font-size:13px"><input type="checkbox" id="spWhole"${whole?' checked':''}> Whole run ${inRun+1}</label>
+            <span class="hint" style="margin:0">${whole ? `frames ${span.s+1}–${span.e+1}` : `this stretch: frames ${span.s+1}–${span.e+1}`}, ${Math.round(dist)} m in ${span.e - span.s} frames</span></div>`; })() : ''}
+      ${inRun >= 0 ? `<div class="sline">Pause here for ${stepper('pl:-1', pauseLen, 'Pause length')} frame${pauseLen===1?'':'s'} <button class="chip on" id="tlPause">Pause</button></div>
+        <p class="hint">Stops at this spot, then carries on. Everything after moves ${pauseLen} frame${pauseLen===1?'':'s'} later.</p>` : ''}
+      ${gap >= 0 ? `<div class="sline">Pause length ${stepper('pg:-1', runs[gap+1].s - runs[gap].e, 'Pause length')} frames <button class="chip" id="tlNoPause">Remove pause</button></div>
+        <p class="hint">Changing it moves run ${gap+2}${gap+2 < runs.length ? ' and later runs' : ''} earlier or later.</p>` : ''}
+      ${inRun < 0 && gap < 0 ? `<p class="hint">${runs.length && sel >= runs[runs.length-1].e ? 'To keep going from here, use Add run below.' : 'To start them later or sooner, use Stays still until frame.'}</p>` : ''}
+    </div>`;
+  const cells = pts.map((p,k) => { const nx = pts[Math.min(k+1, F-1)], lv = k < F-1 ? speedLevel(Math.hypot(nx[0]-p[0], nx[1]-p[1])) : 0, mv = lv > 0, has = m.icons.ball && carrierAt(m,k)===id;
+    return `<button class="tl sp${lv}${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}${k===sel?' sel':''}" data-tf="${k}" aria-label="Frame ${k+1}, ${SPEEDS[lv][0].toLowerCase()}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
+  const tapSpeed = ME.tlMode !== 'select';
   box.innerHTML = `<div class="field-label">Movement</div>
+    <div class="sline tlmode">Tap a frame to <button class="chip${tapSpeed?' on':''}" data-tlmode="speed">change its speed</button><button class="chip${tapSpeed?'':' on'}" data-tlmode="select">select it</button></div>
     <div class="tlwrap"><div class="tlgrid">${cells}</div>${F === 20 ? '<div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div>' : `<div class="hint">${F} frames, 20 to a row</div>`}</div>
-    <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2"></b>Running</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
+    ${act}
+    <p class="hint" style="margin:0">${tapSpeed ? 'Each tap steps the speed: still, jog, run, sprint. Speed changes one step per frame, so later frames adjust and the player speeds up or slows down gradually.' : sel == null ? 'Tap a frame to pause the player there, change a pause, or set a whole stretch\'s speed.' : ''}</p>
+    <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2 j"></b>Jog</span><span><b class="sw2 r"></b>Run</span><span><b class="sw2 s"></b>Sprint</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
     ${still ? `<p class="hint">Doesn't move in this drill yet. Add a run below, or drag the shirt on a later frame.</p>` : `
     <div class="runs">${runs.map((r, i) => `<div class="run"><b>Run ${i+1}</b> frames ${r.s+1}–${r.e+1} · ${Math.round(runLength(ic, r))} m${i && r.s > runs[i-1].e ? ` · after waiting ${r.s - runs[i-1].e} frame${r.s - runs[i-1].e === 1 ? '' : 's'}` : ''}</div>`).join('')}</div>
     <div class="sline">Stays still until frame ${stepper('ws:-1', s+1, 'Stays still until frame')}</div>
@@ -1262,11 +1391,35 @@ function renderMoveDetail(box, m, id){
       <div class="row-btns"><button class="btn ghost" id="runAdd">${still ? 'Add run' : `Add run ${runs.length + 1}`}</button>${runs.length ? `<button class="btn ghost" id="runDel">Remove last run</button>` : ''}</div>
       <p class="hint">The new run starts where ${still ? 'they stand' : 'the last one finishes'}${still ? '' : ' and carries on the same way'}. You're taken to its last frame: drag the shirt to where it should finish. The drill gets longer if it needs to (up to ${FRAMES_MAX} frames).</p>
     </div>`;
-  const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic, L); };
-  // jumping frame changes the rest of the sheet (ball button, drag hint), so reopen it
-  $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tf; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
+  const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic, lastOf(m)); };
+  // tapping a frame selects it; "Show this frame" moves the pitch there (which changes the rest of the sheet, so reopen it)
+  $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => {
+    const k = +b.dataset.tf;
+    if(tapSpeed){ const before = framesOf(m); if(!stepSpeed(m, id, k)) return toast('The last frame has no speed: it is where they end up.'); lengthened(before); redraw(); return; }
+    ME.tlSel = k === ME.tlSel ? null : k; renderMoveDetail(box, m, id); }));
+  $$('[data-tlmode]', box).forEach(b => b.addEventListener('click', () => { ME.tlMode = b.dataset.tlmode; if(ME.tlMode === 'speed') ME.tlSel = null; renderMoveDetail(box, m, id); }));
+  $$('[data-tlgo]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tlgo; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
+  const lengthened = before => { if(framesOf(m) > before) toast(`Drill is now ${framesOf(m)} frames`); };
+  const tp = $('#tlPause', box); if(tp) tp.addEventListener('click', () => { const before = framesOf(m);
+    if(!insertPause(m, id, sel, pauseLen)) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
+    ME.tlSel = sel + 1; lengthened(before); redraw(); });
+  $$('[data-speed]', box).forEach(b => b.addEventListener('click', () => {
+    const v = SPEEDS[+b.dataset.speed][1], before = framesOf(m), legLen = lg => Math.max(1, Math.round(Math.hypot(ic.keys[lg.e][0]-ic.keys[lg.s][0], ic.keys[lg.e][1]-ic.keys[lg.s][1]) / v));
+    // one stretch, or every stretch of the run in turn (each at this speed), keeping the path's shape
+    let a = ME.speedWhole ? runs[inRun].s : legAt(ic, sel).s, end = ME.speedWhole ? runs[inRun].e : legAt(ic, sel).e;
+    while(a < end){ const lg = legAt(ic, a), n = legLen(lg), d = n - (lg.e - lg.s);
+      if(!retime(m, id, lg.s, lg.e, n)) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
+      end += d; a = lg.s + n; }
+    ME.tlSel = Math.min(sel, end - 1); lengthened(before); redraw();
+  }));
+  const sw = $('#spWhole', box); if(sw) sw.addEventListener('change', () => { ME.speedWhole = sw.checked; renderMoveDetail(box, m, id); });
+  const np = $('#tlNoPause', box); if(np) np.addEventListener('click', () => { setPause(m, id, runs[gap].e, runs[gap+1].s, 0); ME.tlSel = runs[gap].e; redraw(); });
   $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
     const [kind, , d] = b.dataset.st.split(':'), dd = +d, w = moveWindow(ic, L);
+    if(kind==='pl'){ ME.pauseLen = clamp(pauseLen + dd, 1, 30); renderMoveDetail(box, m, id); return; }
+    if(kind==='pg'){ const a = runs[gap].e, b2 = runs[gap+1].s, len = clamp(b2 - a + dd, 1, 60), before = framesOf(m);
+      if(!setPause(m, id, a, b2, len)) return toast(`No room: the drill can't be longer than ${FRAMES_MAX} frames.`);
+      lengthened(before); redraw(); return; }
     if(kind==='aw' || kind==='al'){ if(kind==='aw') form.wait = clamp(form.wait + dd, 0, 40); else form.len = clamp(form.len + dd, 1, 40); renderMoveDetail(box, m, id); return; }
     if(kind==='ws') setMoveWindow(ic, clamp(w.s + dd, 0, w.e - 1), w.e, L);
     else setMoveWindow(ic, w.s, clamp(w.e + dd, w.s + 1, L), L);
@@ -1412,7 +1565,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 10:38</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 11:40</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
