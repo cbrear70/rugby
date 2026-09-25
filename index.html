@@ -20,7 +20,7 @@
 :root{
   color-scheme: dark;
   --bg:#0E1712; --panel:#15231B; --panel2:#1C2E23; --line:#2A4032;
-  --ink:#EDF3EE; --muted:#95AA9B; --accent:#F2C230; --accent-ink:#1A1405; --danger:#E4573F; --ok:#5BC77A; --jog:#4FD1A5; --sprint:#E4573F;
+  --ink:#EDF3EE; --muted:#95AA9B; --accent:#F2C230; --accent-ink:#1A1405; --danger:#E4573F; --ok:#5BC77A; --still:#000000; --jog:#2F7CF0; --run:#D92D2D; --sprint:#F2C230; /* timeline speeds */
   --display:"Saira Condensed","Arial Narrow",-apple-system,system-ui,sans-serif;
   --body:"Barlow",-apple-system,system-ui,"Segoe UI",Roboto,sans-serif;
 }
@@ -109,16 +109,18 @@ main{flex:1;min-height:0;position:relative}
 .tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px;row-gap:4px}
 .tl{height:30px;border:0;border-radius:4px;background:var(--panel2);padding:0;position:relative;outline:1px solid var(--line);outline-offset:-1px}
 .tl.mv{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
-.tl.sp1{background:color-mix(in srgb,var(--jog) 60%,var(--panel2))}
-.tl.sp2{background:color-mix(in srgb,var(--accent) 60%,var(--panel2))}
-.tl.sp3{background:color-mix(in srgb,var(--sprint) 70%,var(--panel2))}
-.tlkey .sw2.j{background:color-mix(in srgb,var(--jog) 60%,var(--panel2))}
-.tlkey .sw2.r{background:color-mix(in srgb,var(--accent) 60%,var(--panel2))}
-.tlkey .sw2.s{background:color-mix(in srgb,var(--sprint) 70%,var(--panel2))}
-.chip.spd.sp1.on{background:var(--jog);border-color:var(--jog);color:#0E1712}
-.chip.spd.sp2.on{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
-.chip.spd.sp3.on{background:var(--sprint);border-color:var(--sprint);color:#fff}
-.tl.key::after{content:'';position:absolute;left:50%;top:4px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 1.5px #1A1405}
+.tl.sp0{background:var(--still)}
+.tl.sp1{background:var(--jog)}
+.tl.sp2{background:var(--run)}
+.tl.sp3{background:var(--sprint)}
+.tlkey .sw1{background:var(--still)}
+.tlkey .sw2.j{background:var(--jog)}
+.tlkey .sw2.r{background:var(--run)}
+.tlkey .sw2.s{background:var(--sprint)}
+.chip.spd.sp1.on{background:var(--jog);border-color:var(--jog);color:#fff}
+.chip.spd.sp2.on{background:var(--run);border-color:var(--run);color:#fff}
+.chip.spd.sp3.on{background:var(--sprint);border-color:var(--sprint);color:#1A1405}
+.tl.key::after{content:'';position:absolute;left:50%;top:4px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:#fff;box-shadow:0 0 0 1.5px #000}
 .tl.cur{outline:2px solid var(--ink);outline-offset:0}
 .tl.sel{outline:3px solid var(--accent);outline-offset:1px;z-index:1}
 .tlact{display:flex;flex-direction:column;gap:6px;padding:10px;border-radius:10px;background:var(--panel2);border:1px solid color-mix(in srgb,var(--accent) 45%,var(--line))}
@@ -137,7 +139,7 @@ main{flex:1;min-height:0;position:relative}
 .tlkey span{display:inline-flex;align-items:center;gap:5px}
 .tlkey b{width:12px;height:10px;border-radius:3px;display:inline-block;background:var(--panel2);outline:1px solid var(--line)}
 .tlkey .sw2{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
-.tlkey .sw3{width:8px;height:8px;border-radius:50%;background:var(--accent);outline:1.5px solid #1A1405}
+.tlkey .sw3{width:8px;height:8px;border-radius:50%;background:#fff;outline:1.5px solid #000}
 .tlkey .sw4{width:9px;height:6px;border-radius:50%;background:#F6F1E4;outline:1px solid #3A2A18}
 .sline{display:flex;flex-wrap:wrap;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
 .sline.bad{color:#FFB4A6}
@@ -1565,7 +1567,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 11:40</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 12:28</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
