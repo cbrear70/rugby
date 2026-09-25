@@ -106,7 +106,7 @@ main{flex:1;min-height:0;position:relative}
 .vtg input{width:24px;height:24px;accent-color:var(--accent)}
 .vtg input:disabled{opacity:.35}
 .tlwrap{display:flex;flex-direction:column;gap:3px}
-.tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px}
+.tlgrid{display:grid;grid-template-columns:repeat(20,1fr);gap:2px;row-gap:4px}
 .tl{height:30px;border:0;border-radius:4px;background:var(--panel2);padding:0;position:relative;outline:1px solid var(--line);outline-offset:-1px}
 .tl.mv{background:color-mix(in srgb,var(--accent) 55%,var(--panel2))}
 .tl.key::after{content:'';position:absolute;left:50%;top:4px;width:6px;height:6px;margin-left:-3px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 1.5px #1A1405}
@@ -174,6 +174,11 @@ textarea{resize:vertical;min-height:84px}
 
 /* moves */
 .mcard{display:grid;grid-template-columns:62px 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
+.cattabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;margin-bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.cattabs button{border:0;border-radius:9px;padding:9px 2px;background:none;color:var(--muted);font:700 12.5px/1.1 var(--body);letter-spacing:.03em;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:3px}
+.cattabs button small{font:600 11px/1 var(--body);opacity:.8}
+.cattabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
+.cats{display:flex;flex-wrap:wrap;gap:6px}
 .mcard.draft{border-style:dashed;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
 .dtag{display:inline-block;font:700 10.5px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:999px;padding:2px 6px;margin-right:2px;vertical-align:1px}
 .mcard .thumb{width:62px;height:88px;border-radius:6px;overflow:hidden;background:#1B4F27;border:0;padding:0}
@@ -323,7 +328,7 @@ textarea{resize:vertical;min-height:84px}
           <button class="chip" id="edState" hidden>Draft</button>
           <button class="chip" id="edFit">Whole pitch</button>
           <span class="spacer"></span>
-          <span class="hint" id="edHint">Drag at frame 1 = start, frame 20 = finish</span>
+          <span class="hint" id="edHint">Drag at frame 1 = start, the last frame = finish</span>
         </div>
         <div class="pitch-wrap">
           <svg class="pitch" id="movePitch" preserveAspectRatio="xMidYMid meet" aria-label="Move editor pitch"></svg>
@@ -349,7 +354,7 @@ textarea{resize:vertical;min-height:84px}
     <button role="tab" data-tab="select" aria-selected="false">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l1.6 1.6L8.5 4.7M4 12.5l1.6 1.6 2.9-2.9M4 19l1.6 1.6 2.9-2.9M11 6.5h9M11 13h9M11 19.5h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Select team</button>
     <button role="tab" data-tab="moves" aria-selected="false">
-      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2.2" fill="currentColor"/><path d="M6.5 17C10 14 8 9 13 8s5-3 6-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2.2" stroke-linecap="round"/><path d="M15.5 3.5h4v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Moves</button>
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2.2" fill="currentColor"/><path d="M6.5 17C10 14 8 9 13 8s5-3 6-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2.2" stroke-linecap="round"/><path d="M15.5 3.5h4v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Drills</button>
   </nav>
 </div>
 
@@ -363,7 +368,13 @@ textarea{resize:vertical;min-height:84px}
 'use strict';
 
 /* ---------- constants ---------- */
-const FRAMES = 20, LAST = FRAMES - 1;
+// Each drill has its own length: m.frames, 20 by default and up to 100. framesOf/lastOf read it.
+const FRAMES_DEFAULT = 20, FRAMES_MAX = 100;
+const framesOf = m => Math.min(FRAMES_MAX, Math.max(FRAMES_DEFAULT, Math.round(+(m && m.frames) || FRAMES_DEFAULT)));
+const lastOf = m => framesOf(m) - 1;
+// Drill categories; drills made before categories count as Backs
+const CATS = [['forwards','Forwards'], ['backs','Backs'], ['penalty','Penalty'], ['skills','Skills']];
+const catOf = m => CATS.some(c => c[0] === (m && m.cat)) ? m.cat : 'backs';
 const FRAME_MS = 640; // playback: ms per frame at 1×, so a move takes about 12 s
 const APP_ID = 'rtp';
 const POS_NAMES = {1:'Loosehead prop',2:'Hooker',3:'Tighthead prop',4:'Lock',5:'Lock',6:'Blindside flanker',7:'Openside flanker',8:'Number 8',9:'Scrum-half',10:'Fly-half',11:'Left wing',12:'Inside centre',13:'Outside centre',14:'Right wing',15:'Full-back'};
@@ -493,9 +504,9 @@ function seed(){
 function sampleMove(){
   const m = {id:uid(), name:'Crash ball 12', desc:'Off first-phase ball: 9 to 10, 10 hits 12 running a hard line off his inside shoulder. 13 holds width to fix the outside defender.', icons:{}};
   const P = {9:[[30,70],[31,66]], 10:[[24,75],[22,67]], 12:[[18,79],[23,56]], 13:[[11,82],[12,63]]};
-  for(const n in P) m.icons[n] = {keys:{0:P[n][0], [LAST]:P[n][1]}, color:null};
+  for(const n in P) m.icons[n] = {keys:{0:P[n][0], [lastOf(m)]:P[n][1]}, color:null};
   const at = (n,f) => { const p=posAt(m.icons[n],f); return [r1(p[0]+1.3), r1(p[1]-1.3)]; };
-  m.icons.ball = {keys:{0:at(9,0), [LAST]:at(12,LAST)}, carry:[{p:'9', f:0, pass:0}, {p:'10', f:7, pass:4}, {p:'12', f:14, pass:4}]};
+  m.icons.ball = {keys:{0:at(9,0), [lastOf(m)]:at(12,lastOf(m))}, carry:[{p:'9', f:0, pass:0}, {p:'10', f:7, pass:4}, {p:'12', f:14, pass:4}]};
   return m;
 }
 
@@ -547,17 +558,17 @@ function giveBall(m, p, f, pass){
 function removeIcon(m, id){ delete m.icons[id]; tidyCarry(m); if(ME.editing===id) ME.editing = null; }
 // The frames a path actually moves between: still before s (waiting) and after e (arrived).
 const samePt = (a,b) => Math.abs(a[0]-b[0]) < .05 && Math.abs(a[1]-b[1]) < .05;
-function moveWindow(ic){
+function moveWindow(ic, last = FRAMES_DEFAULT - 1){
   const ks = keyList(ic); let i = 0, j = ks.length-1;
   while(i < j && samePt(ic.keys[ks[i+1]], ic.keys[ks[0]])) i++;
   while(j > i && samePt(ic.keys[ks[j-1]], ic.keys[ks[ks.length-1]])) j--;
-  const s = i===0 ? 0 : ks[i], e = j===ks.length-1 ? LAST : ks[j];
-  return {s: i===j ? 0 : s, e: i===j ? LAST : e, still: i===j};
+  const s = i===0 ? 0 : ks[i], e = j===ks.length-1 ? last : Math.min(ks[j], last);
+  return {s: i===j ? 0 : s, e: i===j ? last : e, still: i===j};
 }
 // squeeze or stretch the run into frames s2..e2, keeping its shape and turning points
-function setMoveWindow(ic, s2, e2){
-  const {s, e} = moveWindow(ic), A = posAt(ic, s), B = posAt(ic, e);
-  const keys = {0:[...A], [s2]:[...A], [e2]:[...B], [LAST]:[...B]};
+function setMoveWindow(ic, s2, e2, last = FRAMES_DEFAULT - 1){
+  const {s, e} = moveWindow(ic, last), A = posAt(ic, s), B = posAt(ic, e);
+  const keys = {0:[...A], [s2]:[...A], [e2]:[...B], [last]:[...B]};
   for(const k of keyList(ic)) if(k > s && k < e){ const nk = Math.round(s2 + (k-s)*(e2-s2)/(e-s)); if(nk > s2 && nk < e2) keys[nk] = [...ic.keys[k]]; }
   ic.keys = keys;
 }
@@ -898,9 +909,9 @@ const ME = {moveId:null, frame:0, playing:false, editing:null, speed:1, loop:fal
 const curMove = () => S.moves.find(m => m.id === ME.moveId);
 function moveThumb(m){
   let xs=[], ys=[], paths='';
-  for(const id of iconIds(m)){ const pts=[...Array(FRAMES)].map((_,k)=>iconPos(m,id,k)); pts.forEach(p=>{xs.push(p[0]); ys.push(p[1]);});
+  for(const id of iconIds(m)){ const pts=[...Array(framesOf(m))].map((_,k)=>iconPos(m,id,k)); pts.forEach(p=>{xs.push(p[0]); ys.push(p[1]);});
     paths += `<polyline points="${pts.map(p=>p[0].toFixed(1)+','+p[1].toFixed(1)).join(' ')}" fill="none" stroke="${id==='ball'?'#fff':moveColor(m,id)}" stroke-width="${id==='ball'?.7:1}" ${id==='ball'?'stroke-dasharray="1.2 1"':''} stroke-linecap="round"/>`;
-    const e = pts[LAST]; paths += id==='ball' ? `<circle cx="${e[0]}" cy="${e[1]}" r="1.2" fill="#fff"/>` : `<circle cx="${e[0]}" cy="${e[1]}" r="1.5" fill="${moveColor(m,id)}" stroke="#fff" stroke-width=".35"/>`; }
+    const e = pts[lastOf(m)]; paths += id==='ball' ? `<circle cx="${e[0]}" cy="${e[1]}" r="1.2" fill="#fff"/>` : `<circle cx="${e[0]}" cy="${e[1]}" r="1.5" fill="${moveColor(m,id)}" stroke="#fff" stroke-width=".35"/>`; }
   if(!xs.length){ xs=[0,70]; ys=[40,80]; }
   let x0=Math.min(...xs)-6, x1=Math.max(...xs)+6, y0=Math.min(...ys)-6, y1=Math.max(...ys)+6;
   let w=x1-x0, h=y1-y0; const ar=62/88; if(w/h>ar){ const nh=w/ar; y0-=(nh-h)/2; h=nh; } else { const nw=h*ar; x0-=(nw-w)/2; w=nw; }
@@ -910,31 +921,34 @@ function renderMoves(){
   const edit = !!curMove();
   $('#movesList').hidden = edit; $('#moveEditor').hidden = !edit;
   if(edit){ renderEditor(); return; }
-  const mv = S.moves, el = $('#movesList'), grp = syncing();
+  const all = S.moves, el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
+  const mv = all.filter(m => catOf(m) === cur), catName = CATS.find(c => c[0] === cur)[1];
   const card = m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length, draft = grp && m.draft;
       return `<div class="mcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
         ${m.desc?`<div class="mdesc">${esc(m.desc)}</div>`:''}
-        <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${FRAMES} frames</div>
+        <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames</div>
         <div class="mact">${draft ? `<button class="chip on" data-togroup="${m.id}">Share with group</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another group</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button></div>
       </div></div>`; };
   const drafts = grp ? mv.filter(m => m.draft) : [], shared = grp ? mv.filter(m => !m.draft) : mv;
-  el.innerHTML = `<button class="btn wide" id="newMove">New move</button>
+  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>
+    <button class="btn wide" id="newMove">New ${catName.toLowerCase()} drill</button>
     ${grp ? `<div class="section-h"><span>Drafts · ${drafts.length}</span><span>Only on your phone</span></div>
-      ${drafts.length ? drafts.map(card).join('') : `<p class="hint">New moves start here. Nobody else sees a draft until you tap Share with group.</p>`}` : ''}
-    <div class="section-h"><span>${grp ? 'Shared with '+esc(S.sync.groupName) : 'Moves'} · ${shared.length}</span><span>${S.teams.length > 1 ? 'Used by all teams' : ''}</span></div>
-    ${shared.length ? shared.map(card).join('') : grp ? `<p class="hint">Nothing shared yet. Moves you share, and moves from the rest of the group, appear here.</p>` : `<div class="empty">No moves yet. Tap New move, pick the shirts involved, then drag each one to its start and finish.</div>`}`;
+      ${drafts.length ? drafts.map(card).join('') : `<p class="hint">New drills start here. Nobody else sees a draft until you tap Share with group.</p>`}` : ''}
+    <div class="section-h"><span>${grp ? 'Shared with '+esc(S.sync.groupName) : catName+' drills'} · ${shared.length}</span><span>${S.teams.length > 1 ? 'Used by all teams' : ''}</span></div>
+    ${shared.length ? shared.map(card).join('') : grp ? `<p class="hint">Nothing shared in ${catName} yet. Drills you share, and drills from the rest of the group, appear here.</p>` : `<div class="empty">No ${catName.toLowerCase()} drills yet. Tap New drill, pick the shirts involved, then drag each one to its start and finish.</div>`}`;
+  $$('[data-tabcat]', el).forEach(b => b.addEventListener('click', () => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); }));
   $('#newMove').addEventListener('click', () => {
-    const m = {id:uid(), name:'New move', desc:'', icons:{}}; if(grp) m.draft = true; mv.unshift(m); save();
+    const m = {id:uid(), name:'New drill', desc:'', icons:{}, cat: cur}; if(grp) m.draft = true; all.unshift(m); save();
     openMove(m.id); pickPlayers();
   });
-  $$('[data-undraft]', el).forEach(b => b.addEventListener('click', () => unshareMove(mv.find(x => x.id===b.dataset.undraft))));
+  $$('[data-undraft]', el).forEach(b => b.addEventListener('click', () => unshareMove(all.find(x => x.id===b.dataset.undraft))));
   $$('[data-open]', el).forEach(b => b.addEventListener('click', () => openMove(b.dataset.open)));
   $$('[data-share]', el).forEach(b => b.addEventListener('click', () => openShare({kind:'move', moveId:b.dataset.share})));
-  $$('[data-send]', el).forEach(b => b.addEventListener('click', () => sendToGroup(mv.find(x => x.id===b.dataset.send))));
-  $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => shareMove(mv.find(x => x.id===b.dataset.togroup))));
-  $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { const m = clone(mv.find(x=>x.id===b.dataset.dup)); m.id = uid(); m.name += ' (copy)'; if(grp) m.draft = true; mv.splice(mv.findIndex(x=>x.id===b.dataset.dup)+1, 0, m); save(); renderMoves(); toast('Move duplicated'); }));
-  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = mv.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This move will be deleted for every team, and from everyone in the group when you sync.' : 'This move will be deleted for every team on this phone.', 'Delete move', () => { S.moves = S.moves.filter(x=>x!==m); save(); renderMoves(); toast('Move deleted'); }); }));
+  $$('[data-send]', el).forEach(b => b.addEventListener('click', () => sendToGroup(all.find(x => x.id===b.dataset.send))));
+  $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => shareMove(all.find(x => x.id===b.dataset.togroup))));
+  $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { const m = clone(all.find(x=>x.id===b.dataset.dup)); m.id = uid(); m.name += ' (copy)'; if(grp) m.draft = true; all.splice(all.findIndex(x=>x.id===b.dataset.dup)+1, 0, m); save(); renderMoves(); toast('Drill duplicated'); }));
+  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This drill will be deleted for every team, and from everyone in the group when you sync.' : 'This drill will be deleted for every team on this phone.', 'Delete move', () => { S.moves = S.moves.filter(x=>x!==m); save(); renderMoves(); toast('Drill deleted'); }); }));
 }
 // Drafts stay on this phone; sharing sends a move to the group on the next sync, unsharing removes it from the others
 function shareMove(m){ delete m.draft; save(); renderMoves(); toast(`${m.name} will be shared with ${S.sync.groupName} when you sync`); }
@@ -943,7 +957,7 @@ function unshareMove(m){
     () => { m.draft = true; save(); renderMoves(); toast(`${m.name} is a draft again. Sync to take it off the group.`); });
 }
 function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
-function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<FRAMES;k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
+function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<framesOf(m);k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
 function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move' : 'Whole pitch'; }
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
@@ -954,7 +968,7 @@ const moveCtl = PitchCtl($('#movePitch'), {
     if(!ME.editing) return null;
     const m = curMove(), ic = m && m.icons[ME.editing]; if(!ic) return null;
     let best = null, bd = 1e9;
-    for(let k=0;k<FRAMES;k++){ if(ME.editing==='ball' && !ballFree(m,k)) continue; const p = iconPos(m,ME.editing,k); const d = Math.hypot(p[0]-x, p[1]-y) - (ic.keys[k]?0.4:0); if(d < bd){ bd = d; best = {id:'dot:'+k, x:p[0], y:p[1]}; } }
+    for(let k=0;k<framesOf(m);k++){ if(ME.editing==='ball' && !ballFree(m,k)) continue; const p = iconPos(m,ME.editing,k); const d = Math.hypot(p[0]-x, p[1]-y) - (ic.keys[k]?0.4:0); if(d < bd){ bd = d; best = {id:'dot:'+k, x:p[0], y:p[1]}; } }
     const lim = Math.max(2.2, 16/moveCtl.scale);
     return bd <= lim ? best : null;
   },
@@ -963,7 +977,7 @@ const moveCtl = PitchCtl($('#movePitch'), {
     showMoveIcon(id.slice(2));
   },
   doubleTap: id => {
-    if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==LAST && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
+    if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==lastOf(curMove()) && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
     startPathEdit(id.slice(2));
   },
   dragStart: id => {
@@ -981,12 +995,12 @@ const moveCtl = PitchCtl($('#movePitch'), {
 function renderEditor(){
   const m = curMove();
   $('#edName').textContent = m.name;
-  $('#edDesc').textContent = m.desc || 'Tap to name and describe this move';
+  $('#edDesc').textContent = m.desc || 'Tap to name, describe, set category and length';
   syncShowChip();
   $('#edPasses').hidden = !m.icons.ball;
   const st = $('#edState'); st.hidden = !syncing(); st.textContent = m.draft ? 'Draft · share' : 'Shared'; st.classList.toggle('on', !!m.draft);
   const ids = iconIds(m);
-  $('#edHint').textContent = ids.length ? 'Drag at frame 1 = start, frame 20 = finish' : 'Tap Players to add shirts and the ball';
+  $('#edHint').textContent = ids.length ? `Drag at frame 1 = start, frame ${framesOf(m)} = finish` : 'Tap Players to add shirts and the ball';
   renderBanner(); renderMoveLayer(); updateTransport();
 }
 function renderBanner(){
@@ -1001,14 +1015,14 @@ function renderMoveLayer(){
     const ic = m.icons[id], isEd = ME.editing===id, dim = !!ME.editing && !isEd;
     const col = id==='ball' ? '#FFFFFF' : moveColor(m,id), key = visKey(m,id);
     const hideTok = !isEd && isHidden('shirts', key), hidePath = !isEd && (S.ui.paths===false || hideTok || isHidden('paths', key));
-    const pts = [...Array(FRAMES)].map((_,k)=>iconPos(m,id,k));
+    const pts = [...Array(framesOf(m))].map((_,k)=>iconPos(m,id,k));
     if(!hidePath){
       paths += `<polyline points="${pts.map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')}" class="path${isEd?' ed':''}${dim?' dim':''}" stroke="${col}" ${id==='ball'?'stroke-dasharray="1 .8"':''}/>`;
-      if(!isEd && !dim){ const s = pts[0], e = pts[LAST]; paths += `<circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/>`; }
+      if(!isEd && !dim){ const s = pts[0], e = pts[lastOf(m)]; paths += `<circle cx="${s[0]}" cy="${s[1]}" r=".7" fill="none" stroke="${col}" stroke-width=".3"/><circle cx="${e[0]}" cy="${e[1]}" r=".6" fill="${col}" class="pdot"/>`; }
     }
     if(isEd){
       dots += pts.map((p,k) => { const held = id==='ball' && !ballFree(m,k); return `<circle cx="${p[0].toFixed(2)}" cy="${p[1].toFixed(2)}" r="${held?.5:ic.keys[k]?1.05:.75}" class="fdot${held?' held':ic.keys[k]?' key':''}${k===cf?' cur':''}"/>`; }).join('');
-      dots += `<text x="${pts[0][0]}" y="${pts[0][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">1</text><text x="${pts[LAST][0]}" y="${pts[LAST][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">20</text>`;
+      dots += `<text x="${pts[0][0]}" y="${pts[0][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">1</text><text x="${pts[lastOf(m)][0]}" y="${pts[lastOf(m)][1]-1.6}" text-anchor="middle" font-size="1.7" fill="#fff" font-weight="700" font-family="Barlow,sans-serif" paint-order="stroke" stroke="rgba(0,0,0,.6)" stroke-width=".4">${framesOf(m)}</text>`;
     }
     const p = iconPos(m, id, f);
     const p2 = playerAt(t, +id);
@@ -1020,8 +1034,8 @@ function renderMoveLayer(){
 }
 function updateTransport(){
   const f = Math.round(ME.frame);
-  $('#tSlider').value = f;
-  $('#tCount').innerHTML = `${f+1}<small>of ${FRAMES}</small>`;
+  $('#tSlider').max = lastOf(curMove()); $('#tSlider').value = f;
+  $('#tCount').innerHTML = `${f+1}<small>of ${framesOf(curMove())}</small>`;
   $('#tPlayIcon').innerHTML = ME.playing ? '<path d="M7 4h3.5v16H7zM13.5 4H17v16h-3.5z" fill="currentColor"/>' : '<path d="M7 4l13 8-13 8z" fill="currentColor"/>';
   $('#tPlay').setAttribute('aria-label', ME.playing ? 'Pause' : 'Play');
   $('#tSpeed').textContent = ME.speed + '×';
@@ -1029,12 +1043,12 @@ function updateTransport(){
 }
 function play(){
   if(!curMove()) return;
-  if(ME.frame >= LAST) ME.frame = 0;
+  const endF = lastOf(curMove()); if(ME.frame >= endF) ME.frame = 0;
   ME.playing = true; let last = performance.now();
   const step = now => {
     if(!ME.playing) return;
     ME.frame += (now-last) / (FRAME_MS/ME.speed); last = now;
-    if(ME.frame >= LAST){ if(ME.loop) ME.frame = 0; else { ME.frame = LAST; ME.playing = false; } }
+    if(ME.frame >= endF){ if(ME.loop) ME.frame = 0; else { ME.frame = endF; ME.playing = false; } }
     renderMoveLayer(); updateTransport();
     if(ME.playing) ME.raf = requestAnimationFrame(step);
   };
@@ -1043,7 +1057,7 @@ function play(){
 function stopPlay(){ if(ME.playing){ ME.playing = false; cancelAnimationFrame(ME.raf); ME.frame = Math.round(ME.frame); if(curMove()){ renderMoveLayer(); updateTransport(); } } }
 $('#tPlay').addEventListener('click', () => ME.playing ? stopPlay() : play());
 $('#tPrev').addEventListener('click', () => { stopPlay(); ME.frame = Math.max(0, Math.round(ME.frame)-1); renderMoveLayer(); updateTransport(); });
-$('#tNext').addEventListener('click', () => { stopPlay(); ME.frame = Math.min(LAST, Math.round(ME.frame)+1); renderMoveLayer(); updateTransport(); });
+$('#tNext').addEventListener('click', () => { stopPlay(); ME.frame = Math.min(lastOf(curMove()), Math.round(ME.frame)+1); renderMoveLayer(); updateTransport(); });
 $('#tSlider').addEventListener('input', e => { stopPlay(); ME.frame = +e.target.value; renderMoveLayer(); updateTransport(); });
 $('#tSpeed').addEventListener('click', () => { ME.speed = ME.speed===1 ? 2 : ME.speed===2 ? 0.5 : 1; updateTransport(); });
 $('#tLoop').addEventListener('click', () => { ME.loop = !ME.loop; updateTransport(); });
@@ -1074,8 +1088,8 @@ function showVisibility(){
     + (m.icons.ball ? `<div class="vrow"><div class="vwho">${miniBall(30)}<div><b>Ball</b></div></div>${tg('shirts','ball','Ball')}${tg('paths','ball','Ball path')}</div>` : '');
   openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Show on the pitch</h2>
     <label class="check"><input type="checkbox" id="visPaths"${S.ui.paths===false?'':' checked'}> Show paths</label>
-    ${rows ? `<div class="vtable"><div class="vrow vhead"><span></span><span>Shirts</span><span>Paths</span></div>${rows}</div>` : `<p class="hint">No shirts in this move yet.</p>`}
-    <p class="hint">Hiding shirts also hides their paths. This is only for viewing: hidden shirts still play their part in the move and are still shared.</p>
+    ${rows ? `<div class="vtable"><div class="vrow vhead"><span></span><span>Shirts</span><span>Paths</span></div>${rows}</div>` : `<p class="hint">No shirts in this drill yet.</p>`}
+    <p class="hint">Hiding shirts also hides their paths. This is only for viewing: hidden shirts still play their part in the drill and are still shared.</p>
     <div class="row-btns"><button class="btn ghost" id="visAll">Show everything</button><button class="btn" data-close>Done</button></div>`,
     el => {
       const sync = () => { $$('[data-vis="paths"]', el).forEach(c => { c.disabled = S.ui.paths===false || isHidden('shirts', c.dataset.key); }); renderMoveLayer(); syncShowChip(); };
@@ -1088,23 +1102,42 @@ function showVisibility(){
 $('#edFit').addEventListener('click', () => { if(moveCtl.isFit()) zoomMove(); else { moveCtl.fit(); syncEdFit(); } });
 $('#edDone').addEventListener('click', () => { ME.editing = null; renderBanner(); renderMoveLayer(); });
 $('#edStraight').addEventListener('click', () => { straighten(ME.editing); });
-function straighten(id){ const ic = curMove().icons[id], {s, e} = moveWindow(ic), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [LAST]:[...B]}; save(); renderMoveLayer(); toast('Path straightened'); }
+function straighten(id){ const last = lastOf(curMove()), ic = curMove().icons[id], {s, e} = moveWindow(ic, last), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [last]:[...B]}; save(); renderMoveLayer(); toast('Path straightened'); }
 function startPathEdit(id){ stopPlay(); ME.editing = id; renderBanner(); renderMoveLayer(); const m = curMove(); const ic = m.icons[id]; }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
-  openSheet(`<div class="eyebrow">Move details</div>
+  openSheet(`<div class="eyebrow">Drill details</div>
     <div class="field"><label class="field-label" for="mvName">Name</label><input id="mvName" type="text" value="${esc(m.name)}" placeholder="e.g. Loop 10-12, Lineout 4-man drive"></div>
     <div class="field"><label class="field-label" for="mvDesc">Description</label><textarea id="mvDesc" placeholder="Calls, triggers, who does what">${esc(m.desc)}</textarea></div>
+    <div class="field"><div class="field-label">Category</div><div class="cats" id="mvCat">${CATS.map(([k,l]) => `<button type="button" class="chip${catOf(m)===k?' on':''}" data-cat="${k}">${l}</button>`).join('')}</div></div>
+    <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames${n===20?' (standard)':''}</option>`).join('')}</select>
+      <p class="hint">Extra frames are added at the end: everyone holds their last position until you give them more to do. Shortening cuts frames off the end.</p></div>
     <div class="row-btns"><button class="btn" id="mvSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
-    <button class="btn ghost" id="mvShare">Share this move</button>
+    <button class="btn ghost" id="mvShare">Share this drill</button>
     ${fbOn() ? '<button class="btn ghost" id="mvSend">Send to another group</button>' : ''}`,
     el => {
-      $('#mvSave', el).addEventListener('click', () => { m.name = $('#mvName', el).value.trim() || 'Untitled move'; m.desc = $('#mvDesc', el).value.trim(); save(); closeSheet(); renderEditor(); });
+      let cat = catOf(m);
+      $$('[data-cat]', el).forEach(b => b.addEventListener('click', () => { cat = b.dataset.cat; $$('[data-cat]', el).forEach(x => x.classList.toggle('on', x === b)); }));
+      $('#mvSave', el).addEventListener('click', () => {
+        m.name = $('#mvName', el).value.trim() || 'Untitled drill'; m.desc = $('#mvDesc', el).value.trim(); m.cat = cat;
+        setFrames(m, +$('#mvFrames', el).value); S.ui.drillCat = cat;
+        save(); closeSheet(); renderEditor(); });
       $('#mvShare', el).addEventListener('click', () => openShare({kind:'move', moveId:m.id}));
       const sg = $('#mvSend', el); if(sg) sg.addEventListener('click', () => sendToGroup(m));
     });
 });
 $('#edPlayers').addEventListener('click', () => pickPlayers());
+// change a drill's length: longer adds frames at the end (everything holds its last position); shorter cuts the end off,
+// keeping where everyone is at the new last frame
+function setFrames(m, n){
+  const oldLast = lastOf(m); n = Math.min(FRAMES_MAX, Math.max(FRAMES_DEFAULT, n)); const newLast = n - 1;
+  if(n === framesOf(m)) return;
+  if(newLast < oldLast) for(const ic of Object.values(m.icons)){
+    const at = posAt(ic, newLast); for(const k of keyList(ic)) if(k > newLast) delete ic.keys[k]; ic.keys[newLast] = [r1(at[0]), r1(at[1])];
+  }
+  if(n === FRAMES_DEFAULT) delete m.frames; else m.frames = n;
+  if(ME.frame > newLast) ME.frame = newLast;
+}
 $('#edPasses').addEventListener('click', () => showMoveIcon('ball'));
 $('#edState').addEventListener('click', () => { const m = curMove(); if(!m) return;
   if(m.draft) askConfirm(`Share ${m.name} with ${S.sync.groupName}?`, 'Everyone in the group gets it the next time you sync, and they can see and edit it from then on.', 'Share with group', () => { shareMove(m); renderEditor(); });
@@ -1113,17 +1146,17 @@ function addIconToMove(m, id){
   const t = team();
   if(id==='ball'){
     const sh = shirtFor(9, t), fh = shirtFor(10, t);
-    const a = m.icons[sh] ? posAt(m.icons[sh],0) : teamPos(t,sh), b = m.icons[fh] ? posAt(m.icons[fh],LAST) : teamPos(t,fh);
-    m.icons.ball = {keys:{0:[r1(a[0]+1.3), r1(a[1]-1.3)], [LAST]:[r1(b[0]+1.3), r1(b[1]-1.3)]}};
+    const a = m.icons[sh] ? posAt(m.icons[sh],0) : teamPos(t,sh), b = m.icons[fh] ? posAt(m.icons[fh],lastOf(m)) : teamPos(t,fh);
+    m.icons.ball = {keys:{0:[r1(a[0]+1.3), r1(a[1]-1.3)], [lastOf(m)]:[r1(b[0]+1.3), r1(b[1]-1.3)]}};
   } else {
-    const s = teamPos(t,+id); m.icons[id] = {keys:{0:[s[0],s[1]], [LAST]:[s[0], r1(clamp(s[1]-15, -2, 122))]}, color:null};
+    const s = teamPos(t,+id); m.icons[id] = {keys:{0:[s[0],s[1]], [lastOf(m)]:[s[0], r1(clamp(s[1]-15, -2, 122))]}, color:null};
   }
 }
 function pickPlayers(){
   const m = curMove(), t = team();
   const btn = id => { const on = !!m.icons[id]; const p = id==='ball' ? null : playerAt(t,+id);
     return `<button data-pp="${id}" class="${on?'on':''}" aria-pressed="${on}">${id==='ball'?miniBall(34):miniShirt(id, moveColor(m,id), 34)}<small>${id==='ball'?'Ball':p?esc(surname(p.name)):posName(id).split(' ').pop()}</small></button>`; };
-  openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Players in this move</h2>
+  openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Players in this drill</h2>
     <div class="pgrid">${[...new Set(pitchNums(t).map(String).concat(iconIds(m).filter(i=>i!=='ball')))].map(btn).join('')}${btn('ball')}</div>
     <p class="hint">New shirts start at their spot on the Pitch tab and finish 15 metres upfield. The ball runs from the scrum-half to the fly-half until you change it.</p>
     <button class="btn wide" data-close>Done</button>`,
@@ -1137,15 +1170,15 @@ function showMoveIcon(id){
   const m = curMove(), t = team(), ic = m.icons[id]; if(!ic) return;
   const ball = id==='ball', p = ball ? null : playerAt(t,+id), f = Math.round(ME.frame);
   const ks = keyList(ic).map(k=>k+1);
-  const custom = ks.filter(k=>k!==1 && k!==FRAMES);
+  const custom = ks.filter(k=>k!==1 && k!==framesOf(m));
   openSheet(`<div class="det-head">${ball?miniBall(64):bigShirt(id, moveColor(m,id))}<div class="who"><div class="eyebrow">${ball?'Ball':'#'+id+' · '+posName(+id)}</div><h2>${ball?'Ball':p?esc(p.name):'Shirt '+id}</h2>
-    <div class="muted" id="miSub">${ball ? (custom.length ? 'Custom path through frame'+(custom.length>1?'s ':' ')+custom.join(', ') : 'Straight line from frame 1 to frame 20') : pathSummary(ic)}</div></div></div>
+    <div class="muted" id="miSub">${ball ? (custom.length ? 'Custom path through frame'+(custom.length>1?'s ':' ')+custom.join(', ') : 'Straight line from frame 1 to frame '+framesOf(m)) : pathSummary(ic, lastOf(m))}</div></div></div>
     ${ball?'':'<div class="field" id="mvBox"></div>'}
-    ${ball?'':`<div class="field"><div class="field-label">Shirt colour in this move</div>${swatchRow(ic.color, defaultColor(id))}</div>`}
+    ${ball?'':`<div class="field"><div class="field-label">Shirt colour in this drill</div>${swatchRow(ic.color, defaultColor(id))}</div>`}
     ${ball ? '<div class="field" id="chainBox"></div>' : m.icons.ball ? `<div class="field"><div class="field-label">Ball</div>${carrierAt(m,f)===id ? `<p class="hint">Has the ball at frame ${f+1}.</p>` : `<button class="btn ghost" id="miGive">Ball to #${id} from frame ${f+1}</button>`}${passSelect()}</div>` : ''}
     <div class="row-btns"><button class="btn" id="miPath">Edit path</button><button class="btn ghost" id="miStraight"${custom.length?'':' disabled'}>Straighten</button></div>
-    <div class="row-btns"><button class="btn danger" id="miRemove">Remove from move</button><button class="btn ghost" data-close>Close</button></div>
-    <p class="hint">You are on frame ${f+1}. ${ball && !ballFree(m,f) ? `The ball is ${carrierAt(m,f) ? 'with #'+carrierAt(m,f) : 'being passed'} at this frame, so it follows the players.` : `Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}.`} Double-tap it to edit all 20 frames.</p>`,
+    <div class="row-btns"><button class="btn danger" id="miRemove">Remove from drill</button><button class="btn ghost" data-close>Close</button></div>
+    <p class="hint">You are on frame ${f+1}. ${ball && !ballFree(m,f) ? `The ball is ${carrierAt(m,f) ? 'with #'+carrierAt(m,f) : 'being passed'} at this frame, so it follows the players.` : `Dragging this ${ball?'ball':'shirt'} now sets its position for frame ${f+1}.`} Double-tap it to edit all ${framesOf(m)} frames.</p>`,
     el => {
       if(!ball) wireSwatches(el, c => { ic.color = c; save(); renderMoveLayer(); });
       wirePassSelect(el);
@@ -1156,33 +1189,33 @@ function showMoveIcon(id){
       $('#miRemove', el).addEventListener('click', () => { removeIcon(m,id); save(); closeSheet(); renderEditor(); });
     });
 }
-function pathSummary(ic){
-  const {s, e, still} = moveWindow(ic), turns = keyList(ic).filter(k => k > s && k < e);
-  if(still) return 'Stands still for the whole move';
+function pathSummary(ic, last = FRAMES_DEFAULT - 1){
+  const {s, e, still} = moveWindow(ic, last), turns = keyList(ic).filter(k => k > s && k < e);
+  if(still) return 'Stands still for the whole drill';
   return (s ? `Still until frame ${s+1}, then runs` : 'Runs') + ` to frame ${e+1}` + (turns.length ? `, turning at frame${turns.length>1?'s':''} ${turns.map(k=>k+1).join(', ')}` : ' in a straight line');
 }
 function renderMoveDetail(box, m, id){
-  const ic = m.icons[id], {s, e, still} = moveWindow(ic), cf = Math.round(ME.frame);
-  const pts = [...Array(FRAMES)].map((_,k) => posAt(ic,k));
-  let dist = 0; for(let k=1;k<FRAMES;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
+  const F = framesOf(m), L = F - 1, ic = m.icons[id], {s, e, still} = moveWindow(ic, L), cf = Math.round(ME.frame);
+  const pts = [...Array(F)].map((_,k) => posAt(ic,k));
+  let dist = 0; for(let k=1;k<F;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
   const turns = keyList(ic).filter(k => k > s && k < e);
   const cells = pts.map((p,k) => { const mv = k>0 && !samePt(p, pts[k-1]), has = m.icons.ball && carrierAt(m,k)===id;
     return `<button class="tl${mv?' mv':''}${turns.includes(k)?' key':''}${k===cf?' cur':''}" data-tf="${k}" aria-label="Frame ${k+1}${mv?', moving':', still'}${has?', has the ball':''}">${has?'<i></i>':''}</button>`; }).join('');
   box.innerHTML = `<div class="field-label">Movement</div>
-    <div class="tlwrap"><div class="tlgrid">${cells}</div><div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div></div>
+    <div class="tlwrap"><div class="tlgrid">${cells}</div>${F === 20 ? '<div class="tlnums"><span>1</span><span>5</span><span>10</span><span>15</span><span>20</span></div>' : `<div class="hint">${F} frames, 20 to a row</div>`}</div>
     <div class="tlkey"><span><b class="sw1"></b>Still</span><span><b class="sw2"></b>Running</span><span><b class="sw3"></b>Turning point</span>${m.icons.ball?'<span><b class="sw4"></b>Has the ball</span>':''}</div>
-    ${still ? `<p class="hint">Doesn't move in this move. Drag the shirt on a later frame to give them a run.</p>` : `
+    ${still ? `<p class="hint">Doesn't move in this drill. Drag the shirt on a later frame to give them a run.</p>` : `
     <div class="sline">Stays still until frame ${stepper('ws:-1', s+1, 'Stays still until frame')}</div>
     <div class="sline">Arrives at frame ${stepper('we:-1', e+1, 'Arrives at frame')}</div>
     <p class="hint">Runs ${Math.round(dist)} m over ${e-s} frame${e-s===1?'':'s'} (frames ${s+1}–${e+1}). The run keeps its shape when you change these.</p>
     ${turns.length ? `<div class="sline">Turning points: ${turns.map(k => `<button class="chip" data-tdel="${k}" aria-label="Remove turning point at frame ${k+1}">Frame ${k+1} ×</button>`).join('')}</div>` : ''}`}`;
-  const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic); };
+  const redraw = () => { save(); renderMoveLayer(); updateTransport(); renderMoveDetail(box, m, id); const sub = $('#miSub'); if(sub) sub.textContent = pathSummary(ic, L); };
   // jumping frame changes the rest of the sheet (ball button, drag hint), so reopen it
   $$('[data-tf]', box).forEach(b => b.addEventListener('click', () => { stopPlay(); ME.frame = +b.dataset.tf; renderMoveLayer(); updateTransport(); showMoveIcon(id); }));
   $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
-    const [kind, , d] = b.dataset.st.split(':'), dd = +d, w = moveWindow(ic);
-    if(kind==='ws') setMoveWindow(ic, clamp(w.s + dd, 0, w.e - 1), w.e);
-    else setMoveWindow(ic, w.s, clamp(w.e + dd, w.s + 1, LAST));
+    const [kind, , d] = b.dataset.st.split(':'), dd = +d, w = moveWindow(ic, L);
+    if(kind==='ws') setMoveWindow(ic, clamp(w.s + dd, 0, w.e - 1), w.e, L);
+    else setMoveWindow(ic, w.s, clamp(w.e + dd, w.s + 1, L), L);
     redraw();
   }));
   $$('[data-tdel]', box).forEach(b => b.addEventListener('click', () => { delete ic.keys[+b.dataset.tdel]; redraw(); }));
@@ -1208,7 +1241,7 @@ function setChain(m, ch){
   });
   b.carry = out;
   // a let-go starts from the hands of whoever had the ball, so the ball never jumps
-  out.forEach((c,i) => { if(c.p==='' && i && out[i-1].p && c.f<=LAST){ const q = heldPos(m, out[i-1], c.f); b.keys[c.f] = [r1(q[0]), r1(q[1])]; } });
+  out.forEach((c,i) => { if(c.p==='' && i && out[i-1].p && c.f<=lastOf(m)){ const q = heldPos(m, out[i-1], c.f); b.keys[c.f] = [r1(q[0]), r1(q[1])]; } });
 }
 function chainFrames(ch){ let f = ch.start; return ch.steps.map((st,i) => { if(i) f += ch.steps[i-1].hold + ch.steps[i-1].pass; return f; }); }
 const stepper = (key, val, label) => `<span class="stp" role="group" aria-label="${label}"><button data-st="${key}:-1" aria-label="Less">−</button><b>${val}</b><button data-st="${key}:1" aria-label="More">+</button></span>`;
@@ -1222,21 +1255,21 @@ function renderChain(box, m){
   } else {
     const fs = chainFrames(ch), n = ch.steps.length;
     html += `<div class="chain">` + ch.steps.map((st,i) => {
-      const f = fs[i], last = i===n-1, loose = st.p==='', past = f > LAST, until = f + st.hold;
+      const f = fs[i], last = i===n-1, loose = st.p==='', past = f > lastOf(m), until = f + st.hold;
       let h = `<div class="step${past?' warn':''}"><div class="step-top">${loose ? miniBall(30) : miniShirt(st.p, moveColor(m,st.p), 30)}<select data-sp="${i}" aria-label="Step ${i+1} player">${opts(st.p)}</select>`+
         `<button class="sbtn" data-smv="${i}:-1" aria-label="Move earlier"${i?'':' disabled'}><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 19V5M6 11l6-6 6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`+
         `<button class="sbtn" data-smv="${i}:1" aria-label="Move later"${last?' disabled':''}><svg width="16" height="16" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>`+
         `<button class="sbtn del" data-sdel="${i}" aria-label="Remove step"><svg width="16" height="16" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button></div>`;
       h += `<div class="sline">${i ? `${loose ? 'Let go at' : 'Catches it at'} frame <b class="fnum">${f+1}</b>` : `${loose ? 'Loose from' : 'Has it from'} frame ${stepper('start:0', f+1, 'Start frame')}`}</div>`;
-      if(past) h += `<div class="sline bad">This starts after frame ${FRAMES}. Shorten an earlier hold or pass.</div>`;
+      if(past) h += `<div class="sline bad">This starts after frame ${framesOf(m)}. Shorten an earlier hold or pass, or make the drill longer (tap its name).</div>`;
       else if(!last) h += `<div class="sline">${loose ? 'Loose for' : 'Holds it for'} ${stepper('hold:'+i, st.hold, 'Frames held')} frame${st.hold===1?'':'s'}</div><div class="sline">${loose ? 'until' : 'Passes at'} frame ${stepper('until:'+i, until+1, 'Until frame')}</div>`;
-      else h += `<div class="sline">${loose ? 'Follows its own path to the end.' : 'Keeps it to the end of the move.'}</div>`;
+      else h += `<div class="sline">${loose ? 'Follows its own path to the end.' : 'Keeps it to the end of the drill.'}</div>`;
       h += `</div>`;
       const ins = `<button class="chip ins" data-sins="${i}" aria-label="Insert a pass after step ${i+1}">+ Insert</button>`;
       if(!last) h += ch.steps[i+1].p==='' ? `<div class="pass-link">↓ lets go ${ins}</div>` : `<div class="pass-link">↓ ${loose ? 'reaches the next player in' : 'pass takes'} ${stepper('pass:'+i, st.pass, 'Pass frames')} frame${st.pass===1?'':'s'} ${ins}</div>`;
       return h; }).join('') + `</div>`;
   }
-  html += shirts.length ? `<div class="row-btns"><button class="btn ghost" id="chAdd">${ch ? 'Add pass' : 'Start: first player has the ball'}</button>${ch ? `<button class="btn ghost" id="chKick">Add kick / let go</button>` : ''}</div>` : `<p class="hint">Add shirts to the move first.</p>`;
+  html += shirts.length ? `<div class="row-btns"><button class="btn ghost" id="chAdd">${ch ? 'Add pass' : 'Start: first player has the ball'}</button>${ch ? `<button class="btn ghost" id="chKick">Add kick / let go</button>` : ''}</div>` : `<p class="hint">Add shirts to the drill first.</p>`;
   box.innerHTML = html;
 
   const commit = c => { setChain(m, c); save(); renderMoveLayer(); renderChain(box, m); };
@@ -1256,8 +1289,8 @@ function renderChain(box, m){
     c.steps.splice(i,1); commit(c.steps.length ? c : null); }));
   $$('[data-st]', box).forEach(b => b.addEventListener('click', () => {
     const [kind, i, d] = b.dataset.st.split(':'), k = +i, dd = +d, c = getChain(m), st = c.steps[k];
-    if(kind==='start') c.start = clamp(c.start + dd, 0, LAST);
-    else if(kind==='hold' || kind==='until') st.hold = clamp(st.hold + dd, st.pass ? 0 : 1, LAST);
+    if(kind==='start') c.start = clamp(c.start + dd, 0, lastOf(m));
+    else if(kind==='hold' || kind==='until') st.hold = clamp(st.hold + dd, st.pass ? 0 : 1, lastOf(m));
     else if(kind==='pass'){ st.pass = clamp(st.pass + dd, st.hold ? 0 : 1, 10); S.ui.passLen = st.pass; }
     commit(c);
   }));
@@ -1301,7 +1334,7 @@ function teamSettings(t, isNew){
         save(); closeSheet(); teamZoomed = false; renderAll();
         if(!isNew) toast(resized ? `Now ${N}-a-side` : 'Team settings saved'); // a new team's welcome runs from the sheet's close handler
       });
-      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its squad list and team selection will be deleted from this phone, and from everyone in the group when you sync. Moves are kept.' : 'Its squad list and team selection will be deleted from this phone. Moves are kept. Share it first if you want a copy.', 'Delete team', () => {
+      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its squad list and team selection will be deleted from this phone, and from everyone in the group when you sync. Drills are kept.' : 'Its squad list and team selection will be deleted from this phone. Drills are kept. Share it first if you want a copy.', 'Delete team', () => {
         S.teams = S.teams.filter(x => x.id !== t.id); if(!S.teams.length) S.teams.push(newTeam('My team'));
         S.currentTeamId = S.teams[0].id; ME.moveId = null; save(); renderAll(); toast('Team deleted');
       }));
@@ -1318,7 +1351,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 08:10</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 09:56</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -1368,7 +1401,7 @@ function openShare(pre){
   const moveSel = S.moves.length ? `<select id="shMove" aria-label="Move to share">${S.moves.map(m=>`<option value="${m.id}"${m.id===pre.moveId?' selected':''}>${esc(m.name)}</option>`).join('')}</select>` : '';
   openSheet(`<div class="eyebrow">Send to another coach</div><h2>Share</h2>
     <div class="opts">
-      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${S.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} move${S.moves.length===1?'':'s'}</small></span></label>
+      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${S.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} drill${S.moves.length===1?'':'s'}</small></span></label>
       <label class="opt"><input type="radio" name="shk" value="lineup"${pre.kind==='lineup'?' checked':''}><span><b>Team sheet only</b><small>Who is wearing each shirt, colours and positions</small></span></label>
       ${S.moves.length?`<label class="opt"><input type="radio" name="shk" value="move"${pre.kind==='move'?' checked':''}><span style="flex:1;display:flex;flex-direction:column;gap:6px"><b>One move</b>${moveSel}</span></label>`:''}
     </div>
@@ -1446,7 +1479,7 @@ function handleImport(pl){
       });
   } else if(pl.kind==='move'){
     const mv = S.moves, old = mv.find(x=>x.id===d.id) || mv.find(x=>baseName(x.name)===baseName(d.name));
-    openSheet(`<div class="eyebrow">Import move${d.fromTeam?' from '+esc(d.fromTeam):''}</div><h2>${esc(d.name)}</h2>${d.desc?`<p class="muted">${esc(d.desc)}</p>`:''}
+    openSheet(`<div class="eyebrow">Import drill${d.fromTeam?' from '+esc(d.fromTeam):''}</div><h2>${esc(d.name)}</h2>${d.desc?`<p class="muted">${esc(d.desc)}</p>`:''}
       <p class="hint">Shirts follow the numbers in your own team, so #10 will show your fly-half.</p>
       ${old?`<p class="hint">You already have ${esc(old.name)}. Replace it with this version, or keep both.</p>`:''}
       <div class="row-btns">${old?`<button class="btn" id="ipRep">Replace ${esc(old.name)}</button>`:''}<button class="btn${old?' ghost':''}" id="ipAdd">${old?'Keep both':'Add move'}</button><button class="btn ghost" data-close>Cancel</button></div>`,
@@ -1454,10 +1487,10 @@ function handleImport(pl){
         const fresh = () => { const m = clone(d); delete m.fromTeam; delete m.names; return m; };
         $('#ipAdd', el).addEventListener('click', () => {
           const m = fresh(); if(mv.some(x=>x.id===m.id)) m.id = uid(); if(mv.some(x=>x.name===m.name)) m.name += ' (shared)';
-          if(syncing()) m.draft = true; mv.unshift(m); save(); closeSheet(); showTab('moves'); openMove(m.id); toast(syncing() ? 'Move added to your drafts' : 'Move added');
+          if(syncing()) m.draft = true; mv.unshift(m); save(); closeSheet(); showTab('moves'); openMove(m.id); toast(syncing() ? 'Drill added to your drafts' : 'Drill added');
         });
         const r = $('#ipRep', el); if(r) r.addEventListener('click', () => {
-          const m = fresh(); mv[mv.indexOf(old)] = m; save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Move updated');
+          const m = fresh(); mv[mv.indexOf(old)] = m; save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Drill updated');
         });
       });
   } else throw new Error('Unknown share type.');
@@ -1701,8 +1734,8 @@ function showInbox(items){
       <div class="mmeta">From ${esc(it.fromWho || 'a coach')}${it.fromGroup ? ', '+esc(it.fromGroup) : ''}</div>
       <div class="mact"><button class="chip on" data-acc="${esc(it.id)}">Accept</button><button class="chip" data-dec="${esc(it.id)}">Decline</button></div></div></div>`; };
   const finish = () => { if(accepted){ renderAll(); runSync(); } };
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Moves sent to your group</h2>
-    <p class="muted">Accepted moves are added for every team in your group. Declined moves are thrown away.</p>
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Drills sent to your group</h2>
+    <p class="muted">Accepted drills are added for every team in your group. Declined drills are thrown away.</p>
     <div id="inList">${items.map(card).join('')}</div>
     <button class="btn ghost wide" data-close>Decide later</button>`,
     el => {
@@ -1716,7 +1749,7 @@ function showInbox(items){
           if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another group'})`;
           S.moves.unshift(m); save(); accepted++;
         }
-        row.remove(); toast(accept ? 'Move added' : 'Move declined');
+        row.remove(); toast(accept ? 'Drill added' : 'Drill declined');
         if(!$('#inList', el).children.length) closeSheet();
       };
       $$('[data-acc]', el).forEach(b => b.addEventListener('click', () => done(b.dataset.acc, true)));
@@ -1726,7 +1759,7 @@ function showInbox(items){
 function sendToGroup(m){
   const recent = (S.ui.sendTo || []).slice(0, 4);
   openSheet(`<div class="eyebrow">Send to another group</div><h2>${esc(m.name)}</h2>
-    <p class="muted">Enter the other group's <b>send code</b>. They are asked to accept the move the next time one of their coaches opens the app.</p>
+    <p class="muted">Enter the other group's <b>send code</b>. They are asked to accept the drill the next time one of their coaches opens the app.</p>
     <div class="field"><label class="field-label" for="sgCode">Their send code</label><input id="sgCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
     ${recent.length ? `<div class="mact">${recent.map(c => `<button class="chip" data-rc="${c}">${fmtCode(c)}</button>`).join('')}</div>` : ''}
     <div class="row-btns"><button class="btn" id="sgGo">Send move</button><button class="btn ghost" data-close>Cancel</button></div>
@@ -1744,7 +1777,7 @@ function sendToGroup(m){
         try {
           await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`mailboxes/${code}/items/${uid()}`), fields}, currentDocument:{exists:false}}]});
           S.ui.sendTo = [code].concat((S.ui.sendTo || []).filter(c => c !== code)).slice(0, 6); save();
-          closeSheet(); toast('Move sent. They will be asked to accept it.');
+          closeSheet(); toast('Drill sent. They will be asked to accept it.');
         } catch(e){ $('#sgGo', el).disabled = false; err(e.status===403 ? 'No group has that send code. Check it with the other group.' : niceErr(e)); }
       });
     });
@@ -1757,7 +1790,7 @@ async function runSync(choices){
     const r = await syncNow(choices);
     if(r.needs){ SYNCING = false; askTeamConflicts(r.needs, choices || {}); return; }
     stopPlay(); renderAll();
-    toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} move${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
+    toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} drill${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
     checkInboxQuietly();
   } catch(e){
     // the admin removed the group: say so rather than showing a permissions error
@@ -1796,7 +1829,7 @@ function askNewCode(){
 function askTeamConflicts(needs, choices){
   const n = needs[0];
   openSheet(`<div class="eyebrow">Sync</div><h2>${esc(n.name)} changed on two phones</h2>
-    <p class="muted">You and ${n.by ? esc(n.by) : 'another coach'} both changed this team's name, squad or team sheet since the last sync. Moves are not affected. Which version should everyone keep?</p>
+    <p class="muted">You and ${n.by ? esc(n.by) : 'another coach'} both changed this team's name, squad or team sheet since the last sync. Drills are not affected. Which version should everyone keep?</p>
     <div class="row-btns"><button class="btn" id="cfMine">Keep mine</button><button class="btn ghost" id="cfTheirs">Keep ${n.by ? esc(n.by)+'’s' : 'theirs'}</button></div><button class="btn ghost" data-close>Cancel sync</button>`,
     el => {
       const pick = c => { choices[n.teamId] = c; closeSheet(); runSync(choices); };
@@ -1873,10 +1906,10 @@ async function chooseUploads(){
   if(!teams.length && !moves.length && !squad.length){ runSync(); return; }
   const opt = (kind, id, name, info, dup, sample, dupText = 'the group already has one with this name') => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · '+dupText:''}${sample?' · sample data':''}</small></span></label>`;
   openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share with the group?</h2>
-    <p class="muted">Ticked items go to the group when you sync. Unticked teams stay on this phone, and unticked moves go into your drafts; you can share them later.</p>
+    <p class="muted">Ticked items go to the group when you sync. Unticked teams stay on this phone, and unticked drills go into your drafts; you can share them later.</p>
     ${teams.length ? `<div class="field-label">Teams</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, pickedCount(t)+' players picked', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
     ${squad.length ? `<div class="field-label">Squad</div><div class="opts">${opt('s', 'all', squad.length+' player'+(squad.length>1?'s':''), esc(squad.slice(0, 4).map(pl => pl.name).join(', '))+(squad.length > 4 ? '…' : ''), groupHasSquad, sampleSquad, 'the group already has a squad; if unticked they stay on this phone')}</div>` : ''}
-    ${moves.length ? `<div class="field-label">Moves</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
+    ${moves.length ? `<div class="field-label">Drills</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
     <button class="btn wide" id="upGo">Sync now</button>`,
     el => $('#upGo', el).addEventListener('click', () => {
       $$('[data-up]', el).forEach(c => { const [k, id] = c.dataset.up.split(':');
@@ -1886,13 +1919,13 @@ async function chooseUploads(){
 }
 function showGroup(){
   const z = S.sync, n = pendingChanges(), link = linkBase() + '#join=' + fmtCode(z.group);
-  openSheet(`<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your group</span><b>${esc(z.groupName)}</b><small>${S.teams.length} team${S.teams.length===1?'':'s'}, ${S.moves.length} move${S.moves.length===1?'':'s'}</small></div>
+  openSheet(`<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your group</span><b>${esc(z.groupName)}</b><small>${S.teams.length} team${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}</small></div>
     <div class="field"><div class="field-label">Join code · only for your own coaches</div><div class="gcode">${fmtCode(z.group)}</div></div>
     <div class="field"><div class="field-label">Send code · give this to other groups</div><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div>
       <p class="hint">Other groups use it to send you moves. It can't be used to see or change anything in your group.</p></div>
     <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
     <div class="row-btns"><button class="btn" id="gpSync">Sync now</button><button class="btn ghost" id="gpInvite">Invite a coach</button><button class="btn ghost" id="gpSend">Share send code</button></div>
-    <div class="field"><div class="field-label">Moves sent to this group</div><div class="add-row"><p class="muted" id="gpInbox" style="align-self:center">Tap Check now to look for moves other groups have sent.</p><button class="btn ghost" id="gpCheck">Check now</button></div></div>
+    <div class="field"><div class="field-label">Drills sent to this group</div><div class="add-row"><p class="muted" id="gpInbox" style="align-self:center">Tap Check now to look for moves other groups have sent.</p><button class="btn ghost" id="gpCheck">Check now</button></div></div>
     <div class="field"><label class="field-label" for="gpWho">Your name in the group</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
     <div class="field"><div class="field-label">Groups on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.teams} team${gr.teams===1?'':'s'} · ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
       <button class="btn ghost" id="gpAdd">Add another group</button></div>
@@ -1907,12 +1940,12 @@ function showGroup(){
       if(!z.mailbox) ensureMailbox().then(b => { const g = $('#gpBox', el); if(g) g.textContent = fmtCode(b); }).catch(() => { const g = $('#gpBox', el); if(g) g.textContent = 'Sync first'; });
       $('#gpSend', el).addEventListener('click', async () => {
         let box = z.mailbox; try { box = box || await ensureMailbox(); } catch(e){ return toast(niceErr(e)); }
-        const text = `To send a move to ${z.groupName} in Rugby Team Picker, use send code ${fmtCode(box)}`;
+        const text = `To send a drill to ${z.groupName} in Rugby Team Picker, use send code ${fmtCode(box)}`;
         try { if(canShare()) await navigator.share({title: z.groupName, text}); else { await navigator.clipboard.writeText(text); toast('Send code copied'); } } catch(e){ if(e.name!=='AbortError') toast('Send code: '+fmtCode(box)); }
       });
       $('#gpCheck', el).addEventListener('click', async () => {
         const out = $('#gpInbox', el), btn = $('#gpCheck', el); btn.disabled = true; out.textContent = 'Checking…';
-        try { const n = await checkInbox(); if(!n) out.textContent = 'No moves waiting. Moves sent to your send code ' + fmtCode(S.sync.mailbox) + ' appear here.'; }
+        try { const n = await checkInbox(); if(!n) out.textContent = 'No drills waiting. Drills sent to your send code ' + fmtCode(S.sync.mailbox) + ' appear here.'; }
         catch(e){ if(e.gone){ closeSheet(); askNewCode(); } else out.textContent = 'Could not check: ' + niceErr(e); }
         finally { btn.disabled = false; }
       });
@@ -1921,7 +1954,7 @@ function showGroup(){
       $('#gpAdd', el).addEventListener('click', () => { closeSheet(); showGate(true); });
       const others = Object.keys(S.parked || {});
       $('#gpLeave', el).addEventListener('click', () => askConfirm('Leave '+z.groupName+'?',
-        others.length ? `Its teams and moves are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The group keeps everything you've synced, and you can join again with the code.`
+        others.length ? `Its teams and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The group keeps everything you've synced, and you can join again with the code.`
                       : 'Your teams stay on this phone but stop syncing. You need the code to join again.', 'Leave group', () => {
         if(others.length){ S.sync = null; const next = others[0]; S.parked[next] && switchGroup(next); }
         else { S.sync = {who: z.who}; save(); syncDot(); showGate(false); }
