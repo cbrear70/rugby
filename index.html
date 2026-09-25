@@ -163,6 +163,8 @@ main{flex:1;min-height:0;position:relative}
 .stp button{width:34px;height:32px;border:0;background:none;color:var(--ink);font:700 18px/1 var(--body)}
 .stp button:active{background:var(--line);border-radius:999px}
 .stp b{min-width:22px;text-align:center;color:var(--ink);font-variant-numeric:tabular-nums}
+.stp input.stpin{width:42px;min-width:0;padding:4px 0;border:0;border-radius:6px;background:var(--panel2);color:var(--ink);text-align:center;font:700 16px/1 var(--body);font-variant-numeric:tabular-nums}
+.stp input.stpin:focus{outline:2px solid var(--accent)}
 .pass-link{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-left:24px;padding:8px 0 8px 14px;border-left:2px dashed var(--line);font-size:14px;color:var(--muted)}
 .carry-row select{width:auto;flex:1;padding:8px 10px;font-size:15px}
 .zoomhint{position:absolute;left:10px;bottom:8px;font:600 11px/1 var(--body);color:rgba(255,255,255,.55);pointer-events:none;letter-spacing:.04em}
@@ -1276,7 +1278,7 @@ function addIconToMove(m, id){
     const a = m.icons[sh] ? posAt(m.icons[sh],0) : teamPos(t,sh), b = m.icons[fh] ? posAt(m.icons[fh],lastOf(m)) : teamPos(t,fh);
     m.icons.ball = {keys:{0:[r1(a[0]+1.3), r1(a[1]-1.3)], [lastOf(m)]:[r1(b[0]+1.3), r1(b[1]-1.3)]}};
   } else {
-    const s = teamPos(t,+id), L = lastOf(m), e = Math.min(L, 12), fin = [s[0], r1(clamp(s[1]-15, -2, 122))];
+    const s = teamPos(t,+id), L = lastOf(m), e = Math.min(L, 15), fin = [s[0], r1(clamp(s[1]-15, -2, 122))];
     m.icons[id] = {keys:{0:[s[0],s[1]], [e]:fin, [L]:[...fin]}, color:null};
   }
 }
@@ -1286,7 +1288,7 @@ function pickPlayers(){
     return `<button data-pp="${id}" class="${on?'on':''}" aria-pressed="${on}">${id==='ball'?miniBall(34):miniShirt(id, moveColor(m,id), 34)}<small>${id==='ball'?'Ball':p?esc(surname(p.name)):posName(id).split(' ').pop()}</small></button>`; };
   openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Players in this drill</h2>
     <div class="pgrid">${[...new Set(pitchNums(t).map(String).concat(iconIds(m).filter(i=>i!=='ball')))].map(btn).join('')}${btn('ball')}</div>
-    <p class="hint">New shirts start at their spot on the Pitch tab and run 15 metres upfield over the first 12 frames (3 s), then stand still. Change when and how long in their Movement panel. The ball runs from the scrum-half to the fly-half until you change it.</p>
+    <p class="hint">New shirts start at their spot on the Pitch tab and run 15 metres upfield over the first 15 frames (3.75 s), then stand still. Change when and how long in their Movement panel. The ball runs from the scrum-half to the fly-half until you change it.</p>
     <button class="btn wide" data-close>Done</button>`,
     el => $$('[data-pp]', el).forEach(b => b.addEventListener('click', () => {
       const id = b.dataset.pp;
@@ -1482,7 +1484,7 @@ function renderMoveDetail(box, m, id){
   const pts = [...Array(F)].map((_,k) => posAt(ic,k));
   let dist = 0; for(let k=1;k<F;k++) dist += Math.hypot(pts[k][0]-pts[k-1][0], pts[k][1]-pts[k-1][1]);
   const runs = runsOf(ic, L), turns = keyList(ic).filter(k => runs.some(r => k > r.s && k < r.e) && isTurn(ic, k));
-  const form = ME.runForm = ME.runForm || {wait: 0, len: 8};
+  const form = ME.runForm = ME.runForm || {wait: 0, len: 15};
   // the selected frame and what it is: inside a run, in a pause between runs, before the first run, or after the last
   if(ME.tlFor !== m.id + ':' + id){ ME.tlSel = null; ME.tlFor = m.id + ':' + id; }
   const sel = ME.tlMode === 'select' && ME.tlSel != null && ME.tlSel <= L ? ME.tlSel : null, pauseLen = ME.pauseLen = ME.pauseLen || 3;
@@ -1615,7 +1617,18 @@ function setChain(m, ch){
   out.forEach((c,i) => { if(c.p==='' && i && out[i-1].p && c.f<=lastOf(m)){ const q = heldPos(m, out[i-1], c.f); b.keys[c.f] = [r1(q[0]), r1(q[1])]; } });
 }
 function chainFrames(ch){ let f = ch.start; return ch.steps.map((st,i) => { if(i) f += ch.steps[i-1].hold + ch.steps[i-1].pass; return f; }); }
-const stepper = (key, val, label) => `<span class="stp" role="group" aria-label="${label}"><button data-st="${key}:-1" aria-label="Less">−</button><b>${val}</b><button data-st="${key}:1" aria-label="More">+</button></span>`;
+const stepper = (key, val, label) => `<span class="stp" role="group" aria-label="${label}"><button data-st="${key}:-1" aria-label="Less">−</button><input class="stpin" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="${val}" data-val="${val}" aria-label="${label}"><button data-st="${key}:1" aria-label="More">+</button></span>`;
+// Typing a number into a stepper: apply the difference through the stepper's own + button, so every stepper's rules
+// (limits, knock-on changes) apply exactly as if you'd tapped it that many times.
+document.addEventListener('change', e => {
+  const inp = e.target; if(!inp.classList || !inp.classList.contains('stpin')) return;
+  const v = parseInt(inp.value, 10), old = +inp.dataset.val, plus = inp.parentElement.querySelector('[data-st$=":1"]');
+  if(!Number.isFinite(v) || !plus){ inp.value = old; return; }
+  const dd = v - old; if(!dd) return;
+  const key = plus.dataset.st.slice(0, -2); plus.dataset.st = key + ':' + dd; plus.click(); plus.dataset.st = key + ':1';
+});
+document.addEventListener('keydown', e => { if(e.key === 'Enter' && e.target.classList && e.target.classList.contains('stpin')) e.target.blur(); });
+document.addEventListener('focusin', e => { if(e.target.classList && e.target.classList.contains('stpin')) setTimeout(() => e.target.select(), 0); });
 function renderChain(box, m){
   const t = team(), ch = getChain(m), shirts = iconIds(m).filter(i => i!=='ball');
   const name = p => { const pl = playerAt(t,+p); return '#'+p+(pl ? ' '+surname(pl.name) : ''); };
@@ -1722,7 +1735,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:33</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:53</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
