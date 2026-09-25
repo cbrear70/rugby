@@ -421,8 +421,29 @@ function surname(name){ const p=String(name||'').trim().split(/\s+/); return p.l
 const KEY = 'rugbyTeamPicker.v1';
 let S = load();
 function load(){
-  try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; return pooledMoves(d); } } } catch(e){}
+  try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; pooledMoves(d); pooledSquad(d); for(const w of Object.values(d.parked || {})) pooledSquad(w); return d; } } } catch(e){}
   return seed();
+}
+// Players used to belong to one team; now every team in a group picks from one squad in players. Merge each team's
+// players once (same name = same player) and point the team sheets at the merged players. Players only in teams kept
+// on this phone stay on this phone.
+function pooledSquad(w){
+  if(Array.isArray(w.players)) return;
+  const players = [], byName = {};
+  for(const t of w.teams || []){
+    const remap = {};
+    for(const pl of t.players || []){
+      const key = String(pl.name||'').trim().toLowerCase();
+      let q = players.find(x => x.id === pl.id) || byName[key];
+      if(!q){ q = JSON.parse(JSON.stringify(pl)); q._local = !!t.localOnly; players.push(q); byName[key] = q; }
+      else if(!t.localOnly) q._local = false;
+      remap[pl.id] = q.id;
+    }
+    for(const n in t.selection || {}){ const sl = t.selection[n]; if(sl && sl.playerId && remap[sl.playerId]) sl.playerId = remap[sl.playerId]; }
+    delete t.players;
+  }
+  for(const q of players){ if(q._local && w.sync && w.sync.group) q.localOnly = true; delete q._local; }
+  w.players = players;
 }
 // Moves used to belong to one team; now every team shares one library in S.moves. Merge old per-team lists once.
 function pooledMoves(d){
@@ -442,7 +463,10 @@ function pooledMoves(d){
 }
 let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} syncDot(); }, 250); }
 const team = () => S.teams.find(t => t.id === S.currentTeamId) || S.teams[0];
-const playerById = (t,id) => t.players.find(p => p.id === id);
+const playerById = (t,id) => S.players.find(p => p.id === id);
+// which teams have picked this player, e.g. "U13 A #10 · U13 B #22"
+const pickedCount = t => Object.values(t.selection || {}).filter(sl => sl && sl.playerId && playerById(t, sl.playerId)).length;
+const pickedIn = pid => S.teams.map(x => { const k = numberOf(x, pid); return k ? `${x.name} #${k}` : ''; }).filter(Boolean);
 const playerAt = (t,n) => { const s=t.selection[n]; return s && s.playerId ? playerById(t, s.playerId) : null; };
 const colorOf = (t,n) => (t.selection[n] && t.selection[n].color) || defaultColor(n, t);
 function teamPos(t,n){ const s=t.selection[n]; if(s && s.x!=null) return [s.x, s.y]; return DEFAULT_POS[slotOf(n,t)] || [35,60]; }
@@ -453,17 +477,18 @@ function assign(t,n,pid){
   if(pid){ for(const k in t.selection){ if(+k!==+n && t.selection[k] && t.selection[k].playerId===pid){ t.selection[k].playerId = cur; } } }
   setSel(t,n,{playerId: pid||null});
 }
-function newTeam(name){ return {id:uid(), name:name||'New team', players:[], selection:{}}; }
+function newTeam(name){ return {id:uid(), name:name||'New team', selection:{}}; }
 
+const SAMPLE_NAMES = new Set(['Tom Hadley','Rhys Palmer','Sam Okafor','Jack Whitmore','Luke Brennan','Owen Fisher','Dan Mercer','Callum Reid','Ben Ashworth','Harry Lowe','Josh Keane','Matt Doyle','Will Carrick','Alfie Brooks','Ethan Price','Joe Tanner','Finn Gallagher','Nathan Cole','Ollie Stroud','Kieran Walsh','George Pym','Aaron Vail','Liam Hext','Max Rowley','Ryan Dunne','Isaac Burnell']);
 function seed(){
   const names = [['Tom Hadley','Prop'],['Rhys Palmer','Hooker'],['Sam Okafor','Prop'],['Jack Whitmore','Lock'],['Luke Brennan','Lock'],['Owen Fisher','Flanker'],['Dan Mercer','Flanker'],['Callum Reid','Number 8, Flanker'],['Ben Ashworth','Scrum-half'],['Harry Lowe','Fly-half'],['Josh Keane','Wing'],['Matt Doyle','Centre'],['Will Carrick','Centre'],['Alfie Brooks','Wing'],['Ethan Price','Full-back, Wing'],['Joe Tanner','Hooker'],['Finn Gallagher','Prop'],['Nathan Cole','Prop'],['Ollie Stroud','Lock, Flanker'],['Kieran Walsh','Flanker'],['George Pym','Scrum-half'],['Aaron Vail','Fly-half, Centre'],['Liam Hext','Wing, Full-back'],['Max Rowley','Centre'],['Ryan Dunne','Prop'],['Isaac Burnell','Lock']];
   const players = names.map(([name,pos]) => ({id:uid(), name, pos, notes:'', available:true}));
   players[24].available = false; players[24].notes = 'Away this weekend';
   players[25].available = false; players[25].notes = 'Hamstring, back in two weeks';
   players[9].notes = 'Goal kicker';
-  const t = {id:uid(), name:'Example RFC (sample)', players, selection:{}};
+  const t = {id:uid(), name:'Example RFC (sample)', selection:{}};
   for(let n=1;n<=23;n++) t.selection[n] = {playerId: players[n-1].id};
-  return {v:1, currentTeamId:t.id, teams:[t], moves:[sampleMove()], ui:{names:true, paths:true}};
+  return {v:1, currentTeamId:t.id, teams:[t], players, moves:[sampleMove()], ui:{names:true, paths:true}};
 }
 function sampleMove(){
   const m = {id:uid(), name:'Crash ball 12', desc:'Off first-phase ball: 9 to 10, 10 hits 12 running a hard line off his inside shoulder. 13 holds width to fix the outside defender.', icons:{}};
@@ -767,7 +792,7 @@ function showSlot(n){
 }
 function playerOptions(t, selectedId, forN){
   const opt = p => { const k = numberOf(t,p.id); return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${k && k!==forN ? ' · #'+k : ''}</option>`; };
-  const sorted = [...t.players].sort((a,b)=>a.name.localeCompare(b.name));
+  const sorted = [...S.players].sort((a,b)=>a.name.localeCompare(b.name));
   const av = sorted.filter(p=>p.available!==false), un = sorted.filter(p=>p.available===false);
   return `<option value="">— Not picked —</option>` + (av.length?`<optgroup label="Available">${av.map(opt).join('')}</optgroup>`:'') + (un.length?`<optgroup label="Unavailable">${un.map(opt).join('')}</optgroup>`:'');
 }
@@ -789,7 +814,7 @@ function editSlot(n){
         const cur = playerAt(t,n);
         if(nm){
           if(cur){ cur.name = nm; }
-          else { let q = t.players.find(x => x.name.toLowerCase() === nm.toLowerCase()); if(!q){ q = {id:uid(), name:nm, pos:'', notes:'', available:true}; t.players.push(q); } assign(t, n, q.id); }
+          else { let q = S.players.find(x => x.name.toLowerCase() === nm.toLowerCase()); if(!q){ q = {id:uid(), name:nm, pos:'', notes:'', available:true}; S.players.push(q); } assign(t, n, q.id); }
         }
         setSel(t, n, {color});
         closeSheet(); renderAll(); toast('Saved #'+n);
@@ -800,8 +825,8 @@ function editSlot(n){
 /* ---------- SQUAD TAB ---------- */
 function renderSquad(){
   const t = team(), el = $('#squadBody');
-  const list = [...t.players].sort((a,b)=>a.name.localeCompare(b.name));
-  const av = list.filter(p=>p.available!==false).length;
+  const list = [...S.players].sort((a,b)=>a.name.localeCompare(b.name));
+  const av = list.filter(p=>p.available!==false).length, many = S.teams.length > 1, phoneOnly = syncing() ? list.filter(p => p.localOnly).length : 0;
   el.innerHTML = `
     <form class="add-row" id="addForm" autocomplete="off">
       <input id="newName" type="text" placeholder="New player's name" aria-label="New player's name">
@@ -809,24 +834,29 @@ function renderSquad(){
       <input id="newPos" class="pos" type="text" placeholder="Positions they play (optional)" aria-label="Positions">
     </form>
     <div class="section-h"><span>Squad · ${list.length}</span><span>${av} available</span></div>
-    ${list.length ? `<div class="list">${list.map(p => { const k = numberOf(t,p.id); return `<button class="prow" data-pid="${p.id}"><span class="dot${p.available===false?' off':''}" title="${p.available===false?'Unavailable':'Available'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos||'No position set')}${p.available===false?' · unavailable':''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`
+    ${many || syncing() ? `<p class="hint" style="margin:-4px 0 8px">One squad for ${syncing() ? 'every team in '+esc(S.sync.groupName) : 'all your teams'}. Each team picks its own team sheet from it.</p>` : ''}
+    ${phoneOnly ? `<div class="row-btns" style="margin-bottom:8px"><button class="btn ghost" id="sqShare">Share ${phoneOnly} phone-only player${phoneOnly>1?'s':''} with the group</button></div>` : ''}
+    ${list.length ? `<div class="list">${list.map(p => { const k = numberOf(t,p.id), where = many ? pickedIn(p.id).filter(w => !w.startsWith(t.name+' #')) : [];
+      return `<button class="prow" data-pid="${p.id}"><span class="dot${p.available===false?' off':''}" title="${p.available===false?'Unavailable':'Available'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos||'No position set')}${p.available===false?' · unavailable':''}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? ' · also '+esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`
       : `<div class="empty">No players yet. Add your squad above, then pick the team on the Select team tab.</div>`}
     <p class="hint" style="margin-top:12px">Tap a player to edit their details or mark them unavailable.</p>`;
   $('#addForm').addEventListener('submit', e => {
     e.preventDefault();
     const nm = $('#newName').value.trim(); if(!nm){ $('#newName').focus(); return; }
-    t.players.push({id:uid(), name:nm, pos:$('#newPos').value.trim(), notes:'', available:true}); save();
+    S.players.push({id:uid(), name:nm, pos:$('#newPos').value.trim(), notes:'', available:true}); save();
     renderSquad(); toast(nm+' added'); $('#newName').focus();
   });
   $$('.prow', el).forEach(b => b.addEventListener('click', () => editPlayer(b.dataset.pid)));
+  const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { S.players.forEach(p => { delete p.localOnly; }); save(); renderSquad(); toast('Squad will be shared with the group when you sync'); });
 }
 function editPlayer(pid){
   const t = team(), p = playerById(t,pid); if(!p) return;
-  const k = numberOf(t,pid);
+  const k = numberOf(t,pid), where = pickedIn(pid);
   openSheet(`<div class="eyebrow">${k?'Wearing #'+k+' · '+posName(k):'Squad player'}</div><h2>${esc(p.name)}</h2>
     <div class="field"><label class="field-label" for="epName">Name</label><input id="epName" type="text" value="${esc(p.name)}"></div>
     <div class="field"><label class="field-label" for="epPos">Positions</label><input id="epPos" type="text" value="${esc(p.pos||'')}" placeholder="e.g. Centre, Wing"></div>
     <div class="field"><label class="field-label" for="epNotes">Notes</label><textarea id="epNotes" placeholder="Injuries, kicking duties, anything useful">${esc(p.notes||'')}</textarea></div>
+    ${where.length ? `<p class="hint">Picked for ${esc(where.join(', '))}</p>` : ''}
     <label class="check"><input type="checkbox" id="epAv"${p.available!==false?' checked':''}> Available for selection</label>
     <div class="row-btns"><button class="btn" id="epSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn danger" id="epDel">Remove from squad</button>`,
@@ -835,9 +865,9 @@ function editPlayer(pid){
         p.name = $('#epName', el).value.trim() || p.name; p.pos = $('#epPos', el).value.trim(); p.notes = $('#epNotes', el).value.trim(); p.available = $('#epAv', el).checked;
         save(); closeSheet(); renderAll();
       });
-      $('#epDel', el).addEventListener('click', () => askConfirm('Remove '+p.name+'?', k ? `They will also be taken out of shirt #${k}.` : 'They will be removed from the squad list.', 'Remove player', () => {
-        t.players = t.players.filter(x => x.id !== pid);
-        for(const n in t.selection) if(t.selection[n].playerId === pid) t.selection[n].playerId = null;
+      $('#epDel', el).addEventListener('click', () => askConfirm('Remove '+p.name+'?', where.length ? `They will also be taken off the team sheet: ${where.join(', ')}.` : 'They will be removed from the squad list.', 'Remove player', () => {
+        S.players = S.players.filter(x => x.id !== pid);
+        for(const x of S.teams) for(const n in x.selection) if(x.selection[n] && x.selection[n].playerId === pid) x.selection[n].playerId = null;
         save(); renderAll(); toast('Player removed');
       }));
     });
@@ -855,7 +885,7 @@ function renderSelect(){
     ${onPitch.map(row).join('')}
     ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
     <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Team settings (tap the team name).</p>
-    ${t.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
+    ${S.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => { assign(t, +s.dataset.n, s.value || null); renderSelect(); }));
   $('#clearSel').addEventListener('click', () => askConfirm('Clear the team?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear team', () => {
@@ -1251,7 +1281,7 @@ function teamSettings(t, isNew){
     <div class="fmt" id="tsPreview">${preview(teamSize(t))}</div>
     <div class="field"><label class="field-label" for="tsBench">Replacements</label><select id="tsBench">${benchOpts(benchSize(t))}</select></div>
     <p class="hint" id="tsWarn"></p>
-    <div class="row-btns"><button class="btn" id="tsSave">${isNew ? 'Save and add squad' : 'Save'}</button><button class="btn ghost" data-close>${isNew ? 'Skip' : 'Cancel'}</button></div>
+    <div class="row-btns"><button class="btn" id="tsSave">${isNew ? (S.players.length ? 'Save and pick the team' : 'Save and add squad') : 'Save'}</button><button class="btn ghost" data-close>${isNew ? 'Skip' : 'Cancel'}</button></div>
     ${isNew ? '' : `<button class="btn danger" id="tmDel">Delete “${esc(t.name)}”</button>`}`,
     el => {
       const size = () => +$('#tsSize', el).value, bench = () => +$('#tsBench', el).value;
@@ -1275,7 +1305,8 @@ function teamSettings(t, isNew){
         S.teams = S.teams.filter(x => x.id !== t.id); if(!S.teams.length) S.teams.push(newTeam('My team'));
         S.currentTeamId = S.teams[0].id; ME.moveId = null; save(); renderAll(); toast('Team deleted');
       }));
-    }, () => { if(isNew){ showTab('squad'); toast('Team created. Add your squad.'); } });
+    }, () => { if(isNew){ // a new team shares the existing squad, so go straight to picking its team sheet
+      if(S.players.length){ showTab('select'); toast(`Team created. Pick its team from the squad of ${S.players.length}.`); } else { showTab('squad'); toast('Team created. Add your squad.'); } } });
 }
 $('#teamBtn').addEventListener('click', () => {
   const t = team();
@@ -1283,11 +1314,11 @@ $('#teamBtn').addEventListener('click', () => {
   openSheet(`${fbOn() ? (syncing() ? `<button class="gcard" id="tmGroup" style="--gc:${gc}"><span class="eyebrow">Group${others ? ` · 1 of ${others+1} on this phone` : ''}</span><b>${esc(S.sync.groupName)}</b><small>${others ? 'Switch group, ' : ''}sync, invite coaches, codes ›</small></button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
     <div class="teams-in" style="--gc:${gc}">
     <div class="eyebrow" style="color:${gc}">${syncing() ? 'Teams in '+esc(S.sync.groupName) : 'Teams on this phone'}</div><h2>Switch team</h2>
-    <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${x.players.length} players</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
+    <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${pickedCount(x)} picked</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 07:59</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 08:10</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -1319,7 +1350,7 @@ async function decodeCode(text){
 }
 function buildPayload(kind, moveId){
   const t = team();
-  if(kind==='team') return {app:APP_ID, v:1, kind:'team', data: Object.assign(clone(t), {localOnly: undefined, moves: S.moves.map(m => Object.assign(clone(m), {localOnly: undefined, draft: undefined}))})};
+  if(kind==='team') return {app:APP_ID, v:1, kind:'team', data: Object.assign(clone(t), {localOnly: undefined, players: S.players.map(p => Object.assign(clone(p), {localOnly: undefined})), moves: S.moves.map(m => Object.assign(clone(m), {localOnly: undefined, draft: undefined}))})};
   if(kind==='lineup'){
     const sel = {}, players = [];
     for(const n of allShirts(t)){ const s = t.selection[n]; if(!s) continue; const p = playerAt(t,n); sel[n] = {name: p?p.name:null, color:s.color||null, x:s.x, y:s.y}; if(p) players.push({name:p.name, pos:p.pos||''}); }
@@ -1337,7 +1368,7 @@ function openShare(pre){
   const moveSel = S.moves.length ? `<select id="shMove" aria-label="Move to share">${S.moves.map(m=>`<option value="${m.id}"${m.id===pre.moveId?' selected':''}>${esc(m.name)}</option>`).join('')}</select>` : '';
   openSheet(`<div class="eyebrow">Send to another coach</div><h2>Share</h2>
     <div class="opts">
-      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${t.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} move${S.moves.length===1?'':'s'}</small></span></label>
+      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${S.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} move${S.moves.length===1?'':'s'}</small></span></label>
       <label class="opt"><input type="radio" name="shk" value="lineup"${pre.kind==='lineup'?' checked':''}><span><b>Team sheet only</b><small>Who is wearing each shirt, colours and positions</small></span></label>
       ${S.moves.length?`<label class="opt"><input type="radio" name="shk" value="move"${pre.kind==='move'?' checked':''}><span style="flex:1;display:flex;flex-direction:column;gap:6px"><b>One move</b>${moveSel}</span></label>`:''}
     </div>
@@ -1387,9 +1418,15 @@ function handleImport(pl){
     // imports keep the sender's id so the next share of the same team lines up with this copy.
     // Copies made before that (new id, maybe "(shared)" on the name) are matched by name instead.
     const existing = S.teams.find(x=>x.id===d.id) || S.teams.find(x=>baseName(x.name)===baseName(d.name));
+    // the team's players join the squad: same id or same name = same player; its team sheet follows them
+    const takePlayers = nt => { const remap = {};
+      for(const pl of d.players || []){ let q = S.players.find(x => x.id === pl.id) || S.players.find(x => x.name.trim().toLowerCase() === String(pl.name).trim().toLowerCase());
+        if(q) Object.assign(q, clone(pl), {id: q.id}); else { q = clone(pl); S.players.push(q); } remap[pl.id] = q.id; }
+      for(const n in nt.selection || {}){ const sl = nt.selection[n]; if(sl && sl.playerId) sl.playerId = remap[sl.playerId] || sl.playerId; }
+      delete nt.players; return nt; };
     const takeMoves = () => { for(const m of d.moves || []){ const i = S.moves.findIndex(x => x.id===m.id); if(i>=0) S.moves[i] = clone(m); else S.moves.push(clone(m)); } };
-    const addNew = () => { takeMoves(); const nt = clone(d); delete nt.moves; if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); };
-    const replace = () => { takeMoves(); const i = S.teams.indexOf(existing), nt = clone(d); delete nt.moves; S.teams[i] = nt; S.currentTeamId = d.id; done('Team updated'); };
+    const addNew = () => { takeMoves(); const nt = takePlayers(clone(d)); delete nt.moves; if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); };
+    const replace = () => { takeMoves(); const i = S.teams.indexOf(existing), nt = takePlayers(clone(d)); delete nt.moves; S.teams[i] = nt; S.currentTeamId = d.id; done('Team updated'); };
     openSheet(`<div class="eyebrow">Import team</div><h2>${esc(d.name)}</h2><p class="muted">${d.players.length} players, ${Object.values(d.selection||{}).filter(s=>s&&s.playerId).length} shirts picked, ${(d.moves||[]).length} moves.</p>
       ${existing?`<p class="hint">Replacing swaps your copy of ${esc(existing.name)} (squad, team sheet and moves) for this one.</p>`:''}
       <div class="row-btns">${existing?`<button class="btn" id="ipRep">Replace ${existing.id===d.id?'my copy':esc(existing.name)}</button>`:''}<button class="btn ${existing?'ghost':''}" id="ipNew">Add as new team</button></div><button class="btn ghost" data-close>Cancel</button>`,
@@ -1398,7 +1435,7 @@ function handleImport(pl){
     const apply = target => {
       if(d.size) target.size = d.size; if(d.bench != null) target.bench = d.bench;
       for(const n in d.selection){ const s = d.selection[n]; let pid = null;
-        if(s.name){ let p = target.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:'', available:true}; target.players.push(p); } pid = p.id; }
+        if(s.name){ let p = S.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:'', available:true}; S.players.push(p); } pid = p.id; }
         target.selection[n] = {playerId:pid, color:s.color||null}; if(s.x!=null){ target.selection[n].x = s.x; target.selection[n].y = s.y; } }
     };
     openSheet(`<div class="eyebrow">Import team sheet</div><h2>${esc(d.team)}</h2><p class="muted">${d.players.length} named players. Players not already in your squad will be added.</p>
@@ -1505,13 +1542,15 @@ function localItems(){
     const core = Object.assign({}, t); delete core.moves; delete core.localOnly;
     out['t_'+t.id] = {kind:'team', teamId:t.id, json: JSON.stringify(core)};
   }
+  for(const pl of S.players){ if(pl.localOnly) continue; const q = Object.assign({}, pl); delete q.localOnly; out['p_'+pl.id] = {kind:'player', teamId:'', json: JSON.stringify(q)}; }
   for(const m of S.moves){ if(m.draft) continue; const mm = Object.assign({}, m); delete mm.draft; delete mm.localOnly; out['mv_'+m.id] = {kind:'move', teamId:'', json: JSON.stringify(mm)}; }
   return out;
 }
 const itemTeam = id => id.startsWith('t_') ? id.slice(2) : id.startsWith('m_') ? id.slice(2, id.indexOf('_', 2)) : '';
 // ids sync leaves alone: phone-only teams, and drafts that were never shared (a shared move turned back into a draft is
 // still in base, so sync removes it from the group)
-const keptOnPhone = base => new Set(S.teams.filter(t => t.localOnly).map(t => 't_'+t.id).concat(S.moves.filter(m => m.draft && !base['mv_'+m.id]).map(m => 'mv_'+m.id)));
+const keptOnPhone = base => new Set(S.teams.filter(t => t.localOnly).map(t => 't_'+t.id).concat(S.moves.filter(m => m.draft && !base['mv_'+m.id]).map(m => 'mv_'+m.id))
+  .concat(S.players.filter(p => p.localOnly && !base['p_'+p.id]).map(p => 'p_'+p.id)));
 function pendingChanges(){
   if(!syncing()) return 0;
   const base = S.sync.base || {}, loc = localItems(), localOnly = keptOnPhone(base); let n = 0;
@@ -1525,7 +1564,7 @@ async function syncNow(choices = {}, retry = true){
   const z = S.sync, code = z.group, remote = await listItems(code);
   if(S.teams.some(t => t.placeholder)){
     const hasTeams = Object.values(remote).some(r => r.kind==='team' && !r.deleted);
-    S.teams = S.teams.filter(t => !(t.placeholder && hasTeams && !t.players.length));
+    S.teams = S.teams.filter(t => !(t.placeholder && hasTeams && !pickedCount(t)));
     S.teams.forEach(t => { delete t.placeholder; });
   }
   const local = localItems(), base = z.base || {};
@@ -1552,14 +1591,14 @@ async function syncNow(choices = {}, retry = true){
       if(!c){ needs.push({teamId:tid, name: JSON.parse(local[id].json).name, by: remote[id].by}); continue; }
       d = c==='mine' ? 'push' : 'pull'; }
     if(d==='same'){ keep(id); continue; }
-    if(d==='both'){ pull.push(id); copies.push(id); continue; }
+    if(d==='both'){ pull.push(id); if(id.startsWith('mv_')) copies.push(id); continue; } // a player edited on two phones: the group's version wins
     (d==='push' ? push : pull).push(id);
   }
   if(needs.length) return {needs};
   // each write carries a precondition, so if someone syncs in between this run starts again instead of overwriting them
   const who = z.who || '', now = String(Date.now()), writes = [];
   const write = (id, item) => {
-    const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
+    const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : id.startsWith('p_') ? 'player' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
       deleted:{booleanValue: !item}, by:{stringValue: who}, at:{integerValue: now}};
     writes.push({update:{name: DOCNAME(`groups/${code}/items/${id}`), fields}, currentDocument: Rd ? {updateTime: Rd.updateTime} : {exists:false}});
   };
@@ -1578,7 +1617,13 @@ async function syncNow(choices = {}, retry = true){
     if(id.startsWith('t_')){
       const tid = itemTeam(id), i = S.teams.findIndex(t => t.id===tid);
       if(!R){ if(i>=0){ S.teams.splice(i,1); got++; } continue; }
-      if(i>=0) S.teams[i] = JSON.parse(R.json); else S.teams.push(JSON.parse(R.json));
+      const nt = JSON.parse(R.json);
+      if(nt.players){ const w = {teams:[nt]}; pooledSquad(w); for(const pl of w.players) if(!S.players.some(x => x.id === pl.id)) S.players.push(pl); } // from a phone on an older version
+      if(i>=0) S.teams[i] = nt; else S.teams.push(nt);
+    } else if(id.startsWith('p_')){
+      const pid = id.slice(2), i = S.players.findIndex(x => x.id===pid);
+      if(!R){ if(i>=0){ S.players.splice(i,1); got++; } continue; }
+      if(i>=0) S.players[i] = JSON.parse(R.json); else S.players.push(JSON.parse(R.json));
     } else {
       const mid = id.slice(3); let i = S.moves.findIndex(m => m.id===mid);
       if(i>=0 && S.moves[i].draft){ S.moves[i].id = uid(); i = -1; } // keep the draft; the group's version comes in beside it
@@ -1768,7 +1813,7 @@ $('#syncBtn').addEventListener('click', () => syncing() ? runSync() : showGate(t
 
 // A phone can belong to several groups. The active group's data lives in S.teams, S.moves, S.currentTeamId and S.sync
 // as before; the others wait in S.parked[joinCode] and are swapped in when you switch.
-const WORKSPACE = ['teams', 'moves', 'currentTeamId', 'sync'];
+const WORKSPACE = ['teams', 'players', 'moves', 'currentTeamId', 'sync'];
 const GROUP_COLOURS = ['#3FB6E8', '#B98CF5', '#F0883E', '#4FD1A5', '#F06BA8', '#A3D94A', '#6C8CFF', '#E8C547'];
 const groupColour = code => { let h = 7; for(const c of String(code||'')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return GROUP_COLOURS[h % GROUP_COLOURS.length]; };
 const groupsOnPhone = () => (syncing() ? [{code: S.sync.group, name: S.sync.groupName, active: true, teams: S.teams.length}] : [])
@@ -1803,7 +1848,7 @@ function showGate(canClose){
     if(syncing() && S.sync.group === grp.code){ toast('You are already in '+grp.name); return; }
     if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return; }
     phoneAuth();
-    if(syncing()){ parkGroup(); S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; }
+    if(syncing()){ parkGroup(); S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; }
     S.sync = {group: grp.code, groupName: grp.name, who: who(), base: {}, lastSync: 0}; save();
     syncDot(); renderAll(); await chooseUploads();
   };
@@ -1824,15 +1869,19 @@ async function chooseUploads(){
   const teamNames = names('team'), moveNames = names('move');
   const inGroup = id => remote[id] && !remote[id].deleted;
   const teams = S.teams.filter(t => !t.placeholder && !inGroup('t_'+t.id)), moves = S.moves.filter(m => !inGroup('mv_'+m.id));
-  if(!teams.length && !moves.length){ runSync(); return; }
-  const opt = (kind, id, name, info, dup, sample) => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · the group already has one with this name':''}${sample?' · sample data':''}</small></span></label>`;
+  const squad = S.players.filter(pl => !inGroup('p_'+pl.id)), groupHasSquad = live.some(r => r.kind==='player'), sampleSquad = squad.length && squad.every(pl => SAMPLE_NAMES.has(pl.name));
+  if(!teams.length && !moves.length && !squad.length){ runSync(); return; }
+  const opt = (kind, id, name, info, dup, sample, dupText = 'the group already has one with this name') => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · '+dupText:''}${sample?' · sample data':''}</small></span></label>`;
   openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share with the group?</h2>
     <p class="muted">Ticked items go to the group when you sync. Unticked teams stay on this phone, and unticked moves go into your drafts; you can share them later.</p>
-    ${teams.length ? `<div class="field-label">Teams</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, t.players.length+' players', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
+    ${teams.length ? `<div class="field-label">Teams</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, pickedCount(t)+' players picked', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
+    ${squad.length ? `<div class="field-label">Squad</div><div class="opts">${opt('s', 'all', squad.length+' player'+(squad.length>1?'s':''), esc(squad.slice(0, 4).map(pl => pl.name).join(', '))+(squad.length > 4 ? '…' : ''), groupHasSquad, sampleSquad, 'the group already has a squad; if unticked they stay on this phone')}</div>` : ''}
     ${moves.length ? `<div class="field-label">Moves</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
     <button class="btn wide" id="upGo">Sync now</button>`,
     el => $('#upGo', el).addEventListener('click', () => {
-      $$('[data-up]', el).forEach(c => { const [k, id] = c.dataset.up.split(':'), x = (k==='t' ? S.teams : S.moves).find(y => y.id===id); if(!x) return; if(k==='t') x.localOnly = !c.checked; else if(c.checked) delete x.draft; else x.draft = true; });
+      $$('[data-up]', el).forEach(c => { const [k, id] = c.dataset.up.split(':');
+        if(k==='s'){ squad.forEach(pl => { if(c.checked) delete pl.localOnly; else pl.localOnly = true; }); return; }
+        const x = (k==='t' ? S.teams : S.moves).find(y => y.id===id); if(!x) return; if(k==='t') x.localOnly = !c.checked; else if(c.checked) delete x.draft; else x.draft = true; });
       save(); closeSheet(); runSync(); }));
 }
 function showGroup(){
