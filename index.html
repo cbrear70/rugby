@@ -1244,7 +1244,15 @@ function showVisibility(){
 $('#edFit').addEventListener('click', () => { if(moveCtl.isFit()) zoomMove(); else { moveCtl.fit(); syncEdFit(); } });
 $('#edDone').addEventListener('click', () => { ME.editing = null; renderBanner(); renderMoveLayer(); });
 $('#edStraight').addEventListener('click', () => { straighten(ME.editing); });
-function straighten(id){ const last = lastOf(curMove()), ic = curMove().icons[id], {s, e} = moveWindow(ic, last), A = posAt(ic, s), B = posAt(ic, e); ic.keys = {0:[...A], [s]:[...A], [e]:[...B], [last]:[...B]}; delete ic.breaks; save(); renderMoveLayer(); toast('Path straightened'); }
+// Straighten = take the bends out of a run: each run keeps its start and end (where and when), so pauses, run
+// lengths and the other runs don't change. With a run picked only that run is straightened; otherwise each one is.
+function straighten(id){
+  const m = curMove(), ic = m.icons[id], runs = runsOf(ic, lastOf(m)), sel = runSelOf(m, id);
+  const targets = sel != null ? [runs[sel]] : runs;
+  for(const r of targets) for(const k of keyList(ic)) if(k > r.s && k < r.e) delete ic.keys[k];
+  save(); renderMoveLayer(); if(ME.editing === id) renderBanner();
+  toast(sel != null ? `Run ${sel+1} straightened` : runs.length > 1 ? 'Each run straightened' : 'Run straightened');
+}
 function startPathEdit(id){ stopPlay(); if(ME.editing !== id && (!ME.runSel || ME.runSel.id !== id)) ME.runSel = null; ME.editing = id; renderBanner(); renderMoveLayer(); }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
@@ -1771,7 +1779,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 16:13</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 20:36</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
