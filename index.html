@@ -1287,7 +1287,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 07:54</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 07:59</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -1453,8 +1453,17 @@ function hashStr(s){ let h = 0x811c9dc5; for(let i=0;i<s.length;i++){ h ^= s.cha
 const syncing = () => !!(S.sync && S.sync.group);
 
 async function fbErr(r){ try { const j = await r.json(); return (j.error && (j.error.message || j.error.status)) || 'HTTP '+r.status; } catch(e){ return 'HTTP '+r.status; } }
+// One anonymous Firebase login per phone, shared by all its groups and kept when leaving one, so each phone is one
+// registration per group. Older versions kept a login per group: the active group's is adopted the first time.
+function phoneAuth(){
+  if(!S.auth){
+    const src = [S.sync, ...Object.values(S.parked || {}).map(w => w.sync)].find(z => z && z.refresh);
+    S.auth = src ? {token: src.token, refresh: src.refresh, tokenExp: src.tokenExp} : {};
+  }
+  return S.auth;
+}
 async function fbToken(){
-  const z = S.sync = S.sync || {};
+  const z = phoneAuth();
   if(z.token && z.tokenExp > Date.now() + 60000) return z.token;
   if(z.refresh){
     const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(z.refresh)});
@@ -1595,18 +1604,23 @@ const CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => [...crypto.getRandomValues(new Uint8Array(10))].map(x => CODE_ABC[x % 32]).join('');
 const tokenUid = tok => { try { return JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).user_id; } catch(e){ return ''; } };
 const alreadyThere = e => /FAILED_PRECONDITION|ALREADY_EXISTS|exists/i.test(e.message || '');
+function deviceLabel(){
+  const u = navigator.userAgent, home = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
+  const kind = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : 'Device';
+  return kind + (home ? ' · home screen app' : ' · browser');
+}
 async function ensureMailbox(){
   const z = S.sync, uid = tokenUid(await fbToken());
   const read = async () => { const g = await fb('GET', '/groups/'+z.group); if(!g){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; } return g.fields.mailbox ? normCode(g.fields.mailbox.stringValue) : ''; };
   let box = await read();
   if(z.memberOf !== z.group + ':' + uid){
-    try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}); }
+    try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, device:{stringValue: deviceLabel()}, at:{integerValue: String(Date.now())}, seen:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}); }
     catch(e){ if(!alreadyThere(e)) throw e; }
     z.memberOf = z.group + ':' + uid; z.seenAt = Date.now(); z.seenWho = z.who; save();
   } else if(Date.now() - (z.seenAt || 0) > 3600e3 || z.seenWho !== z.who){
     try {
-      await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, seen:{integerValue: String(Date.now())}}},
-        updateMask:{fieldPaths:['who', 'seen']}, currentDocument:{exists:true}}]});
+      await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, device:{stringValue: deviceLabel()}, seen:{integerValue: String(Date.now())}}},
+        updateMask:{fieldPaths:['who', 'device', 'seen']}, currentDocument:{exists:true}}]});
       z.seenAt = Date.now(); z.seenWho = z.who; save();
     } catch(e){ if(e.status === 404 || /NOT_FOUND|no entity/i.test(e.message)) delete z.memberOf; } // not a member after all: registers next time
   }
@@ -1788,9 +1802,9 @@ function showGate(canClose){
     g.hidden = true;
     if(syncing() && S.sync.group === grp.code){ toast('You are already in '+grp.name); return; }
     if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return; }
-    const auth = S.sync ? {token: S.sync.token, refresh: S.sync.refresh, tokenExp: S.sync.tokenExp} : {};
+    phoneAuth();
     if(syncing()){ parkGroup(); S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; }
-    S.sync = Object.assign(auth, {group: grp.code, groupName: grp.name, who: who(), base: {}, lastSync: 0}); save();
+    S.sync = {group: grp.code, groupName: grp.name, who: who(), base: {}, lastSync: 0}; save();
     syncDot(); renderAll(); await chooseUploads();
   };
   $('#gtJoin', g).addEventListener('click', async () => {

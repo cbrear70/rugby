@@ -40,7 +40,9 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
 .members[open] summary{margin-bottom:6px}
 .members table{width:100%;border-collapse:collapse;font-size:14px}
 .members th{text-align:left;font:700 11px/1.2 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:4px 6px 4px 0;border-bottom:1px solid var(--line)}
-.members td{padding:6px 6px 6px 0;border-bottom:1px solid var(--line)}
+.members td{padding:6px 6px 6px 0;border-bottom:1px solid var(--line);vertical-align:top}
+.members td small{display:block;color:var(--muted);font-size:12px}
+.btn.sm{padding:6px 10px;font-size:13px}
 .members .hint{margin-top:8px}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 [hidden]{display:none !important}
@@ -83,7 +85,7 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 25 Sep 2026, 07:54</p>
+  <p class="hint" style="text-align:center">Version 25 Sep 2026, 07:59</p>
 </main>
 <script>
 (() => {
@@ -189,12 +191,17 @@ const when = ms => { if(!ms) return '—'; const d = new Date(+ms), days = (Date
 async function showMembers(code, el){
   const box = el.querySelector('[data-members]');
   try {
-    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {who: f.who?.stringValue || '(no name)', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue}; })
+    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue}; })
       .sort((a, b) => (b.seen || 0) - (a.seen || 0));
+    const stale = ms.filter(m => Date.now() - (m.seen || 0) > 60 * 864e5);
     const names = new Set(ms.map(m => m.who.trim().toLowerCase()));
     box.querySelector('summary').textContent = ms.length ? `Coaches · ${names.size}${ms.length > names.size ? ` (${ms.length} phones)` : ''}` : 'Coaches · none registered yet';
-    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Joined</th><th>Last active</th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}</td><td>${when(m.joined)}</td><td>${when(m.seen)}</td></tr>`).join('')}</tbody></table>
-      <p class="hint">A phone registers when it first syncs with the group. A coach with two phones, or who reinstalled the app, appears once per phone. To remove someone's access, change the join code and give the new one only to coaches who should keep it.</p>` : '<p class="hint">Phones register when they first sync with the group.</p>';
+    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}joined ${when(m.joined)}</small></td><td>${when(m.seen)}</td><td><button class="btn ghost sm" data-rm="${esc(m.id)}">Remove</button></td></tr>`).join('')}</tbody></table>
+      ${stale.length ? `<div class="row"><button class="btn ghost sm" data-rmold>Remove ${stale.length} not active for 60 days</button></div>` : ''}
+      <p class="hint">Each phone or browser registers once, the first time it syncs with the group (a coach with an iPhone and a PC appears twice). Removing an entry only tidies this list: a phone that's still in use registers again by itself. To stop someone having access, change the join code and give the new one only to coaches who should keep it.</p>` : '<p class="hint">Phones register when they first sync with the group.</p>';
+    const drop = async ids => { await commit(ids.map(id => del(`groups/${code}/members/${id}`))); await showMembers(code, el); box.open = true; };
+    box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await drop([b.dataset.rm]); } catch(e){ status(e.message, 'err'); b.disabled = false; } }));
+    const old = box.querySelector('[data-rmold]'); if(old) old.addEventListener('click', async () => { old.disabled = true; try { await drop(stale.map(m => m.id)); } catch(e){ status(e.message, 'err'); old.disabled = false; } });
   } catch(e){ box.querySelector('summary').textContent = 'Coaches · could not load (' + e.message + ')'; }
 }
 // Is the group's send code linked to an inbox that points back at the group? Coaches can only read an inbox when
