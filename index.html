@@ -1030,7 +1030,7 @@ function renderEditor(){
   $('#edName').textContent = m.name;
   $('#edDesc').textContent = m.desc || 'Tap to name, describe, set category and length';
   syncShowChip();
-  $('#edPasses').hidden = !m.icons.ball;
+  $('#edPasses').hidden = false; // always there: in a drill without the ball, tapping it adds the ball
   const st = $('#edState'); st.hidden = !syncing(); st.textContent = m.draft ? 'Draft · share' : 'Shared'; st.classList.toggle('on', !!m.draft);
   const ids = iconIds(m);
   $('#edHint').textContent = ids.length ? `Drag at frame 1 = start, frame ${framesOf(m)} = finish` : 'Tap Players to add shirts and the ball';
@@ -1173,7 +1173,11 @@ function setFrames(m, n){
   if(n === FRAMES_DEFAULT) delete m.frames; else m.frames = n;
   if(ME.frame > newLast) ME.frame = newLast;
 }
-$('#edPasses').addEventListener('click', () => showMoveIcon('ball'));
+$('#edPasses').addEventListener('click', () => {
+  const m = curMove(); if(!m) return;
+  if(!m.icons.ball){ addIconToMove(m, 'ball'); save(); renderEditor(); toast('Ball added. Set up who has it and the passes.'); }
+  showMoveIcon('ball');
+});
 $('#edState').addEventListener('click', () => { const m = curMove(); if(!m) return;
   if(m.draft) askConfirm(`Share ${m.name} with ${S.sync.groupName}?`, 'Everyone in the group gets it the next time you sync, and they can see and edit it from then on.', 'Share with group', () => { shareMove(m); renderEditor(); });
   else { unshareMove(m); } });
@@ -1595,7 +1599,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 13:05</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 13:38</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
