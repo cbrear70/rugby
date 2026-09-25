@@ -214,6 +214,10 @@ textarea{resize:vertical;min-height:84px}
 .cattabs button small{font:600 11px/1 var(--body);opacity:.8}
 .cattabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .cats{display:flex;flex-wrap:wrap;gap:6px}
+.pitch .cone{cursor:grab}
+.pitch .cone.dim{opacity:.45}
+.cones-pick{display:flex;flex-wrap:wrap;gap:6px}
+.conechip i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;outline:1px solid rgba(0,0,0,.4)}
 .mcard.draft{border-style:dashed;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
 .dtag{display:inline-block;font:700 10.5px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:999px;padding:2px 6px;margin-right:2px;vertical-align:1px}
 .mcard .thumb{width:62px;height:88px;border-radius:6px;overflow:hidden;background:#1B4F27;border:0;padding:0}
@@ -360,6 +364,7 @@ textarea{resize:vertical;min-height:84px}
         <div class="toolrow">
           <button class="chip" id="showChip">Show</button>
           <button class="chip" id="edPasses" hidden>Passes</button>
+          <button class="chip" id="edCones">Cones</button>
           <button class="chip" id="edState" hidden>Draft</button>
           <button class="chip" id="edFit">Whole pitch</button>
           <span class="spacer"></span>
@@ -409,6 +414,19 @@ const framesOf = m => Math.min(FRAMES_MAX, Math.max(FRAMES_DEFAULT, Math.round(+
 const lastOf = m => framesOf(m) - 1;
 // Drill categories; drills made before categories count as Backs
 const CATS = [['forwards','Forwards'], ['backs','Backs'], ['penalty','Penalty'], ['skills','Skills']];
+// Cones placed on a drill's pitch. Runs snap onto a cone when a shirt or path dot is released within SNAP metres,
+// and points sitting on a cone move with it.
+const CONES = [['blue', '#2F7CF0', 'Blue'], ['white', '#F4F4F2', 'White'], ['red', '#D92D2D', 'Red'], ['green', '#1E9E4A', 'Green']];
+const SNAP = 2;
+const coneColour = c => (CONES.find(x => x[0] === c) || CONES[0])[1];
+function coneSVG(c, dim){ return `<g class="cone${dim?' dim':''}" transform="translate(${c.x} ${c.y})" data-hit="c:${c.id}" data-x="${c.x}" data-y="${c.y}">
+  <circle r="1" fill="rgba(0,0,0,.45)"/><circle r=".72" fill="${coneColour(c.c)}" stroke="#fff" stroke-width=".14"/><circle r=".22" fill="rgba(0,0,0,.4)"/></g>`; }
+function nearestCone(m, p){ let best = null, bd = SNAP; for(const c of m.cones || []){ const d = Math.hypot(c.x - p[0], c.y - p[1]); if(d <= bd){ bd = d; best = c; } } return best; }
+function moveCone(m, c, x, y){
+  // anything snapped to this cone (a keyframe sitting exactly on it) comes along
+  for(const ic of Object.values(m.icons)) for(const k in ic.keys){ const q = ic.keys[k]; if(Math.abs(q[0]-c.x) < .05 && Math.abs(q[1]-c.y) < .05) ic.keys[k] = [x, y]; }
+  c.x = x; c.y = y;
+}
 const catOf = m => CATS.some(c => c[0] === (m && m.cat)) ? m.cat : 'backs';
 const FRAME_MS = 250; // each frame is 0.25 s of match time; playback at Real plays it at that speed
 const secs = n => { const t = n * FRAME_MS / 1000; return (Number.isInteger(t) ? t : t.toFixed(2).replace(/0+$/, '')) + ' s'; };
@@ -753,6 +771,7 @@ function PitchCtl(svg, h){
     isFit(){ return !view.z || view.z <= fitZ()*1.05; },
     focusBox(x0,y0,x1,y1){ const [W,H] = size(); if(!W) return false; const fz = fitZ(); view.z = clamp(Math.min(W/(x1-x0), H/(y1-y0)), fz, fz*3.2); view.cx = (x0+x1)/2; view.cy = (y0+y1)/2; apply(); return true; },
     focus(x,y,z){ view.z = fitZ()*z; view.cx = x; view.cy = y; apply(); },
+    center(){ return [view.cx, view.cy]; },
     get scale(){ return view.z || 1; }
   };
 }
@@ -958,7 +977,7 @@ function moveThumb(m){
   if(!xs.length){ xs=[0,70]; ys=[40,80]; }
   let x0=Math.min(...xs)-6, x1=Math.max(...xs)+6, y0=Math.min(...ys)-6, y1=Math.max(...ys)+6;
   let w=x1-x0, h=y1-y0; const ar=62/88; if(w/h>ar){ const nh=w/ar; y0-=(nh-h)/2; h=nh; } else { const nw=h*ar; x0-=(nw-w)/2; w=nw; }
-  return `<svg viewBox="${x0} ${y0} ${w} ${h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${pitchLines().replace('<g class="layer"></g>','')}${paths}</svg>`;
+  return `<svg viewBox="${x0} ${y0} ${w} ${h}" preserveAspectRatio="xMidYMid slice" aria-hidden="true">${pitchLines().replace('<g class="layer"></g>','')}${(m.cones || []).map(c => `<circle cx="${c.x}" cy="${c.y}" r="1" fill="${coneColour(c.c)}"/>`).join('')}${paths}</svg>`;
 }
 function renderMoves(){
   const edit = !!curMove();
@@ -1001,6 +1020,7 @@ function unshareMove(m){
 }
 function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
 function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<framesOf(m);k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
+  for(const c of m.cones || []){ xs.push(c.x); ys.push(c.y); }
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
 function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move' : 'Whole pitch'; }
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
@@ -1016,10 +1036,12 @@ const moveCtl = PitchCtl($('#movePitch'), {
     return bd <= lim ? best : null;
   },
   tap: id => {
+    if(id.startsWith('c:')) return showCone(id.slice(2));
     if(id.startsWith('dot:')){ ME.frame = +id.slice(4); renderMoveLayer(); updateTransport(); return; }
     showMoveIcon(id.slice(2));
   },
   doubleTap: id => {
+    if(id.startsWith('c:')) return showCone(id.slice(2));
     if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==lastOf(curMove()) && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
     startPathEdit(id.slice(2));
   },
@@ -1030,11 +1052,50 @@ const moveCtl = PitchCtl($('#movePitch'), {
   },
   drag: (id, x, y) => {
     const m = curMove(); if(!m) return;
+    if(id.startsWith('c:')){ const c = (m.cones || []).find(q => q.id === id.slice(2)); if(c) moveCone(m, c, x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('dot:')){ const k = +id.slice(4); m.icons[ME.editing].keys[k] = [x,y]; ME.frame = k; }
     else { const iid = id.slice(2), f = Math.round(ME.frame); ME.frame = f; if(iid==='ball' && !ballFree(m,f)) return; m.icons[iid].keys[f] = [x,y]; }
     save(); renderMoveLayer(); updateTransport();
   },
+  dragEnd: id => {
+    const m = curMove(); if(!m || !(m.cones || []).length) return;
+    let ic, k;
+    if(id.startsWith('dot:')){ ic = m.icons[ME.editing]; k = +id.slice(4); }
+    else if(id.startsWith('i:')){ ic = m.icons[id.slice(2)]; k = Math.round(ME.frame); }
+    else return;
+    const p = ic && ic.keys[k], c = p && nearestCone(m, p); if(!c) return;
+    ic.keys[k] = [c.x, c.y]; save(); renderMoveLayer(); toast('Snapped to the ' + (CONES.find(x => x[0] === c.c) || CONES[0])[2].toLowerCase() + ' cone');
+  },
 });
+// cones panel (toolbar) and a single cone's sheet
+function showCones(){
+  const m = curMove(); if(!m) return; m.cones = m.cones || [];
+  const col = ME.coneColour || 'blue';
+  openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Cones · ${m.cones.length}</h2>
+    <div class="field"><div class="field-label">Colour for new cones</div><div class="cones-pick">${CONES.map(([k, hex, nm]) => `<button class="chip conechip${k===col?' on':''}" data-cc="${k}"><i style="background:${hex}"></i>${nm}</button>`).join('')}</div></div>
+    <div class="row-btns"><button class="btn" id="cnAdd">Add a cone</button>${m.cones.length ? '<button class="btn ghost" id="cnClear">Remove all cones</button>' : ''}</div>
+    <p class="hint">New cones appear in the middle of the view: drag them into place. Release a player, or a path dot, within ${SNAP} m of a cone and it snaps onto it; move the cone later and anything snapped to it moves too. Tap a cone to change its colour or remove it.</p>
+    <button class="btn ghost wide" data-close>Done</button>`,
+    el => {
+      $$('[data-cc]', el).forEach(b => b.addEventListener('click', () => { ME.coneColour = b.dataset.cc; $$('[data-cc]', el).forEach(x => x.classList.toggle('on', x === b)); }));
+      $('#cnAdd', el).addEventListener('click', () => {
+        const [cx, cy] = moveCtl.center(), n = m.cones.length, x = r1(clamp(cx + (n % 5) * 2 - 4, 1, 69)), y = r1(clamp(cy + Math.floor(n / 5) * 2, 1, 119));
+        m.cones.push({id: uid(), x, y, c: ME.coneColour || 'blue'}); save(); closeSheet(); renderMoveLayer(); toast('Cone added: drag it into place');
+      });
+      const cl = $('#cnClear', el); if(cl) cl.addEventListener('click', () => askConfirm('Remove all cones?', `All ${m.cones.length} cones in this drill will be removed. Runs keep their shape.`, 'Remove cones', () => { m.cones = []; save(); renderMoveLayer(); toast('Cones removed'); }));
+    });
+}
+function showCone(cid){
+  const m = curMove(), c = m && (m.cones || []).find(q => q.id === cid); if(!c) return;
+  openSheet(`<div class="eyebrow">${esc(m.name)}</div><h2>Cone</h2>
+    <div class="field"><div class="field-label">Colour</div><div class="cones-pick">${CONES.map(([k, hex, nm]) => `<button class="chip conechip${k===c.c?' on':''}" data-cc="${k}"><i style="background:${hex}"></i>${nm}</button>`).join('')}</div></div>
+    <div class="row-btns"><button class="btn danger" id="cnDel">Remove cone</button><button class="btn ghost" data-close>Done</button></div>
+    <p class="hint">Drag the cone to move it. Runs snapped to it move with it.</p>`,
+    el => {
+      $$('[data-cc]', el).forEach(b => b.addEventListener('click', () => { c.c = b.dataset.cc; ME.coneColour = c.c; save(); renderMoveLayer(); $$('[data-cc]', el).forEach(x => x.classList.toggle('on', x === b)); }));
+      $('#cnDel', el).addEventListener('click', () => { m.cones = m.cones.filter(q => q !== c); save(); closeSheet(); renderMoveLayer(); toast('Cone removed'); });
+    });
+}
 function renderEditor(){
   const m = curMove();
   $('#edName').textContent = m.name;
@@ -1073,7 +1134,8 @@ function renderMoveLayer(){
     const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: dim?null:'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 ? surname(p2.name) : '', hit: dim?null:'i:'+id, dim, ghost:isEd});
     if(isEd) edTok = tok; else if(!hideTok) toks += tok; // ball is last in iconIds, so it draws on top
   }
-  moveCtl.layer.innerHTML = paths + toks + edTok + dots;
+  const cones = (m.cones || []).map(c => coneSVG(c, !!ME.editing)).join('');
+  moveCtl.layer.innerHTML = paths + toks + edTok + cones + dots; // cones on top (small grab area) so one under a shirt can still be moved
   syncShowChip();
 }
 function updateTransport(){
@@ -1183,6 +1245,7 @@ function setFrames(m, n){
   if(n === FRAMES_DEFAULT) delete m.frames; else m.frames = n;
   if(ME.frame > newLast) ME.frame = newLast;
 }
+$('#edCones').addEventListener('click', () => showCones());
 $('#edPasses').addEventListener('click', () => {
   const m = curMove(); if(!m) return;
   if(!m.icons.ball){ addIconToMove(m, 'ball'); save(); renderEditor(); toast('Ball added. Set up who has it and the passes.'); }
@@ -1638,7 +1701,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:07</p>
+    <p class="hint" style="text-align:center">Version 25 Sep 2026, 14:21</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
