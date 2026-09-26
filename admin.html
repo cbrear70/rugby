@@ -85,7 +85,7 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 26 Sep 2026, 12:47</p>
+  <p class="hint" style="text-align:center">Version 26 Sep 2026, 13:37</p>
 </main>
 <script>
 (() => {
@@ -305,16 +305,17 @@ async function act(what, g, el){
       if(!confirm(`Change ${g.name}'s join code from ${fmt(g.code)} to ${fmt(c)}?\n\nThe old code stops working straight away. Coaches will be asked for the new code on their next sync and keep all their data. Give the new code only to coaches who should still have access.`)) return;
       busy(true); status('Copying teams and moves…');
       const old = await fb('GET', '/groups/'+g.code), items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`);
-      const shared = await list(`/groups/${g.code}/shared`), settings = await list(`/groups/${g.code}/settings`), invites = await invitesOf(g.code);
+      const invites = await invitesOf(g.code), subs = [];
+      for(const c of ['shared', 'settings', 'events', 'roster', 'avail']) subs.push(...(await list(`/groups/${g.code}/${c}`)).map(d => [c, d]));
       const fields = Object.assign({}, old.fields, {formerly:{arrayValue:{values: [...new Set([g.code, ...g.was])].filter(x => x !== c).map(str)}}});
       await commit([create('groups/'+c, fields), ...items.map(d => create(`groups/${c}/items/${idOf(d)}`, d.fields || {})),
         ...members.map(d => create(`groups/${c}/members/${idOf(d)}`, d.fields || {})),
-        ...shared.map(d => create(`groups/${c}/shared/${idOf(d)}`, d.fields || {})), ...settings.map(d => create(`groups/${c}/settings/${idOf(d)}`, d.fields || {})),
+        ...subs.map(([k, d]) => create(`groups/${c}/${k}/${idOf(d)}`, d.fields || {})),
         ...invites.map(d => ({update:{name: d.name, fields:{group: str(c)}}, updateMask:{fieldPaths:['group']}, currentDocument:{exists:true}}))]);
       if(g.mail) await commit([{update:{name: NAME('mailboxes/'+g.mail), fields:{group: str(c)}}, currentDocument:{exists:true}}]);
       status('Removing the old code…');
       await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)),
-        ...shared.map(d => del(`groups/${g.code}/shared/${idOf(d)}`)), ...settings.map(d => del(`groups/${g.code}/settings/${idOf(d)}`)), del('groups/'+g.code)]);
+        ...subs.map(([k, d]) => del(`groups/${g.code}/${k}/${idOf(d)}`)), del('groups/'+g.code)]);
       status(`${g.name}: new join code ${fmt(c)} (${items.length} items copied).`, 'ok');
     }
     if(what === 'send'){
@@ -336,7 +337,7 @@ async function act(what, g, el){
       if(typed === null) return; if(same(typed) !== same(g.name)) return status('The name didn’t match, so nothing was deleted.', 'err');
       busy(true); status('Deleting…');
       const items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`), waiting = g.mail ? await list(`/mailboxes/${g.mail}/items`) : [];
-      const extra = [...await list(`/groups/${g.code}/shared`), ...await list(`/groups/${g.code}/settings`), ...await invitesOf(g.code)];
+      const extra = [...await invitesOf(g.code)]; for(const c of ['shared', 'settings', 'events', 'roster', 'avail']) extra.push(...await list(`/groups/${g.code}/${c}`));
       await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)), ...extra.map(d => ({delete: d.name})),
         ...waiting.map(d => del(`mailboxes/${g.mail}/items/${idOf(d)}`)), ...(g.mail ? [del('mailboxes/'+g.mail)] : []), del('groups/'+g.code)]);
       status(`${g.name} deleted.`, 'ok');

@@ -56,7 +56,7 @@ main{flex:1;min-height:0;position:relative}
 .scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 28px}
 
 /* tab bar */
-.tabbar{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid var(--line);background:var(--panel)}
+.tabbar{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--panel)}
 .tabbar button{background:none;border:0;padding:7px 0 6px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font:600 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase}
 .tabbar button[aria-selected="true"]{color:var(--accent)}
 
@@ -190,7 +190,7 @@ main{flex:1;min-height:0;position:relative}
 .section-h:first-child{margin-top:4px}
 .add-row{display:grid;grid-template-columns:1fr auto;gap:8px}
 .add-row .pos{grid-column:1}
-input[type=text],input:not([type]),select,textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
+input[type=text],input[type=date],input[type=time],input:not([type]),select,textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
 textarea{resize:vertical;min-height:84px}
 .btn{border:0;border-radius:10px;padding:11px 16px;background:var(--accent);color:var(--accent-ink);font:700 15px/1.1 var(--body)}
 .btn.ghost{background:var(--panel2);color:var(--ink)}
@@ -229,12 +229,33 @@ textarea{resize:vertical;min-height:84px}
 .conechip i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;outline:1px solid rgba(0,0,0,.4)}
 .mcard.draft{border-style:dashed;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
 /* players and parents: watch shared drills, nothing else */
-body.viewer .tabbar, body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
+body.viewer .tabbar{grid-template-columns:repeat(2,1fr)}
+body.viewer .tabbar [data-tab=pitch], body.viewer .tabbar [data-tab=squad], body.viewer .tabbar [data-tab=select], body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
 body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!important}
-.prow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
-.prow>div{flex:1;min-width:0}.prow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.prow small{display:block;color:var(--muted);font-size:12px}
-.prow select{width:auto;min-width:0;padding:6px 8px}.prow.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
+.mem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.mem>div{flex:1;min-width:0}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
+.mem select{width:auto;min-width:0;padding:6px 8px}.mem.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
 .rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
+/* fixtures */
+.fixbar{margin:0 0 6px}
+.evcard{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:14px;padding:12px;margin-bottom:10px}
+.evcard.ev-match{border-left-color:var(--accent)}.evcard.ev-training{border-left-color:var(--jog)}
+.evdate{flex:none;width:50px;text-align:center;border-radius:10px;background:var(--panel2);padding:6px 0;align-self:flex-start}
+.evdate small{display:block;font:700 11px/1.2 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.evdate b{display:block;font:800 26px/1.05 var(--display)}
+.evbody{flex:1;min-width:0}
+.evtitle{display:block;font-weight:700;font-size:17px;line-height:1.25;background:none;border:0;padding:0;text-align:left}
+.evmeta{color:var(--muted);font-size:13px;margin-top:2px}.evtag{font-weight:700}
+.avsum{display:block;background:none;border:0;padding:0;margin-top:6px;font-size:13px;color:var(--muted);text-align:left}
+.st-yes{color:var(--ok)}.st-maybe{color:#E8C547}.st-no{color:#FF8A7A}
+.avrow{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}.avrow>span{flex-basis:100%;font-weight:600;font-size:14px}.avrow .avb{flex:1}
+.avb{padding:7px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);font:600 13px/1 var(--body)}
+.avb.on.yes{background:var(--ok);border-color:var(--ok);color:#06240F}.avb.on.maybe{background:#E8C547;border-color:#E8C547;color:#221A00}.avb.on.no{background:var(--danger);border-color:var(--danger);color:#fff}
+.evnote{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
+.evtimes{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}
+.maprow{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin-bottom:6px}.maprow .field-label{margin:0}
+.implist{padding-left:18px;margin:6px 0 12px}.implist li{margin-bottom:6px}
+.srow small.st-yes,.srow small.st-maybe,.srow small.st-no{color:inherit}.srow .avtag{display:block;font-weight:600;font-size:12px}
 .dtag.pl{color:var(--muted);border-color:var(--line)}
 .dtag{display:inline-block;font:700 10.5px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:999px;padding:2px 6px;margin-right:2px;vertical-align:1px}
 .mcard .thumb{width:62px;height:88px;border-radius:6px;overflow:hidden;background:#1B4F27;border:0;padding:0}
@@ -401,6 +422,8 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
         </div>
       </div>
     </section>
+    <!-- FIXTURES -->
+    <section class="view" id="v-fix" hidden><div class="scroll" id="fixBody"></div></section>
   </main>
 
   <nav class="tabbar" role="tablist">
@@ -412,6 +435,8 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l1.6 1.6L8.5 4.7M4 12.5l1.6 1.6 2.9-2.9M4 19l1.6 1.6 2.9-2.9M11 6.5h9M11 13h9M11 19.5h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Select team</button>
     <button role="tab" data-tab="moves" aria-selected="false">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2.2" fill="currentColor"/><path d="M6.5 17C10 14 8 9 13 8s5-3 6-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2.2" stroke-linecap="round"/><path d="M15.5 3.5h4v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Drills</button>
+    <button role="tab" data-tab="fix" aria-selected="false">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3.5 9.5h17M8 3v4M16 3v4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M8 13.5l2 2 4-4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Fixtures</button>
   </nav>
 </div>
 
@@ -818,24 +843,25 @@ function wireSwatches(el, fn){ $$('[data-color]', el).forEach(b => b.addEventLis
 /* ---------- tabs ---------- */
 let TAB = S.ui.tab || 'pitch';
 function showTab(tab){
-  if(isViewer()) tab = 'moves';
+  if(isViewer() && tab !== 'moves' && tab !== 'fix') tab = S.sync.role === 'parent' ? 'fix' : 'moves';
   TAB = tab; S.ui.tab = tab; save();
   $$('.tabbar [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
-  for(const v of ['pitch','squad','select','moves']) $('#v-'+v).hidden = v !== tab;
+  for(const v of ['pitch','squad','select','moves','fix']) $('#v-'+v).hidden = v !== tab;
   if(tab !== 'moves') stopPlay();
   renderAll();
 }
 $$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function renderAll(){
   document.body.classList.toggle('viewer', isViewer());
-  if(isViewer() && TAB !== 'moves'){ showTab('moves'); return; }
-  $('#teamName').textContent = isViewer() ? 'Drills' : team().name;
+  if(isViewer() && TAB !== 'moves' && TAB !== 'fix'){ showTab(S.sync.role === 'parent' ? 'fix' : 'moves'); return; }
+  $('#teamName').textContent = isViewer() ? (TAB === 'fix' ? 'Fixtures' : 'Drills') : team().name;
   const gn = $('#groupName'); gn.hidden = !syncing();
   if(syncing()){ gn.textContent = S.sync.groupName; gn.style.setProperty('--gc', groupColour(S.sync.group)); }
   if(TAB==='pitch'){ renderTeamPitch(); renderBench(); requestAnimationFrame(()=>{ teamCtl.refresh(); if(!teamZoomed) teamZoomed = zoomTeam(); syncFitChip(); }); }
   if(TAB==='squad') renderSquad();
   if(TAB==='select') renderSelect();
   if(TAB==='moves') renderMoves();
+  if(TAB==='fix') renderFixtures();
 }
 
 /* ---------- PITCH TAB ---------- */
@@ -883,9 +909,14 @@ function showSlot(n){
       $('#slEdit', el).addEventListener('click', () => editSlot(n));
     });
 }
-function playerOptions(t, selectedId, forN){
+function playerOptions(t, selectedId, forN, ev){
   const opt = p => { const k = numberOf(t,p.id); return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${k && k!==forN ? ' · #'+k : ''}</option>`; };
   const sorted = [...S.players].sort((a,b)=>a.name.localeCompare(b.name));
+  if(ev){ // grouped by what was said for the event; players marked unavailable in the squad go last whatever they said
+    const st = p => p.available === false ? 'off' : statusOf(ev.id, p.id) || 'none';
+    return `<option value="">— Not picked —</option>` + [['yes','Available'],['maybe','Maybe'],['none','No reply'],['no','Not available'],['off','Unavailable (squad)']]
+      .map(([k, l]) => { const ps = sorted.filter(p => st(p) === k); return ps.length ? `<optgroup label="${l}">${ps.map(opt).join('')}</optgroup>` : ''; }).join('');
+  }
   const av = sorted.filter(p=>p.available!==false), un = sorted.filter(p=>p.available===false);
   return `<option value="">— Not picked —</option>` + (av.length?`<optgroup label="Available">${av.map(opt).join('')}</optgroup>`:'') + (un.length?`<optgroup label="Unavailable">${un.map(opt).join('')}</optgroup>`:'');
 }
@@ -967,13 +998,22 @@ function editPlayer(pid){
 }
 
 /* ---------- SELECT TAB ---------- */
+// the event the team is being picked for (Select team tab): the chosen one, else the next match
+function selEvent(){
+  if(!syncing()) return null;
+  const up = fixData().events.filter(e => !evPast(e));
+  return S.ui.selEv === '' ? null : up.find(e => e.id === S.ui.selEv) || up.find(e => e.type === 'match') || null;
+}
 function renderSelect(){
-  const t = team(), el = $('#selectBody');
+  const t = team(), el = $('#selectBody'), ev = selEvent(), up = syncing() ? fixData().events.filter(e => !evPast(e)).slice(0, 20) : [];
+  const avOf = p => ev ? statusOf(ev.id, p.id) : '';
   const picked = n => !!playerAt(t,n);
   const N = teamSize(t), B = benchSize(t), onPitch = pitchNums(t), subs = benchNums(t);
   const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
-  const row = n => { const p = playerAt(t,n); return `<div class="srow${p&&p.available===false?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n)}</select></div>`; };
-  el.innerHTML = `
+  const avTag = p => { const s = avOf(p); return s ? `<span class="avtag st-${s}">${AV.find(a => a[0] === s)[1]}</span>` : ev ? '<span class="avtag">No reply</span>' : ''; };
+  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  el.innerHTML = `${up.length ? `<div class="field"><label class="field-label" for="selEv">Availability for</label><select id="selEv"><option value=""${ev ? '' : ' selected'}>No event</option>${up.map(e => `<option value="${e.id}"${ev && ev.id === e.id ? ' selected' : ''}>${esc(evWhen(e).split(' · ')[0])} · ${esc(evTitle(e))}</option>`).join('')}</select>
+      ${ev ? `<p class="hint">${avSummary(ev)}</p>` : ''}</div>` : ''}
     <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear team</button></div>
     ${onPitch.map(row).join('')}
     ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
@@ -981,6 +1021,7 @@ function renderSelect(){
     ${S.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => { assign(t, +s.dataset.n, s.value || null); renderSelect(); }));
+  const se = $('#selEv', el); if(se) se.addEventListener('change', () => { S.ui.selEv = se.value; save(); renderSelect(); });
   $('#clearSel').addEventListener('click', () => askConfirm('Clear the team?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear team', () => {
     for(const n in t.selection) t.selection[n].playerId = null; save(); renderSelect(); toast('Team cleared');
   }));
@@ -1044,7 +1085,6 @@ function renderViewerMoves(){
   const cats = CATS.filter(([k]) => S.moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CATS[0])[0];
   const mv = S.moves.filter(m => catOf(m) === c);
   el.innerHTML = `<div class="section-h"><span>${esc(z.groupName)} · ${ROLE_NAMES[z.role]}</span><span>Updated ${ago(z.lastSync)}</span></div>
-    ${z.role === 'parent' ? '<p class="hint">Fixtures, training and availability are coming soon. For now you can watch the drills the coaches share.</p>' : ''}
     ${S.moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${l}<small>${S.moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
       ${mv.map(m => `<div class="mcard"><button class="thumb" data-open="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
@@ -1820,7 +1860,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 12:47</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 13:37</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2326,13 +2366,14 @@ async function runSync(choices, quiet){
   try {
     await refreshRole();
     if(isViewer()){
-      const r = await pullShared(); if(!curMove()) stopPlay(); renderAll();
+      const r = await pullShared(); try { await loadFixtures(); } catch(e){} if(!curMove()) stopPlay(); renderAll();
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
       return;
     }
     const r = await syncNow(choices);
     if(r.needs){ SYNCING = false; askTeamConflicts(r.needs, choices || {}); return; }
-    try { await publishShared(); } catch(e){ if(e.status !== 403) throw e; } // 403: security rules from before roles
+    try { await publishShared(); await publishRoster(); } catch(e){ if(e.status !== 403) throw e; } // 403: security rules from older versions
+    try { await loadFixtures(); } catch(e){}
     stopPlay(); renderAll();
     if(!quiet || r.sent || r.got) toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} drill${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
     checkInboxQuietly();
@@ -2512,7 +2553,8 @@ async function groupInvites(){
 }
 async function groupMembers(){
   return (await listDocs(`/groups/${S.sync.group}/members`)).map(d => { const f = d.fields || {};
-    return {uid: d.name.split('/').pop(), who: f.who ? f.who.stringValue : '', device: f.device ? f.device.stringValue : '', role: f.role ? f.role.stringValue : 'coach', wants: f.wants ? f.wants.stringValue : '', seen: +(f.seen && f.seen.integerValue || f.at && f.at.integerValue || 0)}; });
+    return {uid: d.name.split('/').pop(), who: f.who ? f.who.stringValue : '', device: f.device ? f.device.stringValue : '', role: f.role ? f.role.stringValue : 'coach', wants: f.wants ? f.wants.stringValue : '', seen: +(f.seen && f.seen.integerValue || f.at && f.at.integerValue || 0),
+      kids: (f.kids && f.kids.arrayValue && f.kids.arrayValue.values || []).map(v => v.stringValue)}; });
 }
 // fields: {role?, wants?}; null removes the field
 async function setMember(uid, fields){
@@ -2552,8 +2594,7 @@ function showGroup(){
   };
   if(viewer) return openSheet(`${card}
     <p class="muted">Updated ${ago(z.lastSync)}.</p>
-    ${z.role === 'parent' ? '<p class="hint">Fixtures, training and availability are coming soon.</p>' : ''}
-    <button class="btn wide" id="gpSync">Check for new drills</button>
+    <button class="btn wide" id="gpSync">Check for new drills and fixtures</button>
     <div class="field"><div class="field-label">Are you a coach?</div>${z.wants ? '<p class="muted">You have asked for coach access. The group admin will see your request next time they open the group.</p>'
       : '<p class="hint">Coaches can change teams and drills. Ask the group admin to make this phone a coach.</p><button class="btn ghost" id="gpAsk">Ask for coach access</button>'}</div>
     ${tail}`,
@@ -2602,7 +2643,7 @@ function showGroup(){
         const box = $('#gpInvites', el); if(!box) return;
         try {
           const list = (await groupInvites()).filter(i => i.single && !i.usedBy).sort((a, b) => b.at - a.at); if(!live()) return;
-          box.innerHTML = list.length ? `<small class="muted">Not used yet</small>` + list.map(i => `<div class="prow"><div><b>${fmtCode(i.code)}</b><small>${ROLE_NAMES[i.role] || i.role} invite · made ${ago(i.at)}</small></div><button class="chip" data-shi="${i.code}" data-r="${i.role}">Share</button><button class="chip" data-cxi="${i.code}">Cancel</button></div>`).join('') : '';
+          box.innerHTML = list.length ? `<small class="muted">Not used yet</small>` + list.map(i => `<div class="mem"><div><b>${fmtCode(i.code)}</b><small>${ROLE_NAMES[i.role] || i.role} invite · made ${ago(i.at)}</small></div><button class="chip" data-shi="${i.code}" data-r="${i.role}">Share</button><button class="chip" data-cxi="${i.code}">Cancel</button></div>`).join('') : '';
           $$('[data-shi]', box).forEach(b => b.addEventListener('click', () => shareText(joinText(b.dataset.shi, b.dataset.r), z.groupName, 'Invite code: ' + fmtCode(b.dataset.shi))));
           $$('[data-cxi]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await fb('DELETE', '/invites/' + b.dataset.cxi); toast('Invite cancelled'); loadInvites(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
         } catch(e){ box.innerHTML = `<p class="hint">Could not list invites: ${esc(niceErr(e))}</p>`; }
@@ -2614,8 +2655,8 @@ function showGroup(){
           const asks = m => m.wants && viewerRole(m.role);
           ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
           box.innerHTML = ms.map(m => asks(m)
-            ? `<div class="prow req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
-            : `<div class="prow"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
+            ? `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
+            : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length ? (m.role === 'player' ? 'is ' : 'parent of ') + esc(m.kids.map(nameOfPlayer).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
               : `<select data-rl="${m.uid}" aria-label="Role for ${esc(m.who)}">${Object.entries(ROLE_NAMES).map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select><button class="chip" data-rm="${m.uid}">Remove</button>`}</div>`).join('')
             + '<p class="hint">Changes reach each phone the next time it opens or syncs. A removed phone needs a new invite or code to come back.</p>';
           const act = async (b, fn, msg) => { b.disabled = true; try { await fn(); toast(msg); loadPeople(); } catch(e){ b.disabled = false; toast(niceErr(e)); } };
@@ -2647,6 +2688,310 @@ function showGroup(){
         finally { btn.disabled = false; }
       });
     });
+}
+
+/* ---------- FIXTURES TAB ----------
+   Fixtures, training and other events live in groups/<id>/events/<event id> ({json}); coaches change them straight
+   away (no sync step, so everyone sees the same calendar). Availability is groups/<id>/avail/<event id>_<player id>
+   ({event, player, status: yes|no|maybe, by, who, at}): parents mark it for their children, players for themselves,
+   coaches for anyone. Parents and players see squad names from groups/<id>/roster/all, which coaches keep up to date
+   when they sync. What's loaded is kept on the phone (S.sync.events, S.sync.avail) so the calendar opens offline. */
+const EV_TYPES = [['match', 'Match'], ['training', 'Training'], ['event', 'Event']];
+const AV = [['yes', 'Available', '✓'], ['maybe', 'Maybe', '?'], ['no', 'Not available', '✗']];
+const pad2 = n => String(n).padStart(2, '0');
+const ymd = d => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const hm = d => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+const evDate = e => new Date(e.date + 'T' + (e.time || '00:00'));
+const evTitle = e => e.title || (e.type === 'match' && e.opponent ? 'vs ' + e.opponent : (EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]);
+const evPast = e => e.date < ymd(new Date());
+const evWhen = e => evDate(e).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short'}) + (e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : '');
+const guessType = s => /train|practi[cs]e|session|skills/i.test(s) ? 'training' : /\b(v|vs|versus)\b|match|fixture|game|cup|league|festival|tournament|friendly/i.test(s) ? 'match' : 'event';
+const fixData = () => { const z = S.sync; z.events = z.events || []; z.avail = z.avail || {}; return z; };
+const avKey = (evId, pid) => evId + '_' + pid;
+const statusOf = (evId, pid) => { const a = fixData().avail[avKey(evId, pid)]; return a ? a.status : ''; };
+// squad names for availability: coaches have the squad; players and parents have the roster coaches publish
+const squadNames = () => isViewer() ? (S.sync.roster || []) : S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name})).sort((a, b) => a.name.localeCompare(b.name));
+const nameOfPlayer = pid => (squadNames().find(p => p.id === pid) || {}).name || 'Unknown player';
+
+async function loadFixtures(){
+  const z = fixData(), g = z.group;
+  const [ev, av, ro] = await Promise.all([listDocs(`/groups/${g}/events`), listDocs(`/groups/${g}/avail`), fb('GET', `/groups/${g}/roster/all`)]);
+  z.events = ev.map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(e => e && e.date).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  z.avail = {};
+  for(const d of av){ const f = d.fields || {}, s = k => f[k] ? f[k].stringValue : '';
+    z.avail[d.name.split('/').pop()] = {status: s('status'), who: s('who'), by: s('by'), at: +(f.at && f.at.integerValue || 0)}; }
+  if(ro) try { z.roster = JSON.parse(ro.fields.json.stringValue); } catch(e){}
+  z.fixAt = Date.now(); save();
+}
+// coaches: keep the published squad names in step with the squad (only when they change)
+async function publishRoster(){
+  const z = S.sync, json = JSON.stringify(S.players.filter(p => !p.localOnly).map(p => ({id: p.id, name: p.name})).sort((a, b) => a.name.localeCompare(b.name)));
+  if(z.rosterHash === hashStr(json)) return;
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/roster/all`), fields:{json:{stringValue: json}, at:{integerValue: String(Date.now())}}}}]});
+  z.rosterHash = hashStr(json); save();
+}
+const eventWrite = e => ({update:{name: DOCNAME(`groups/${S.sync.group}/events/${e.id}`), fields:{json:{stringValue: JSON.stringify(e)}, by:{stringValue: S.sync.who || ''}, at:{integerValue: String(Date.now())}}}});
+async function saveEvents(list){
+  for(let i = 0; i < list.length; i += 400) await fb('POST', ':commit', {writes: list.slice(i, i + 400).map(eventWrite)});
+  const z = fixData();
+  for(const e of list){ const i = z.events.findIndex(x => x.id === e.id); if(i >= 0) z.events[i] = e; else z.events.push(e); }
+  z.events.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)); save();
+}
+async function deleteEvent(e){
+  const z = fixData(), writes = [{delete: DOCNAME(`groups/${z.group}/events/${e.id}`)}];
+  for(const k in z.avail) if(k.startsWith(e.id + '_')) writes.push({delete: DOCNAME(`groups/${z.group}/avail/${k}`)});
+  for(let i = 0; i < writes.length; i += 400) await fb('POST', ':commit', {writes: writes.slice(i, i + 400)});
+  z.events = z.events.filter(x => x.id !== e.id); for(const k in z.avail) if(k.startsWith(e.id + '_')) delete z.avail[k]; save();
+}
+async function setAvail(evId, pid, status){
+  const z = fixData(), uid = tokenUid(await fbToken()), k = avKey(evId, pid), now = Date.now();
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/avail/${k}`), fields:{event:{stringValue: evId}, player:{stringValue: pid}, status:{stringValue: status}, by:{stringValue: uid}, who:{stringValue: z.who || ''}, at:{integerValue: String(now)}}}}]});
+  z.avail[k] = {status, who: z.who || '', by: uid, at: now}; save();
+}
+function avCounts(e){
+  const c = {yes: 0, maybe: 0, no: 0, none: 0};
+  for(const p of squadNames()){ const s = statusOf(e.id, p.id); c[s || 'none']++; }
+  return c;
+}
+const avSummary = e => { const c = avCounts(e); return `<span class="st-yes">${c.yes} available</span> · <span class="st-maybe">${c.maybe} maybe</span> · <span class="st-no">${c.no} not</span> · ${c.none} no reply`; };
+
+let fixLoading = false;
+function renderFixtures(){
+  const el = $('#fixBody');
+  if(!syncing()){ el.innerHTML = `<div class="empty">Fixtures and availability are shared through your group. Join a group to use them.</div>`; return; }
+  const z = fixData(), coach = !isViewer(), past = !!S.ui.fixPast;
+  const kids = (z.kids || []).filter(id => squadNames().some(p => p.id === id));
+  const list = z.events.filter(e => past ? evPast(e) : !evPast(e));
+  if(past) list.reverse();
+  let month = '';
+  const card = e => {
+    const d = evDate(e), m = d.toLocaleDateString('en-GB', {month: 'long', year: 'numeric'}), head = m !== month ? `<div class="section-h"><span>${m}</span></div>` : ''; month = m;
+    return `${head}<div class="evcard ev-${e.type}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
+      <div class="evbody"><button class="evtitle" data-evopen="${e.id}">${esc(evTitle(e))}</button>
+        <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
+        ${coach ? `<button class="avsum" data-evopen="${e.id}">${avSummary(e)}</button>`
+          : kids.map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid) === k ? ' on' : ''}" data-av="${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
+      </div></div>`; };
+  el.innerHTML = `<div class="section-h"><span>${esc(z.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${z.fixAt ? 'Updated ' + ago(z.fixAt) : ''}</span></div>
+    <div class="mact fixbar">${coach ? '<button class="chip on" id="fxAdd">Add</button><button class="chip" id="fxImport">Import</button>' : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
+      ${!coach ? `<button class="chip" id="fxKids">${z.role === 'player' ? (kids.length ? 'Not you?' : 'Which one is you?') : kids.length ? 'My children' : 'Link my children'}</button>` : ''}</div>
+    ${!coach && !kids.length ? `<div class="evnote"><b>${z.role === 'player' ? 'Tell the coaches which player you are' : 'Link your children'}</b><p class="hint">Then you can say whether ${z.role === 'player' ? 'you are' : 'they are'} available for each fixture and training session.</p><button class="btn" id="fxKids2">${z.role === 'player' ? 'Choose your name' : 'Choose your children'}</button></div>` : ''}
+    ${list.length ? list.map(card).join('') : `<div class="empty">${past ? 'No past events.' : coach ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. Your coaches add fixtures and training here.'}</div>`}`;
+  $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
+  $$('[data-av]', el).forEach(b => b.addEventListener('click', async () => {
+    const [ev, pid, st] = b.dataset.av.split('|'); $$(`[data-av^="${ev}|${pid}|"]`, el).forEach(x => x.disabled = true);
+    try { await setAvail(ev, pid, st); toast(`${nameOfPlayer(pid)}: ${AV.find(a => a[0] === st)[1].toLowerCase()}`); } catch(e){ toast(niceErr(e)); }
+    renderFixtures();
+  }));
+  const on = (id, fn) => { const b = $(id, el); if(b) b.addEventListener('click', fn); };
+  on('#fxAdd', () => editEvent(null)); on('#fxImport', () => importEvents());
+  on('#fxPast', () => { S.ui.fixPast = !past; save(); renderFixtures(); });
+  on('#fxRefresh', () => refreshFixtures(true)); on('#fxKids', linkKids); on('#fxKids2', linkKids);
+  if(!fixLoading && Date.now() - (z.fixAt || 0) > 60e3) refreshFixtures(false);
+}
+async function refreshFixtures(loud){
+  if(fixLoading || !syncing()) return; fixLoading = true;
+  try { await loadFixtures(); if(loud) toast('Fixtures up to date'); }
+  catch(e){ if(loud) toast(niceErr(e)); }
+  finally { fixLoading = false; if(TAB === 'fix') renderFixtures(); else if(TAB === 'select') renderSelect(); }
+}
+// parents pick their children (players pick themselves) from the squad names; kept on the phone and in the group
+function linkKids(){
+  const z = fixData(), me = z.role === 'player', names = squadNames(), sel = new Set(z.kids || []);
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>${me ? 'Which one is you?' : 'Your children'}</h2>
+    <p class="muted">${me ? 'Pick your name, then you can say when you are available.' : 'Tick your children. You can then mark them available or not for each event. The coaches see who marked it.'}</p>
+    ${names.length ? `<div class="opts">${names.map(p => `<label class="opt"><input type="${me ? 'radio' : 'checkbox'}" name="kid" value="${p.id}"${sel.has(p.id) ? ' checked' : ''}><span><b>${esc(p.name)}</b></span></label>`).join('')}</div>`
+      : '<p class="hint">The squad list isn’t available yet. Ask a coach to open the app and sync, then tap Refresh.</p>'}
+    <div class="row-btns"><button class="btn" id="kdSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>`,
+    el => $('#kdSave', el).addEventListener('click', async () => {
+      z.kids = $$('input[name=kid]:checked', el).map(i => i.value); save(); closeSheet(); renderFixtures();
+      try { const uid = tokenUid(await fbToken());
+        await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{kids:{arrayValue:{values: z.kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}}]}); }
+      catch(e){} // only tells the coaches who is linked; availability works without it
+    }));
+}
+function showEvent(id){
+  const z = fixData(), e = z.events.find(x => x.id === id); if(!e) return;
+  const coach = !isViewer(), names = squadNames();
+  const who = pid => { const a = z.avail[avKey(e.id, pid)]; return a && a.who ? ` <small>· ${esc(a.who)}${a.at ? ', ' + ago(a.at) : ''}</small>` : ''; };
+  const groups = coach ? [...AV, ['', 'No reply', '']].map(([k, l]) => { const ps = names.filter(p => statusOf(e.id, p.id) === k);
+    return ps.length ? `<div class="section-h"><span class="${k ? 'st-' + k : ''}">${l} · ${ps.length}</span></div>${ps.map(p => `<div class="mem"><div><b>${esc(p.name)}</b>${k ? who(p.id) : ''}</div>${AV.map(([s, sl, sy]) => `<button class="avb ${s}${k === s ? ' on' : ''}" data-cav="${p.id}|${s}" aria-label="${esc(p.name)}: ${sl}">${sy}</button>`).join('')}</div>`).join('')}` : ''; }).join('') : '';
+  openSheet(`<div class="eyebrow">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</div><h2>${esc(evTitle(e))}</h2>
+    <p class="muted">${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
+    ${coach ? `<p class="avsum">${avSummary(e)}</p>
+      <div class="row-btns"><button class="btn" id="evPick">Pick team for this</button><button class="btn ghost" id="evEdit">Edit</button></div>${groups}
+      <p class="hint">Tap ✓ ? ✗ to mark a player yourself, for example when a parent tells you in person.</p>` : ''}
+    <button class="btn ghost wide" data-close>Close</button>`,
+    el => {
+      if(!coach) return;
+      $('#evEdit', el).addEventListener('click', () => editEvent(e));
+      $('#evPick', el).addEventListener('click', () => { S.ui.selEv = e.id; save(); closeSheet(); showTab('select'); });
+      $$('[data-cav]', el).forEach(b => b.addEventListener('click', async () => {
+        const [pid, st] = b.dataset.cav.split('|'); b.disabled = true;
+        try { await setAvail(e.id, pid, st); showEvent(e.id); renderAll(); } catch(err){ b.disabled = false; toast(niceErr(err)); }
+      }));
+    });
+}
+function editEvent(e){
+  const isNew = !e; e = e || {id: uid(), type: 'match', title: '', opponent: '', date: ymd(new Date()), time: '10:00', end: '', location: '', notes: ''};
+  let type = e.type;
+  openSheet(`<div class="eyebrow">${isNew ? 'New event' : 'Edit event'}</div>
+    <div class="field"><div class="field-label">Type</div><div class="cats">${EV_TYPES.map(([k, l]) => `<button type="button" class="chip${k === type ? ' on' : ''}" data-et="${k}">${l}</button>`).join('')}</div></div>
+    <div class="field" id="evOppF"${type === 'match' ? '' : ' hidden'}><label class="field-label" for="evOpp">Opponent</label><input id="evOpp" type="text" value="${esc(e.opponent || '')}" placeholder="e.g. Hawks U12"></div>
+    <div class="field"><label class="field-label" for="evTitle">Title</label><input id="evTitle" type="text" value="${esc(e.title || '')}" placeholder="${type === 'match' ? 'Blank = “vs” and the opponent' : 'e.g. Tuesday training'}"></div>
+    <div class="field evtimes"><div><label class="field-label" for="evDate">Date</label><input id="evDate" type="date" value="${e.date}"></div>
+      <div><label class="field-label" for="evTime">Start</label><input id="evTime" type="time" value="${e.time || ''}"></div><div><label class="field-label" for="evEnd">End</label><input id="evEnd" type="time" value="${e.end || ''}"></div></div>
+    <div class="field"><label class="field-label" for="evLoc">Where</label><input id="evLoc" type="text" value="${esc(e.location || '')}" placeholder="e.g. Home, or the club's address"></div>
+    <div class="field"><label class="field-label" for="evNotes">Notes</label><textarea id="evNotes" placeholder="Meet time, kit, what to bring">${esc(e.notes || '')}</textarea></div>
+    <div class="row-btns"><button class="btn" id="evSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
+    ${isNew ? '' : '<button class="btn danger" id="evDel">Delete event</button>'}
+    <p class="hint" id="evErr" role="alert"></p>`,
+    el => {
+      $$('[data-et]', el).forEach(b => b.addEventListener('click', () => { type = b.dataset.et; $$('[data-et]', el).forEach(x => x.classList.toggle('on', x === b)); $('#evOppF', el).hidden = type !== 'match'; }));
+      $('#evSave', el).addEventListener('click', async () => {
+        const v = id => $(id, el).value.trim(), ne = Object.assign({}, e, {type, title: v('#evTitle'), opponent: type === 'match' ? v('#evOpp') : '', date: v('#evDate'), time: v('#evTime'), end: v('#evEnd'), location: v('#evLoc'), notes: v('#evNotes')});
+        if(!/^\d{4}-\d{2}-\d{2}$/.test(ne.date)) return $('#evErr', el).textContent = 'Pick a date.';
+        $('#evSave', el).disabled = true;
+        try { await saveEvents([ne]); closeSheet(); renderAll(); toast(isNew ? 'Event added' : 'Event saved'); }
+        catch(err){ $('#evSave', el).disabled = false; $('#evErr', el).textContent = niceErr(err); }
+      });
+      const d = $('#evDel', el); if(d) d.addEventListener('click', () => askConfirm(`Delete ${evTitle(e)}?`, 'It is removed for everyone, with any availability marked for it.', 'Delete event',
+        async () => { try { await deleteEvent(e); renderAll(); toast('Event deleted'); } catch(err){ toast(niceErr(err)); } }));
+    });
+}
+
+/* Import: a calendar file (.ics, from Spond, TeamSnap, Google or Apple Calendar, Outlook...) or a spreadsheet saved as
+   CSV (the RFU GMS fixtures export, Excel, Google Sheets), with its columns matched to ours. Importing the same file
+   again updates the events it made instead of adding them twice. */
+function icsText(s){ return String(s || '').replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1').trim(); }
+function icsWhen(p){
+  const m = p && p.val.match(/^(\d{4})(\d{2})(\d{2})(?:T(\d{2})(\d{2})\d{0,2}(Z)?)?/); if(!m) return null;
+  if(!m[4]) return {date: `${m[1]}-${m[2]}-${m[3]}`, time: '', allDay: true};
+  if(m[6]){ const d = new Date(Date.UTC(+m[1], m[2] - 1, +m[3], +m[4], +m[5])); return {date: ymd(d), time: hm(d)}; }
+  return {date: `${m[1]}-${m[2]}-${m[3]}`, time: `${m[4]}:${m[5]}`}; // local time, or the time zone it names: taken as written
+}
+function parseICS(text){
+  const lines = text.replace(/\r?\n[ \t]/g, '').split(/\r?\n/), raw = []; let cur = null;
+  for(const ln of lines){
+    if(/^BEGIN:VEVENT/i.test(ln)){ cur = {}; continue; }
+    if(/^END:VEVENT/i.test(ln)){ if(cur) raw.push(cur); cur = null; continue; }
+    if(!cur) continue;
+    const i = ln.indexOf(':'); if(i < 0) continue;
+    const name = ln.slice(0, i).split(';')[0].toUpperCase(), val = ln.slice(i + 1);
+    if(name === 'EXDATE') (cur.EXDATE = cur.EXDATE || []).push(...val.split(',').map(x => (icsWhen({val: x}) || {}).date));
+    else if(!cur[name]) cur[name] = {val};
+  }
+  const out = [], limit = new Date(); limit.setFullYear(limit.getFullYear() + 1);
+  for(const v of raw){
+    if(v.STATUS && /CANCELLED/i.test(v.STATUS.val)) continue;
+    const st = icsWhen(v.DTSTART), en = icsWhen(v.DTEND); if(!st) continue;
+    const title = icsText(v.SUMMARY && v.SUMMARY.val), base = {title, location: icsText(v.LOCATION && v.LOCATION.val), notes: icsText(v.DESCRIPTION && v.DESCRIPTION.val).slice(0, 600),
+      time: st.time, end: en && !st.allDay && en.date === st.date ? en.time : '', type: guessType(title + ' ' + (v.CATEGORIES ? v.CATEGORIES.val : ''))};
+    const key = 'ics:' + (v.UID ? v.UID.val : st.date + st.time + title);
+    // repeating events (weekly training): expanded up to a year ahead
+    const rr = v.RRULE && Object.fromEntries(v.RRULE.val.split(';').map(x => x.split('=')));
+    if(rr && /^(DAILY|WEEKLY)$/.test(rr.FREQ)){
+      const step = (rr.FREQ === 'DAILY' ? 1 : 7) * (+rr.INTERVAL || 1), until = rr.UNTIL ? new Date((icsWhen({val: rr.UNTIL}) || {}).date + 'T23:59') : limit;
+      const days = rr.FREQ === 'WEEKLY' && rr.BYDAY ? rr.BYDAY.split(',').map(d => ['SU', 'MO', 'TU', 'WE', 'TH', 'FR', 'SA'].indexOf(d.slice(-2))) : null;
+      const d0 = new Date(st.date + 'T12:00'); let n = 0;
+      for(let w = 0; w < 800 && n < (+rr.COUNT || 400); w += step){
+        for(const dd of days || [d0.getDay()]){
+          const d = new Date(d0); d.setDate(d0.getDate() + w + ((dd - d0.getDay() + 7) % 7));
+          if(d < d0 || d > until || d > limit || n >= (+rr.COUNT || 400)) continue;
+          const date = ymd(d); n++;
+          if(!(v.EXDATE || []).includes(date)) out.push(Object.assign({}, base, {date, key: key + ':' + date}));
+        }
+        if(new Date(d0.getTime() + w * 864e5) > until || new Date(d0.getTime() + w * 864e5) > limit) break;
+      }
+    } else out.push(Object.assign({}, base, {date: st.date, key}));
+  }
+  return out;
+}
+function parseCSV(text){
+  const rows = [], sep = (text.split('\n')[0].match(/;/g) || []).length > (text.split('\n')[0].match(/,/g) || []).length ? ';' : ',';
+  let row = [], cell = '', q = false;
+  for(let i = 0; i < text.length; i++){
+    const c = text[i];
+    if(q){ if(c === '"'){ if(text[i + 1] === '"'){ cell += '"'; i++; } else q = false; } else cell += c; continue; }
+    if(c === '"') q = true; else if(c === sep){ row.push(cell); cell = ''; } else if(c === '\n' || c === '\r'){ if(c === '\r' && text[i + 1] === '\n') i++; row.push(cell); rows.push(row); row = []; cell = ''; } else cell += c;
+  }
+  if(cell || row.length){ row.push(cell); rows.push(row); }
+  return rows.map(r => r.map(x => x.trim())).filter(r => r.some(Boolean));
+}
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+function parseDateText(s){
+  s = String(s || '').trim(); let m;
+  const mk = (y, mo, d) => { y = +y < 100 ? 2000 + +y : +y; mo = +mo; d = +d; return mo >= 1 && mo <= 12 && d >= 1 && d <= 31 ? `${y}-${pad2(mo)}-${pad2(d)}` : ''; };
+  if((m = s.match(/(\d{4})-(\d{1,2})-(\d{1,2})/))) return mk(m[1], m[2], m[3]);
+  if((m = s.match(/(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2,4})/))) return mk(m[3], m[2], m[1]); // UK: day first
+  if((m = s.match(/(\d{1,2})(?:st|nd|rd|th)?\s+([a-z]{3})[a-z]*\.?,?\s+(\d{2,4})/i)) && MONTHS.includes(m[2].toLowerCase())) return mk(m[3], MONTHS.indexOf(m[2].toLowerCase()) + 1, m[1]);
+  if((m = s.match(/([a-z]{3})[a-z]*\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{4})/i)) && MONTHS.includes(m[1].toLowerCase())) return mk(m[3], MONTHS.indexOf(m[1].toLowerCase()) + 1, m[2]);
+  return '';
+}
+function parseTimeText(s){
+  const m = String(s || '').match(/(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm)?/i); if(!m || (!m[2] && !m[3])) return '';
+  let h = +m[1]; if(m[3]){ if(/pm/i.test(m[3]) && h < 12) h += 12; if(/am/i.test(m[3]) && h === 12) h = 0; }
+  return h < 24 ? `${pad2(h)}:${m[2] || '00'}` : '';
+}
+const CSV_FIELDS = [['date', 'Date', /date|day|when/i], ['time', 'Start time', /kick|k\.?o\b|start|^time|meet/i], ['end', 'End time', /end|finish/i], ['title', 'Title', /title|event|summary|subject|name|description/i],
+  ['opponent', 'Opponent', /oppo|against|versus|\bvs?\b/i], ['home', 'Home team', /home/i], ['away', 'Away team', /away/i], ['location', 'Where', /venue|ground|location|where|address|pitch/i],
+  ['type', 'Type', /type|category|kind|competition/i], ['notes', 'Notes', /notes?|comment|info|details/i]];
+function importEvents(){
+  openSheet(`<div class="eyebrow">Fixtures</div><h2>Import events</h2>
+    <p class="muted">Choose a calendar file (<b>.ics</b>) or a spreadsheet saved as <b>CSV</b>.</p>
+    <ul class="hint implist"><li><b>Spond, TeamSnap and most apps:</b> subscribe to the team calendar on your phone or in Google Calendar, then export it as .ics (Google Calendar → Settings → Import &amp; export).</li>
+      <li><b>RFU GMS:</b> export the fixtures list as CSV (Excel), then choose it here.</li>
+      <li><b>Excel or Google Sheets:</b> one row per event with at least a date column; File → Download → CSV.</li></ul>
+    <input type="file" id="imFile" accept=".ics,.csv,.txt,text/calendar,text/csv">
+    <p class="hint" id="imErr" role="alert"></p><button class="btn ghost wide" data-close>Cancel</button>`,
+    el => $('#imFile', el).addEventListener('change', async () => {
+      const f = $('#imFile', el).files[0]; if(!f) return;
+      const text = await f.text();
+      if(/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(text)){ const evs = parseICS(text); if(!evs.length) return $('#imErr', el).textContent = 'No events found in that calendar file.'; return previewImport(evs, f.name); }
+      const rows = parseCSV(text); if(rows.length < 2) return $('#imErr', el).textContent = 'That file has no rows to import. Save the spreadsheet as CSV and try again.';
+      mapColumns(rows, f.name);
+    }));
+}
+function mapColumns(rows, fname){
+  const head = rows[0], guess = {};
+  for(const [k, , re] of CSV_FIELDS){ const i = head.findIndex((h, j) => re.test(h) && !Object.values(guess).includes(j)); if(i >= 0) guess[k] = i; }
+  if(guess.date == null) guess.date = 0;
+  const opts = sel => `<option value="">—</option>` + head.map((h, i) => `<option value="${i}"${sel === i ? ' selected' : ''}>${esc(h || 'Column ' + (i + 1))}</option>`).join('');
+  openSheet(`<div class="eyebrow">${esc(fname)}</div><h2>Match the columns</h2>
+    <p class="muted">${rows.length - 1} rows. Tell us which column holds what; only the date is needed. Dates are read day first (UK), e.g. 04/10/2026.</p>
+    ${CSV_FIELDS.map(([k, l]) => `<div class="field maprow"><label class="field-label" for="mp-${k}">${l}</label><select id="mp-${k}" data-mp="${k}">${opts(guess[k])}</select></div>`).join('')}
+    <label class="check"><input type="checkbox" id="mpType"> Every row is training</label>
+    <div class="row-btns"><button class="btn" id="mpGo">Next</button><button class="btn ghost" data-close>Cancel</button></div><p class="hint" id="mpErr" role="alert"></p>`,
+    el => $('#mpGo', el).addEventListener('click', () => {
+      const col = {}; $$('[data-mp]', el).forEach(s => { if(s.value !== '') col[s.dataset.mp] = +s.value; });
+      if(col.date == null) return $('#mpErr', el).textContent = 'Pick the date column.';
+      const allTraining = $('#mpType', el).checked, cell = (r, k) => col[k] == null ? '' : (r[col[k]] || '').trim();
+      const evs = rows.slice(1).map(r => {
+        const date = parseDateText(cell(r, 'date')); if(!date) return null;
+        const home = cell(r, 'home'), away = cell(r, 'away'), title = cell(r, 'title') || (home && away ? `${home} v ${away}` : '');
+        const t = cell(r, 'type'), time = parseTimeText(cell(r, 'time')) || (col.time == null ? parseTimeText(cell(r, 'date').replace(/^\S+/, '')) : '');
+        return {date, time, end: parseTimeText(cell(r, 'end')), title, opponent: cell(r, 'opponent'), location: cell(r, 'location'), notes: cell(r, 'notes'),
+          type: allTraining ? 'training' : guessType(t + ' ' + title + (cell(r, 'opponent') || (home && away) ? ' vs' : '')), key: 'csv:' + [date, time, title || cell(r, 'opponent')].join('|').toLowerCase()};
+      }).filter(Boolean);
+      if(!evs.length) return $('#mpErr', el).textContent = 'No dates could be read from that column. Check you picked the date column.';
+      previewImport(evs, fname);
+    }));
+}
+function previewImport(evs, fname){
+  const z = fixData(), today = ymd(new Date()), byKey = {}; for(const e of z.events) if(e.key) byKey[e.key] = e;
+  evs.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
+  const past = evs.filter(e => e.date < today).length;
+  openSheet(`<div class="eyebrow">${esc(fname)}</div><h2>Import ${evs.length} event${evs.length > 1 ? 's' : ''}?</h2>
+    <p class="muted">Untick any you don't want.${past ? ` ${past} already happened and start unticked.` : ''} Events imported before from the same file are updated, not added twice.</p>
+    <div class="opts">${evs.map((e, i) => `<label class="opt"><input type="checkbox" data-im="${i}"${e.date < today ? '' : ' checked'}><span><b>${esc(evTitle(e))}</b><small>${evWhen(e)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.location ? ' · ' + esc(e.location) : ''}${byKey[e.key] ? ' · updates the existing one' : ''}</small></span></label>`).join('')}</div>
+    <div class="row-btns"><button class="btn" id="imGo">Import</button><button class="btn ghost" data-close>Cancel</button></div><p class="hint" id="imErr" role="alert"></p>`,
+    el => $('#imGo', el).addEventListener('click', async () => {
+      const pick = $$('[data-im]:checked', el).map(c => evs[+c.dataset.im]); if(!pick.length) return closeSheet();
+      const list = pick.map(e => Object.assign({}, byKey[e.key] || {id: uid()}, e, {id: (byKey[e.key] || {}).id || uid()}));
+      $('#imGo', el).disabled = true; $('#imErr', el).textContent = 'Importing…';
+      try { await saveEvents(list); closeSheet(); S.ui.fixPast = false; save(); showTab('fix'); toast(`${list.length} event${list.length > 1 ? 's' : ''} imported`); }
+      catch(err){ $('#imGo', el).disabled = false; $('#imErr', el).textContent = niceErr(err); }
+    }));
 }
 
 /* ---------- boot ---------- */
