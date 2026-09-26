@@ -1862,7 +1862,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 16:49</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 17:18</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2239,9 +2239,9 @@ async function myMember(group){
 async function refreshRole(){
   const z = S.sync, m = await myMember(z.group);
   if(m === undefined) return;
-  if(m === null){ if(!(await fetchGroup(z.group))){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; }
+  if(m === null){ z.removed = true; save(); if(!(await fetchGroup(z.group))){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; }
     const e = new Error('This phone is no longer in ' + z.groupName); e.removed = true; throw e; }
-  const was = z.role || 'coach'; z.role = m.role; z.wants = m.wants; save();
+  const was = z.role || 'coach'; z.role = m.role; z.wants = m.wants; delete z.removed; save();
   if(was !== z.role) roleChanged(was);
 }
 // Coaches keep the group's teams, squad and drills on the phone; players and parents only the shared drills
@@ -2258,7 +2258,10 @@ function roleChanged(was){
 function showRemoved(){
   const z = S.sync;
   openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This phone is no longer in the group</h2>
-    <p class="muted">The group admin has removed it, or it was never registered. Ask them for an invite (coaches) or the player or parent code, then enter it here. Anything on this phone stays until you leave the group.</p>
+    <p class="muted">The group admin (or the site admin) has removed it, or it was never registered. To come back you need an <b>invite</b>: the group's own code, or a new one, won't let it back in.</p>
+    <ul class="hint implist"><li><b>Coaches:</b> ask the group admin for a coach invite (Group → Invite a coach).</li><li><b>Players and parents:</b> use the player or parent code.</li>
+      <li><b>If you were the group admin:</b> make a new invite on the admin page (admin.html → the group → Invite group admin), or ask another group admin.</li></ul>
+    <p class="hint">Enter the invite with Enter a code. Anything on this phone stays until you leave the group.</p>
     <div class="row-btns"><button class="btn" id="rmJoin">Enter a code</button><button class="btn ghost" data-close>Later</button></div>
     <button class="btn danger" id="rmLeave">Leave ${esc(z.groupName)}</button>`,
     el => {
@@ -2472,7 +2475,7 @@ async function redeem(code, who){
   if(mine) return {grp, role: mine.role};
   // security rules from before roles: the group's code still registers a coach
   try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${code}/members/${uid}`), fields:{who:{stringValue: who}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}}}, currentDocument:{exists:false}}]}); return {grp, role: 'coach'}; }
-  catch(e){ if(alreadyThere(e)) return {grp, role: 'coach'}; if(e.status === 403) return {err: `${grp.name} now joins by invite. Ask your group admin for a coach invite, or for the player or parent code.`}; throw e; }
+  catch(e){ if(alreadyThere(e)) return {grp, role: 'coach'}; if(e.status === 403) return {err: `${grp.name} now joins by invite, so its own code won't let a new or removed phone in. Ask your group admin for a coach invite, or for the player or parent code. If you were the group admin, make a new one on the admin page: Invite group admin.`}; throw e; }
 }
 function showGate(canClose){
   const g = $('#gate'), pre = normCode((location.hash.match(/join=([\w-]+)/)||[])[1]);
@@ -2493,7 +2496,7 @@ function showGate(canClose){
     g.hidden = true;
     const me = grp.code + ':' + tokenUid(await fbToken());
     // back into a group this phone already has: pick up the role, keep everything
-    const back = () => { const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = me; save();
+    const back = () => { const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = me; delete z.removed; save();
       if(was !== role) roleChanged(was); else { toast(note || 'You are in ' + grp.name); runSync(null, true); } };
     if(syncing() && S.sync.group === grp.code) return back();
     if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return back(); }
@@ -2714,7 +2717,8 @@ const evWhen = e => evDate(e).toLocaleDateString('en-GB', {weekday: 'short', day
 const guessType = s => /train|practi[cs]e|session|skills/i.test(s) ? 'training' : /\b(v|vs|versus)\b|match|fixture|game|cup|league|festival|tournament|friendly/i.test(s) ? 'match' : 'event';
 const fixData = (z = S.sync) => { z.events = z.events || []; z.avail = z.avail || {}; return z; };
 // every group on this phone, the open one first
-const fixTeams = () => [S.sync, ...Object.values(S.parked || {}).map(w => w.sync)].filter(z => z && z.group).map(z => fixData(z));
+const fixTeams = () => [S.sync, ...Object.values(S.parked || {}).map(w => w.sync)].filter(z => z && z.group && !z.removed).map(z => fixData(z));
+const fixStale = z => Date.now() - Math.max(z.fixAt || 0, z.fixTried || 0) > 60e3;
 const fixTeam = code => fixTeams().find(z => z.group === code);
 const avKey = (evId, pid) => evId + '_' + pid;
 const statusOf = (evId, pid, z = S.sync) => { const a = fixData(z).avail[avKey(evId, pid)]; return a ? a.status : ''; };
@@ -2724,7 +2728,7 @@ const nameOfPlayer = (pid, z = S.sync) => (squadNames(z).find(p => p.id === pid)
 const kidsOf = z => viewerRole(z.role) ? (z.kids || []).filter(id => (z.roster || []).some(p => p.id === id)) : [];
 
 async function loadFixtures(z = S.sync){
-  fixData(z); const g = z.group;
+  fixData(z); const g = z.group; z.fixTried = Date.now();
   const [ev, av, ro] = await Promise.all([listDocs(`/groups/${g}/events`), listDocs(`/groups/${g}/avail`), fb('GET', `/groups/${g}/roster/all`)]);
   z.events = ev.map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(e => e && e.date).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   z.avail = {};
@@ -2803,12 +2807,12 @@ function renderFixtures(){
   on('#fxAdd', () => editEvent(null)); on('#fxImport', () => importEvents());
   on('#fxPast', () => { S.ui.fixPast = !past; save(); renderFixtures(); });
   on('#fxRefresh', () => refreshFixtures(true)); on('#fxKids', linkKids); on('#fxKids2', linkKids);
-  if(!fixLoading && all.some(z => Date.now() - (z.fixAt || 0) > 60e3)) refreshFixtures(false);
+  if(!fixLoading && all.some(fixStale)) refreshFixtures(false);
 }
 async function refreshFixtures(loud){
   if(fixLoading || !syncing()) return; fixLoading = true;
   // groups this phone has been removed from are skipped quietly
-  try { const r = await Promise.allSettled(fixTeams().map(z => loadFixtures(z)));
+  try { const r = await Promise.allSettled(fixTeams().map(z => loadFixtures(z).catch(e => { if(e.status === 403 && z !== S.sync) z.removed = true; throw e; })));
     const bad = r.filter(x => x.status === 'rejected'); if(loud) toast(bad.length === r.length ? niceErr(bad[0].reason) : 'Fixtures up to date'); }
   finally { fixLoading = false; if(TAB === 'fix') renderFixtures(); else if(TAB === 'select') renderSelect(); }
 }
