@@ -96,7 +96,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 26 Sep 2026, 23:56</p>
+  <p class="hint" style="text-align:center">Version 27 Sep 2026, 00:12</p>
 </main>
 <script>
 (() => {
@@ -193,7 +193,7 @@ async function loadClubs(){
         const code = newCode(), link = appLink(code);
         try { await commit([create('invites/' + code, {club: str(id), role: str('admin'), single: {booleanValue: true}, by: str('Site admin'), at: {integerValue: String(Date.now())}})]);
           try { await navigator.clipboard.writeText(link); } catch(e){}
-          status(`${name(c)}: club admin invite ${fmt(code)}. It works once. Open ${link} on the club admin's phone, or enter the code in Team → Add another team (the link is copied).`, 'ok'); }
+          status(`${name(c)}: club admin invite ${fmt(code)}. It works once. Open ${link} on the club admin's phone, or enter the code in Team → Add another team (the link is copied). If they use the app from an iPhone home screen, they should type the code into the app: the link opens Safari, which counts as a separate phone.`, 'ok'); }
         catch(e){ status(e.message, 'err'); }
       });
       el.querySelector('[data-cren]').addEventListener('click', () => { const n = prompt('New name for the club', name(c)); if(n && n.trim()) run(async () => { await fb('PATCH', `/clubs/${id}?updateMask.fieldPaths=name`, {fields:{name: str(n.trim())}}); status('Renamed.', 'ok'); }); });
@@ -358,7 +358,7 @@ async function act(what, g, el){
       busy(true); const c = newCode(), link = appLink(c);
       await commit([create('invites/' + c, {group: str(g.code), role: str('admin'), single: {booleanValue: true}, by: str('Site admin'), at: {integerValue: String(Date.now())}})]);
       try { await navigator.clipboard.writeText(link); } catch(e){}
-      status(`${g.name}: team admin invite ${fmt(c)}. It works once. Open ${link} on the team admin's phone, or enter the code in Team → Add another team (the link is copied).`, 'ok');
+      status(`${g.name}: team admin invite ${fmt(c)}. It works once. Open ${link} on the team admin's phone, or enter the code in Team → Add another team (the link is copied). If they use the app from an iPhone home screen, they should type the code into the app: the link opens Safari, which counts as a separate phone.`, 'ok');
       busy(false); return;
     }
     if(what === 'rename'){

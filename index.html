@@ -1898,7 +1898,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Selection settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New selection${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. Saxons, Cup side"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 23:56</p>
+    <p class="hint" style="text-align:center">Version 27 Sep 2026, 00:12</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2262,6 +2262,9 @@ async function pullShared(){
    The first member to sync sets up the send code, so the admin only ever creates the group itself. */
 const CODE_ABC = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const newCode = () => [...crypto.getRandomValues(new Uint8Array(10))].map(x => CODE_ABC[x % 32]).join('');
+// iPhone apps added to the home screen keep their own storage, apart from Safari: each is a separate phone to a team
+const IOS_NOTE = ' On an iPhone where the app is on the home screen, open the app and type the code: the link opens Safari, which counts as a separate phone.';
+const homeScreenApp = () => navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
 const tokenUid = tok => { try { return JSON.parse(atob(tok.split('.')[1].replace(/-/g,'+').replace(/_/g,'/'))).user_id; } catch(e){ return ''; } };
 const alreadyThere = e => /FAILED_PRECONDITION|ALREADY_EXISTS|exists/i.test(e.message || '');
 function deviceLabel(){
@@ -2308,6 +2311,7 @@ function showRemoved(){
       <li><b>If you were the team admin:</b> make a new invite on the admin page (admin.html → the team → Invite team admin), or ask another team admin.</li></ul>
     ${twin ? `<div class="evnote"><b>This phone has another ${esc(twin.name)}</b><p class="hint">Probably the one you joined again, under a newer code. Open it, and leave this old copy.</p><button class="btn" id="rmTwin">Open the other ${esc(twin.name)}</button></div>` : ''}
     <p class="hint">Enter the invite with Enter a code. Anything on this phone stays until you leave the team.</p>
+    ${homeScreenApp() ? '<p class="hint"><b>Type the code here, don’t tap the invite link.</b> On an iPhone the link opens Safari, which is a separate phone as far as the team is concerned; this home-screen app then still isn’t in the team.</p>' : ''}
     <div class="row-btns"><button class="btn" id="rmJoin">Enter a code</button><button class="btn ghost" data-close>Later</button></div>
     <button class="btn danger" id="rmLeave">Leave ${esc(z.groupName)}</button>
     <p class="hint" id="rmIds">Team code ${fmtCode(z.group)}</p>`,
@@ -2627,8 +2631,8 @@ async function shareText(text, title, fallback){
 }
 function joinText(code, role){
   const z = S.sync, link = linkBase() + '#join=' + fmtCode(code);
-  return viewerRole(role) ? `${z.groupName} ${role}s: watch the drills your coaches share in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${link}`
-    : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a team admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}`;
+  return viewerRole(role) ? `${z.groupName} ${role}s: watch the drills your coaches share in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${link}${IOS_NOTE}`
+    : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a team admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}${IOS_NOTE}`;
 }
 function leaveGroup(){
   const z = S.sync, others = Object.keys(S.parked || {});
@@ -3272,7 +3276,7 @@ function showClub(c){
           $$('[data-ci]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
             const t = ts.find(x => x.code === b.dataset.ci), code = newCode();
             try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('invites/' + code), fields:{group:{stringValue: t.code}, role:{stringValue: 'admin'}, single:{booleanValue: true}, by:{stringValue: club.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]});
-              await shareText(`You're invited to run ${t.name} (${club.name}) in Rugby Team Picker as its team admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}`, t.name, 'Team admin invite: ' + fmtCode(code)); }
+              await shareText(`You're invited to run ${t.name} (${club.name}) in Rugby Team Picker as its team admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}${IOS_NOTE}`, t.name, 'Team admin invite: ' + fmtCode(code)); }
             catch(e){ toast(niceErr(e)); } finally { b.disabled = false; } }));
         } catch(e){ box.innerHTML = `<p class="hint">Could not load the teams: ${esc(niceErr(e))}</p>`; }
       };
@@ -3284,7 +3288,7 @@ function showClub(c){
           const d = await fb('GET', `/clubs/${c}/settings/codes`), code = d && d.fields && d.fields.parent ? d.fields.parent.stringValue : ''; if(!live()) return;
           box.innerHTML = code ? `<div class="rcode"><div class="gcode">${fmtCode(code)}</div><button class="chip" id="clShare">Share</button><button class="chip" id="clNewCode">New code</button></div><p class="hint">One code for every parent in the club: they pick their children's teams, then their children.</p>`
             : `<p class="hint">One code for every parent in the club: they pick their children's teams, then their children. Each team's own parent code still works.</p><button class="btn ghost" id="clNewCode">Make the club parent code</button>`;
-          const sh = $('#clShare', box); if(sh) sh.addEventListener('click', () => shareText(`${club.name} parents: see fixtures, mark availability and watch drills in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}`, club.name, 'Club parent code: ' + fmtCode(code)));
+          const sh = $('#clShare', box); if(sh) sh.addEventListener('click', () => shareText(`${club.name} parents: see fixtures, mark availability and watch drills in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}${IOS_NOTE}`, club.name, 'Club parent code: ' + fmtCode(code)));
           const nc = $('#clNewCode', box); nc.addEventListener('click', async () => {
             if(code && !nc.dataset.sure){ nc.dataset.sure = 1; nc.textContent = 'Replace? Tap again'; nc.classList.add('on'); return; }
             nc.disabled = true; const nw = newCode();
@@ -3308,7 +3312,7 @@ function showClub(c){
       $('#clAdmin', el).addEventListener('click', async () => {
         const code = newCode();
         try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('invites/' + code), fields:{club:{stringValue: c}, role:{stringValue: 'admin'}, single:{booleanValue: true}, by:{stringValue: club.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]});
-          await shareText(`You're invited to help run ${club.name} in Rugby Team Picker as a club admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}`, club.name, 'Club admin invite: ' + fmtCode(code)); }
+          await shareText(`You're invited to help run ${club.name} in Rugby Team Picker as a club admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}${IOS_NOTE}`, club.name, 'Club admin invite: ' + fmtCode(code)); }
         catch(e){ toast(niceErr(e)); }
       });
       $('#clCal', el).addEventListener('click', () => clubCalendar(c));
