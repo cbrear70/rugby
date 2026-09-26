@@ -253,6 +253,9 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .avb.on.yes{background:var(--ok);border-color:var(--ok);color:#06240F}.avb.on.maybe{background:#E8C547;border-color:#E8C547;color:#221A00}.avb.on.no{background:var(--danger);border-color:var(--danger);color:#fff}
 .tpill{display:inline-block;font:700 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:999px;border:1px solid var(--gc);color:var(--gc);margin-bottom:5px}
 .tchip .gdot{margin-right:6px}
+.stag{display:inline-block;font:700 11px/1 var(--body);letter-spacing:.04em;padding:3px 7px;border-radius:999px;background:color-mix(in srgb,var(--sc) 22%,transparent);color:var(--ink);border:1px solid var(--sc);vertical-align:1px}
+.sdot{flex:none;width:12px;height:12px;border-radius:50%;background:var(--sc)}
+.subhead{display:flex;align-items:center;gap:8px;justify-content:flex-start}.subhead .sdot{width:10px;height:10px}
 .evnote{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
 .evtimes{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}
 .maprow{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin-bottom:6px}.maprow .field-label{margin:0}
@@ -347,11 +350,11 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 
 <div id="app">
   <header class="topbar">
-    <button class="team-btn" id="teamBtn" aria-label="Switch or rename team">
+    <button class="team-btn" id="teamBtn" aria-label="Switch or rename selection">
       <span class="tn-wrap"><small class="gn" id="groupName" hidden></small><span class="tn" id="teamName">Team</span></span>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
-    <button class="icon-btn sync-btn" id="syncBtn" aria-label="Sync with your group" title="Sync" hidden>
+    <button class="icon-btn sync-btn" id="syncBtn" aria-label="Sync with your team" title="Sync" hidden>
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 00.6-7.95A5.5 5.5 0 007.4 9.1 4.7 4.7 0 007 18.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path class="arr" d="M9.6 13.6a2.6 2.6 0 014.5-1.5M14.4 14.4a2.6 2.6 0 01-4.5 1.5M14.3 10.9v1.4h-1.4M9.7 17.1v-1.4h1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <i class="dot-badge"></i>
     </button>
@@ -434,7 +437,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
     <button role="tab" data-tab="squad" aria-selected="false">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17" cy="9" r="2.5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M16 14.2c3 .2 5 2.4 5 5.3" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>Squad</button>
     <button role="tab" data-tab="select" aria-selected="false">
-      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l1.6 1.6L8.5 4.7M4 12.5l1.6 1.6 2.9-2.9M4 19l1.6 1.6 2.9-2.9M11 6.5h9M11 13h9M11 19.5h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Select team</button>
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6l1.6 1.6L8.5 4.7M4 12.5l1.6 1.6 2.9-2.9M4 19l1.6 1.6 2.9-2.9M11 6.5h9M11 13h9M11 19.5h9" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Selection</button>
     <button role="tab" data-tab="moves" aria-selected="false">
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="19" r="2.2" fill="currentColor"/><path d="M6.5 17C10 14 8 9 13 8s5-3 6-4.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-dasharray="2.4 2.2" stroke-linecap="round"/><path d="M15.5 3.5h4v4" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Drills</button>
     <button role="tab" data-tab="fix" aria-selected="false">
@@ -445,7 +448,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 <div class="backdrop" id="backdrop" hidden></div>
 <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true"></div>
 <div class="toast" id="toast" hidden></div>
-<div class="gate" id="gate" hidden role="dialog" aria-modal="true" aria-label="Join your coaching group"></div>
+<div class="gate" id="gate" hidden role="dialog" aria-modal="true" aria-label="Join your team"></div>
 
 <script>
 (() => {
@@ -587,7 +590,7 @@ function assign(t,n,pid){
   if(pid){ for(const k in t.selection){ if(+k!==+n && t.selection[k] && t.selection[k].playerId===pid){ t.selection[k].playerId = cur; } } }
   setSel(t,n,{playerId: pid||null});
 }
-function newTeam(name){ return {id:uid(), name:name||'New team', selection:{}}; }
+function newTeam(name){ return {id:uid(), name:name||'New selection', selection:{}}; }
 
 const SAMPLE_NAMES = new Set(['Tom Hadley','Rhys Palmer','Sam Okafor','Jack Whitmore','Luke Brennan','Owen Fisher','Dan Mercer','Callum Reid','Ben Ashworth','Harry Lowe','Josh Keane','Matt Doyle','Will Carrick','Alfie Brooks','Ethan Price','Joe Tanner','Finn Gallagher','Nathan Cole','Ollie Stroud','Kieran Walsh','George Pym','Aaron Vail','Liam Hext','Max Rowley','Ryan Dunne','Isaac Burnell']);
 function seed(){
@@ -912,8 +915,15 @@ function showSlot(n){
     });
 }
 function playerOptions(t, selectedId, forN, ev){
-  const opt = p => { const k = numberOf(t,p.id); return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${k && k!==forN ? ' · #'+k : ''}</option>`; };
-  const sorted = [...S.players].sort((a,b)=>a.name.localeCompare(b.name));
+  const opt = (p, note) => { const k = numberOf(t,p.id); note = typeof note === 'string' ? note : ''; return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}</option>`; };
+  const all = [...S.players].sort((a,b)=>a.name.localeCompare(b.name)), own = t.sub && subById(t.sub) ? t.sub : '';
+  const sorted = own ? all.filter(p => subOfPlayer(p) === own) : all;
+  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id);
+    return ps.length ? `<optgroup label="Borrow ${sb.id ? 'from ' + esc(sb.name) : '· not in a sub-squad'}">${ps.map(p => { const st = p.available === false ? 'unavailable' : ev && statusOf(ev.id, p.id) ? AV.find(a => a[0] === statusOf(ev.id, p.id))[1].toLowerCase() : '';
+      return opt(p, st ? ' (' + st + ')' : ''); }).join('')}</optgroup>` : ''; }).join('') : '';
+  return playerOptionsOwn(t, sorted, opt, ev) + borrow;
+}
+function playerOptionsOwn(t, sorted, opt, ev){
   if(ev){ // grouped by what was said for the event; players marked unavailable in the squad go last whatever they said
     const st = p => p.available === false ? 'off' : statusOf(ev.id, p.id) || 'none';
     return `<option value="">— Not picked —</option>` + [['yes','Available'],['maybe','Maybe'],['none','No reply'],['no','Not available'],['off','Unavailable (squad)']]
@@ -959,12 +969,12 @@ function renderSquad(){
       <button class="btn" type="submit">Add</button>
       <input id="newPos" class="pos" type="text" placeholder="Positions they play (optional)" aria-label="Positions">
     </form>
-    <div class="section-h"><span>Squad · ${list.length}</span><span>${av} available</span></div>
-    ${many || syncing() ? `<p class="hint" style="margin:-4px 0 8px">One squad for ${syncing() ? 'every team in '+esc(S.sync.groupName) : 'all your teams'}. Each team picks its own team sheet from it.</p>` : ''}
-    ${phoneOnly ? `<div class="row-btns" style="margin-bottom:8px"><button class="btn ghost" id="sqShare">Share ${phoneOnly} phone-only player${phoneOnly>1?'s':''} with the group</button></div>` : ''}
-    ${list.length ? `<div class="list">${list.map(p => { const k = numberOf(t,p.id), where = many ? pickedIn(p.id).filter(w => !w.startsWith(t.name+' #')) : [];
-      return `<button class="prow" data-pid="${p.id}"><span class="dot${p.available===false?' off':''}" title="${p.available===false?'Unavailable':'Available'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos||'No position set')}${p.available===false?' · unavailable':''}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? ' · also '+esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`
-      : `<div class="empty">No players yet. Add your squad above, then pick the team on the Select team tab.</div>`}
+    <div class="section-h"><span>Squad · ${list.length}</span><span>${av} available${syncing() ? ` · <button class="chip" id="sqSubs">Sub-squads${subsOf().length ? ' · ' + subsOf().length : ''}</button>` : ''}</span></div>
+    ${many || syncing() ? `<p class="hint" style="margin:-4px 0 8px">One squad for ${syncing() ? 'every selection in '+esc(S.sync.groupName) : 'all your selections'}. Each selection picks its own team sheet from it${subsOf().length ? ', usually from one sub-squad' : ''}.</p>` : ''}
+    ${phoneOnly ? `<div class="row-btns" style="margin-bottom:8px"><button class="btn ghost" id="sqShare">Share ${phoneOnly} phone-only player${phoneOnly>1?'s':''} with the other coaches</button></div>` : ''}
+    ${list.length ? squadSections(list).map(([sid, ps]) => `${subsOf().length ? `<div class="section-h subhead">${sid ? `<span class="sdot" style="--sc:${subById(sid).color}"></span>` : ''}<span>${sid ? esc(subName(sid)) : 'Not in a sub-squad'} · ${ps.length}</span></div>` : ''}<div class="list">${ps.map(p => { const k = numberOf(t,p.id), where = many ? pickedIn(p.id).filter(w => !w.startsWith(t.name+' #')) : [];
+      return `<button class="prow" data-pid="${p.id}"><span class="dot${p.available===false?' off':''}" title="${p.available===false?'Unavailable':'Available'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos||'No position set')}${p.available===false?' · unavailable':''}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? ' · also '+esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`).join('')
+      : `<div class="empty">No players yet. Add your squad above, then pick the team on the Selection tab.</div>`}
     <p class="hint" style="margin-top:12px">Tap a player to edit their details or mark them unavailable.</p>`;
   $('#addForm').addEventListener('submit', e => {
     e.preventDefault();
@@ -973,7 +983,13 @@ function renderSquad(){
     renderSquad(); toast(nm+' added'); $('#newName').focus();
   });
   $$('.prow', el).forEach(b => b.addEventListener('click', () => editPlayer(b.dataset.pid)));
-  const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { S.players.forEach(p => { delete p.localOnly; }); save(); renderSquad(); toast('Squad will be shared with the group when you sync'); });
+  const ss = $('#sqSubs', el); if(ss) ss.addEventListener('click', manageSubs);
+  const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { S.players.forEach(p => { delete p.localOnly; }); save(); renderSquad(); toast('Squad will be shared with the other coaches when you sync'); });
+}
+// the squad split into its sub-squads (in order), then those in none; one section when there are no sub-squads
+function squadSections(list){
+  const subs = subsOf(); if(!subs.length) return [['', list]];
+  return subs.map(sb => [sb.id, list.filter(p => subOfPlayer(p) === sb.id)]).concat([['', list.filter(p => !subOfPlayer(p))]]).filter(([id, ps]) => ps.length || id);
 }
 function editPlayer(pid){
   const t = team(), p = playerById(t,pid); if(!p) return;
@@ -982,12 +998,16 @@ function editPlayer(pid){
     <div class="field"><label class="field-label" for="epName">Name</label><input id="epName" type="text" value="${esc(p.name)}"></div>
     <div class="field"><label class="field-label" for="epPos">Positions</label><input id="epPos" type="text" value="${esc(p.pos||'')}" placeholder="e.g. Centre, Wing"></div>
     <div class="field"><label class="field-label" for="epNotes">Notes</label><textarea id="epNotes" placeholder="Injuries, kicking duties, anything useful">${esc(p.notes||'')}</textarea></div>
+    ${subsOf().length ? `<div class="field"><div class="field-label">Sub-squad</div><div class="cats" id="epSub">${[{id: '', name: 'None'}].concat(subsOf()).map(sb => `<button type="button" class="chip${subOfPlayer(p) === sb.id ? ' on' : ''}" data-sub="${sb.id}">${esc(sb.name)}</button>`).join('')}</div></div>` : ''}
     ${where.length ? `<p class="hint">Picked for ${esc(where.join(', '))}</p>` : ''}
     <label class="check"><input type="checkbox" id="epAv"${p.available!==false?' checked':''}> Available for selection</label>
     <div class="row-btns"><button class="btn" id="epSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn danger" id="epDel">Remove from squad</button>`,
     el => {
+      let sub = subOfPlayer(p);
+      $$('[data-sub]', el).forEach(b => b.addEventListener('click', () => { sub = b.dataset.sub; $$('[data-sub]', el).forEach(x => x.classList.toggle('on', x === b)); }));
       $('#epSave', el).addEventListener('click', () => {
+        if(sub) p.sub = sub; else delete p.sub;
         p.name = $('#epName', el).value.trim() || p.name; p.pos = $('#epPos', el).value.trim(); p.notes = $('#epNotes', el).value.trim(); p.available = $('#epAv', el).checked;
         save(); closeSheet(); renderAll();
       });
@@ -1003,6 +1023,7 @@ function editPlayer(pid){
 // the event the team is being picked for (Select team tab): the chosen one, else the next match
 function selEvent(){
   if(!syncing()) return null;
+  if(team().eventId) return selEventOf(team());
   const up = fixData().events.filter(e => !evPast(e));
   return S.ui.selEv === '' ? null : up.find(e => e.id === S.ui.selEv) || up.find(e => e.type === 'match') || null;
 }
@@ -1013,19 +1034,24 @@ function renderSelect(){
   const N = teamSize(t), B = benchSize(t), onPitch = pitchNums(t), subs = benchNums(t);
   const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
   const avTag = p => { const s = avOf(p); return s ? `<span class="avtag st-${s}">${AV.find(a => a[0] === s)[1]}</span>` : ev ? '<span class="avtag">No reply</span>' : ''; };
-  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
-  el.innerHTML = `${up.length ? `<div class="field"><label class="field-label" for="selEv">Availability for</label><select id="selEv"><option value=""${ev ? '' : ' selected'}>No event</option>${up.map(e => `<option value="${e.id}"${ev && ev.id === e.id ? ' selected' : ''}>${esc(evWhen(e).split(' · ')[0])} · ${esc(evTitle(e))}</option>`).join('')}</select>
-      ${ev ? `<p class="hint">${avSummary(ev)}</p>` : ''}</div>` : ''}
-    <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear team</button></div>
+  const own = t.sub && subById(t.sub) ? t.sub : '', borrowed = p => own && subOfPlayer(p) !== own ? `<span class="avtag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
+  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  const linked = selEventOf(t);
+  el.innerHTML = `${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
+    ${t.eventId ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
+    : up.length ? `<div class="field"><label class="field-label" for="selEv">Availability for</label><select id="selEv"><option value=""${ev ? '' : ' selected'}>No event</option>${up.map(e => `<option value="${e.id}"${ev && ev.id === e.id ? ' selected' : ''}>${esc(evWhen(e).split(' · ')[0])} · ${esc(evTitle(e))}</option>`).join('')}</select>
+      ${ev ? `<p class="hint">${avSummary(ev)}${selectionFor(ev) && selectionFor(ev) !== t ? ` · <button class="chip" id="selOpen">Open its team sheet</button>` : ` · <button class="chip" id="selMake">Make a team sheet for it</button>`}</p>` : ''}</div>` : ''}
+    <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear sheet</button></div>
     ${onPitch.map(row).join('')}
     ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
-    <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Team settings (tap the team name).</p>
+    <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Selection settings (tap the selection name).</p>
     ${S.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => { assign(t, +s.dataset.n, s.value || null); renderSelect(); }));
   const se = $('#selEv', el); if(se) se.addEventListener('change', () => { S.ui.selEv = se.value; save(); renderSelect(); });
-  $('#clearSel').addEventListener('click', () => askConfirm('Clear the team?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear team', () => {
-    for(const n in t.selection) t.selection[n].playerId = null; save(); renderSelect(); toast('Team cleared');
+  const so = $('#selOpen', el) || $('#selMake', el); if(so) so.addEventListener('click', () => pickFor(ev));
+  $('#clearSel').addEventListener('click', () => askConfirm('Clear the team sheet?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear sheet', () => {
+    for(const n in t.selection) t.selection[n].playerId = null; save(); renderSelect(); toast('Team sheet cleared');
   }));
 }
 
@@ -1054,15 +1080,15 @@ function renderMoves(){
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
         ${m.desc?`<div class="mdesc">${esc(m.desc)}</div>`:''}
         <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${grp && !draft && m.forPlayers ? '<span class="dtag">Players see this</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames · ${secs(framesOf(m))}</div>
-        <div class="mact">${draft ? `<button class="chip on" data-togroup="${m.id}">Share with group</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another group</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-fp="${m.id}">${m.forPlayers ? 'Hide from players' : 'Share with players'}</button><button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button></div>
+        <div class="mact">${draft ? `<button class="chip on" data-togroup="${m.id}">Share with coaches</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another team</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-fp="${m.id}">${m.forPlayers ? 'Hide from players' : 'Share with players'}</button><button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button></div>
       </div></div>`; };
   const drafts = grp ? mv.filter(m => m.draft) : [], shared = grp ? mv.filter(m => !m.draft) : mv;
   el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>
     <button class="btn wide" id="newMove">New ${catName.toLowerCase()} drill</button>
     ${grp ? `<div class="section-h"><span>Drafts · ${drafts.length}</span><span>Only on your phone</span></div>
-      ${drafts.length ? drafts.map(card).join('') : `<p class="hint">New drills start here. Nobody else sees a draft until you tap Share with group.</p>`}` : ''}
-    <div class="section-h"><span>${grp ? 'Shared with '+esc(S.sync.groupName) : catName+' drills'} · ${shared.length}</span><span>${S.teams.length > 1 ? 'Used by all teams' : ''}</span></div>
-    ${shared.length ? shared.map(card).join('') : grp ? `<p class="hint">Nothing shared in ${catName} yet. Drills you share, and drills from the rest of the group, appear here.</p>` : `<div class="empty">No ${catName.toLowerCase()} drills yet. Tap New drill, pick the shirts involved, then drag each one to its start and finish.</div>`}`;
+      ${drafts.length ? drafts.map(card).join('') : `<p class="hint">New drills start here. Nobody else sees a draft until you tap Share with coaches.</p>`}` : ''}
+    <div class="section-h"><span>${grp ? 'Shared with '+esc(S.sync.groupName) : catName+' drills'} · ${shared.length}</span><span>${S.teams.length > 1 ? 'Used by all selections' : ''}</span></div>
+    ${shared.length ? shared.map(card).join('') : grp ? `<p class="hint">Nothing shared in ${catName} yet. Drills you share, and drills from the other coaches, appear here.</p>` : `<div class="empty">No ${catName.toLowerCase()} drills yet. Tap New drill, pick the shirts involved, then drag each one to its start and finish.</div>`}`;
   $$('[data-tabcat]', el).forEach(b => b.addEventListener('click', () => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); }));
   $('#newMove').addEventListener('click', () => {
     const m = {id:uid(), name:'New drill', desc:'', icons:{}, cat: cur}; if(grp) m.draft = true; all.unshift(m); save();
@@ -1075,7 +1101,7 @@ function renderMoves(){
   $$('[data-send]', el).forEach(b => b.addEventListener('click', () => sendToGroup(all.find(x => x.id===b.dataset.send))));
   $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => shareMove(all.find(x => x.id===b.dataset.togroup))));
   $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { const m = clone(all.find(x=>x.id===b.dataset.dup)); m.id = uid(); m.name += ' (copy)'; if(grp) m.draft = true; all.splice(all.findIndex(x=>x.id===b.dataset.dup)+1, 0, m); save(); renderMoves(); toast('Drill duplicated'); }));
-  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This drill will be deleted for every team, and from everyone in the group when you sync.' : 'This drill will be deleted for every team on this phone.', 'Delete move', () => { S.moves = S.moves.filter(x=>x!==m); save(); renderMoves(); toast('Drill deleted'); }); }));
+  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This drill will be deleted for every selection, and from the other coaches’ phones when you sync.' : 'This drill will be deleted for every selection on this phone.', 'Delete move', () => { S.moves = S.moves.filter(x=>x!==m); save(); renderMoves(); toast('Drill deleted'); }); }));
 }
 // Players and parents see drills a coach marks for them, after the coach syncs; they can watch but not change them
 function setForPlayers(m, on){
@@ -1099,7 +1125,7 @@ function renderViewerMoves(){
 function shareMove(m){ delete m.draft; save(); renderMoves(); toast(`${m.name} will be shared with ${S.sync.groupName} when you sync`); }
 function unshareMove(m){
   askConfirm(`Move ${m.name} back to drafts?`, `It will be removed from the other coaches’ phones in ${S.sync.groupName} when you sync. You keep it here as a draft.`, 'Move to drafts',
-    () => { m.draft = true; save(); renderMoves(); toast(`${m.name} is a draft again. Sync to take it off the group.`); });
+    () => { m.draft = true; save(); renderMoves(); toast(`${m.name} is a draft again. Sync to take it off the other coaches’ phones.`); });
 }
 function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
 function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<framesOf(m);k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
@@ -1342,10 +1368,10 @@ $('#edTitle').addEventListener('click', () => {
     <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames · ${secs(n)}${n===20?' (standard)':''}</option>`).join('')}</select>
       <p class="hint">Extra frames are added at the end: everyone holds their last position until you give them more to do. Shortening cuts frames off the end.</p></div>
     ${syncing() ? `<label class="check"><input type="checkbox" id="mvPlayers"${m.forPlayers ? ' checked' : ''}> Share with players and parents</label>
-      <p class="hint">They can watch it but not change it. They see it after you sync${m.draft ? ', once it is shared with the group' : ''}.</p>` : ''}
+      <p class="hint">They can watch it but not change it. They see it after you sync${m.draft ? ', once it is shared with the coaches' : ''}.</p>` : ''}
     <div class="row-btns"><button class="btn" id="mvSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn ghost" id="mvShare">Share this drill</button>
-    ${fbOn() ? '<button class="btn ghost" id="mvSend">Send to another group</button>' : ''}`,
+    ${fbOn() ? '<button class="btn ghost" id="mvSend">Send to another team</button>' : ''}`,
     el => {
       let cat = catOf(m);
       $$('[data-cat]', el).forEach(b => b.addEventListener('click', () => { cat = b.dataset.cat; $$('[data-cat]', el).forEach(x => x.classList.toggle('on', x === b)); }));
@@ -1378,7 +1404,7 @@ $('#edPasses').addEventListener('click', () => {
   showMoveIcon('ball');
 });
 $('#edState').addEventListener('click', () => { const m = curMove(); if(!m) return;
-  if(m.draft) askConfirm(`Share ${m.name} with ${S.sync.groupName}?`, 'Everyone in the group gets it the next time you sync, and they can see and edit it from then on.', 'Share with group', () => { shareMove(m); renderEditor(); });
+  if(m.draft) askConfirm(`Share ${m.name} with ${S.sync.groupName}?`, 'The other coaches get it the next time you sync, and they can see and edit it from then on.', 'Share with coaches', () => { shareMove(m); renderEditor(); });
   else { unshareMove(m); } });
 function addIconToMove(m, id){
   const t = team();
@@ -1818,11 +1844,12 @@ function teamSettings(t, isNew){
   const sizeOpts = cur => [15,13,12,11,10,9,8].concat(cur===14 ? [14] : []).map(n => `<option value="${n}"${n===cur?' selected':''}>${n}-a-side · ${FORMAT_NOTE[n]}</option>`).join('');
   const benchOpts = cur => [...Array(13)].map((_,n) => `<option value="${n}"${n===cur?' selected':''}>${n ? n+' replacement'+(n>1?'s':'') : 'No replacements'}</option>`).join('');
   const preview = n => pitchNums({size:n}).map(k => `<span><b>${k}</b> ${esc(posName(k, {size:n}))}</span>`).join('');
-  openSheet(`<div class="eyebrow">${isNew ? 'New team' : 'Team settings'}</div><h2>${esc(t.name)}</h2>
-    <div class="field"><label class="field-label" for="tsName">Team name</label><input id="tsName" type="text" value="${esc(t.name)}"></div>
+  openSheet(`<div class="eyebrow">${isNew ? 'New selection' : 'Selection settings'}</div><h2>${esc(t.name)}</h2>
+    <div class="field"><label class="field-label" for="tsName">Selection name</label><input id="tsName" type="text" value="${esc(t.name)}"></div>
     <div class="field"><label class="field-label" for="tsSize">Players on the pitch</label><select id="tsSize">${sizeOpts(teamSize(t))}</select></div>
     <div class="fmt" id="tsPreview">${preview(teamSize(t))}</div>
     <div class="field"><label class="field-label" for="tsBench">Replacements</label><select id="tsBench">${benchOpts(benchSize(t))}</select></div>
+    ${subsOf().length ? `<div class="field"><label class="field-label" for="tsSub">Picks from</label><select id="tsSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}"${t.sub === sb.id ? ' selected' : ''}>${esc(sb.name)}</option>`).join('')}</select><p class="hint">Players from the rest of the squad can still be borrowed.</p></div>` : ''}
     <p class="hint" id="tsWarn"></p>
     <div class="row-btns"><button class="btn" id="tsSave">${isNew ? (S.players.length ? 'Save and pick the team' : 'Save and add squad') : 'Save'}</button><button class="btn ghost" data-close>${isNew ? 'Skip' : 'Cancel'}</button></div>
     ${isNew ? '' : `<button class="btn danger" id="tmDel">Delete “${esc(t.name)}”</button>`}`,
@@ -1831,45 +1858,54 @@ function teamSettings(t, isNew){
       const warn = () => {
         const keep = allShirts({size:size(), bench:bench()}), lost = Object.keys(t.selection).filter(n => !keep.includes(+n) && t.selection[n].playerId).length;
         $('#tsPreview', el).innerHTML = preview(size());
-        $('#tsWarn', el).textContent = (size() !== teamSize(t) ? 'Changing the team size moves every shirt back to its standard spot on the Pitch tab. ' : '') +
-          (lost ? `${lost} player${lost>1?'s':''} in shirts this team no longer uses will be taken off the team sheet (they stay in the squad).` : '');
+        $('#tsWarn', el).textContent = (size() !== teamSize(t) ? 'Changing the size moves every shirt back to its standard spot on the Pitch tab. ' : '') +
+          (lost ? `${lost} player${lost>1?'s':''} in shirts this selection no longer uses will be taken off the team sheet (they stay in the squad).` : '');
       };
       $('#tsSize', el).addEventListener('change', warn); $('#tsBench', el).addEventListener('change', warn); warn();
       $('#tsSave', el).addEventListener('click', () => {
         const N = size(), B = bench(), keep = allShirts({size:N, bench:B}), resized = N !== teamSize(t);
         t.name = $('#tsName', el).value.trim() || t.name; t.size = N; t.bench = B;
+        const ts = $('#tsSub', el); if(ts){ if(ts.value) t.sub = ts.value; else delete t.sub; }
         for(const n in t.selection){ const sl = t.selection[n];
           if(!keep.includes(+n)) sl.playerId = null;
           if(resized){ delete sl.x; delete sl.y; } }
         save(); closeSheet(); teamZoomed = false; renderAll();
-        if(!isNew) toast(resized ? `Now ${N}-a-side` : 'Team settings saved'); // a new team's welcome runs from the sheet's close handler
+        if(!isNew) toast(resized ? `Now ${N}-a-side` : 'Selection settings saved'); // a new team's welcome runs from the sheet's close handler
       });
-      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its squad list and team selection will be deleted from this phone, and from everyone in the group when you sync. Drills are kept.' : 'Its squad list and team selection will be deleted from this phone. Drills are kept. Share it first if you want a copy.', 'Delete team', () => {
-        S.teams = S.teams.filter(x => x.id !== t.id); if(!S.teams.length) S.teams.push(newTeam('My team'));
-        S.currentTeamId = S.teams[0].id; ME.moveId = null; save(); renderAll(); toast('Team deleted');
+      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its team sheet will be deleted from this phone, and from the other coaches’ phones when you sync. The squad and drills are kept.' : 'Its team sheet will be deleted from this phone. The squad and drills are kept. Share it first if you want a copy.', 'Delete selection', () => {
+        S.teams = S.teams.filter(x => x.id !== t.id); if(!S.teams.length) S.teams.push(newTeam('Main selection'));
+        S.currentTeamId = S.teams[0].id; ME.moveId = null; save(); renderAll(); toast('Selection deleted');
       }));
     }, () => { if(isNew){ // a new team shares the existing squad, so go straight to picking its team sheet
-      if(S.players.length){ showTab('select'); toast(`Team created. Pick its team from the squad of ${S.players.length}.`); } else { showTab('squad'); toast('Team created. Add your squad.'); } } });
+      if(S.players.length){ showTab('select'); toast(`Selection created. Pick its team from the squad of ${S.players.length}.`); } else { showTab('squad'); toast('Selection created. Add your squad.'); } } });
+}
+// the selection menu: standing selections, then team sheets for coming fixtures, then past ones (folded away)
+function menuTeams(cur){
+  const dateOf = x => { const e = selEventOf(x); return e ? e.date + e.time : ''; }, today = ymd(new Date());
+  const standing = S.teams.filter(x => !x.eventId), match = S.teams.filter(x => x.eventId).sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
+  const past = match.filter(x => !dateOf(x) || dateOf(x).slice(0, 10) < today), next = match.filter(x => !past.includes(x));
+  return standing.concat(next.length ? ['<div class="section-h"><span>Fixtures</span></div>', ...next] : [])
+    .concat(past.length ? [`<details${past.includes(cur) ? ' open' : ''}><summary class="section-h"><span>Past fixtures · ${past.length}</span></summary>`, ...past, '</details>'] : []);
 }
 $('#teamBtn').addEventListener('click', () => {
   if(isViewer()) return showGroup();
   const t = team();
   const gc = syncing() ? groupColour(S.sync.group) : 'var(--accent)', others = Object.keys(S.parked || {}).length;
-  openSheet(`${fbOn() ? (syncing() ? `<button class="gcard" id="tmGroup" style="--gc:${gc}"><span class="eyebrow">Group${others ? ` · 1 of ${others+1} on this phone` : ''}</span><b>${esc(S.sync.groupName)}</b><small>${others ? 'Switch group, ' : ''}sync, invite coaches, codes ›</small></button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
+  openSheet(`${fbOn() ? (syncing() ? `<button class="gcard" id="tmGroup" style="--gc:${gc}"><span class="eyebrow">Team${others ? ` · 1 of ${others+1} on this phone` : ''}</span><b>${esc(S.sync.groupName)}</b><small>${others ? 'Switch team, ' : ''}sync, invite coaches, codes ›</small></button>` : `<button class="btn ghost" id="tmGroup">Join a team</button>`) : ''}
     <div class="teams-in" style="--gc:${gc}">
-    <div class="eyebrow" style="color:${gc}">${syncing() ? 'Teams in '+esc(S.sync.groupName) : 'Teams on this phone'}</div><h2>Switch team</h2>
-    <div class="tlist">${S.teams.map(x=>`<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${esc(x.name)} <span class="muted" style="font-weight:500">· ${pickedCount(x)} picked</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with group</button>` : ''}</div>`).join('')}</div>
-    <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
-    <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
+    <div class="eyebrow" style="color:${gc}">${syncing() ? 'Selections in '+esc(S.sync.groupName) : 'Selections on this phone'}</div><h2>Switch selection</h2>
+    <div class="tlist">${menuTeams(t).map(x=>typeof x === 'string' ? x : `<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${x.sub && subById(x.sub) ? subTag(x.sub) + ' ' : ''}${esc(x.name)} <span class="muted" style="font-weight:500">· ${pickedCount(x)} picked</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with coaches</button>` : ''}</div>`).join('')}</div>
+    <button class="btn ghost" id="tmSettings">Selection settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
+    <div class="field"><label class="field-label" for="tmNew">New selection${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. Saxons, Cup side"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 17:18</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 17:34</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
       const gb = $('#tmGroup', el); if(gb) gb.addEventListener('click', () => { closeSheet(); syncing() ? showGroup() : showGate(true); });
-      $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id===b.dataset.togroup); x.localOnly = false; save(); closeSheet(); toast(x.name+' will go to the group when you sync'); }));
+      $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id===b.dataset.togroup); x.localOnly = false; save(); closeSheet(); toast(x.name+' will go to the other coaches when you sync'); }));
       $('#tmSettings', el).addEventListener('click', () => teamSettings(t));
-      $('#tmCreate', el).addEventListener('click', () => { const nt = newTeam($('#tmNew', el).value.trim() || 'New team'); S.teams.push(nt); S.currentTeamId = nt.id; ME.moveId = null; save(); renderAll(); teamSettings(nt, true); });
+      $('#tmCreate', el).addEventListener('click', () => { const nt = newTeam($('#tmNew', el).value.trim() || 'New selection'); S.teams.push(nt); S.currentTeamId = nt.id; ME.moveId = null; save(); renderAll(); teamSettings(nt, true); });
     });
 });
 
@@ -1912,7 +1948,7 @@ function openShare(pre){
   const moveSel = S.moves.length ? `<select id="shMove" aria-label="Move to share">${S.moves.map(m=>`<option value="${m.id}"${m.id===pre.moveId?' selected':''}>${esc(m.name)}</option>`).join('')}</select>` : '';
   openSheet(`<div class="eyebrow">Send to another coach</div><h2>Share</h2>
     <div class="opts">
-      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole team</b><small>Squad of ${S.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} drill${S.moves.length===1?'':'s'}</small></span></label>
+      <label class="opt"><input type="radio" name="shk" value="team"${pre.kind==='team'?' checked':''}><span><b>Whole selection</b><small>Squad of ${S.players.length}, the ${shirtTotal(t)} shirts, and all ${S.moves.length} drill${S.moves.length===1?'':'s'}</small></span></label>
       <label class="opt"><input type="radio" name="shk" value="lineup"${pre.kind==='lineup'?' checked':''}><span><b>Team sheet only</b><small>Who is wearing each shirt, colours and positions</small></span></label>
       ${S.moves.length?`<label class="opt"><input type="radio" name="shk" value="move"${pre.kind==='move'?' checked':''}><span style="flex:1;display:flex;flex-direction:column;gap:6px"><b>One move</b>${moveSel}</span></label>`:''}
     </div>
@@ -1969,11 +2005,11 @@ function handleImport(pl){
       for(const n in nt.selection || {}){ const sl = nt.selection[n]; if(sl && sl.playerId) sl.playerId = remap[sl.playerId] || sl.playerId; }
       delete nt.players; return nt; };
     const takeMoves = () => { for(const m of d.moves || []){ const i = S.moves.findIndex(x => x.id===m.id); if(i>=0) S.moves[i] = clone(m); else S.moves.push(clone(m)); } };
-    const addNew = () => { takeMoves(); const nt = takePlayers(clone(d)); delete nt.moves; if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); };
-    const replace = () => { takeMoves(); const i = S.teams.indexOf(existing), nt = takePlayers(clone(d)); delete nt.moves; S.teams[i] = nt; S.currentTeamId = d.id; done('Team updated'); };
-    openSheet(`<div class="eyebrow">Import team</div><h2>${esc(d.name)}</h2><p class="muted">${d.players.length} players, ${Object.values(d.selection||{}).filter(s=>s&&s.playerId).length} shirts picked, ${(d.moves||[]).length} moves.</p>
+    const addNew = () => { takeMoves(); const nt = takePlayers(clone(d)); delete nt.moves; if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Selection added'); };
+    const replace = () => { takeMoves(); const i = S.teams.indexOf(existing), nt = takePlayers(clone(d)); delete nt.moves; S.teams[i] = nt; S.currentTeamId = d.id; done('Selection updated'); };
+    openSheet(`<div class="eyebrow">Import selection</div><h2>${esc(d.name)}</h2><p class="muted">${d.players.length} players, ${Object.values(d.selection||{}).filter(s=>s&&s.playerId).length} shirts picked, ${(d.moves||[]).length} moves.</p>
       ${existing?`<p class="hint">Replacing swaps your copy of ${esc(existing.name)} (squad, team sheet and moves) for this one.</p>`:''}
-      <div class="row-btns">${existing?`<button class="btn" id="ipRep">Replace ${existing.id===d.id?'my copy':esc(existing.name)}</button>`:''}<button class="btn ${existing?'ghost':''}" id="ipNew">Add as new team</button></div><button class="btn ghost" data-close>Cancel</button>`,
+      <div class="row-btns">${existing?`<button class="btn" id="ipRep">Replace ${existing.id===d.id?'my copy':esc(existing.name)}</button>`:''}<button class="btn ${existing?'ghost':''}" id="ipNew">Add as new selection</button></div><button class="btn ghost" data-close>Cancel</button>`,
       el => { $('#ipNew', el).addEventListener('click', addNew); const r = $('#ipRep', el); if(r) r.addEventListener('click', replace); });
   } else if(pl.kind==='lineup'){
     const apply = target => {
@@ -1983,10 +2019,10 @@ function handleImport(pl){
         target.selection[n] = {playerId:pid, color:s.color||null}; if(s.x!=null){ target.selection[n].x = s.x; target.selection[n].y = s.y; } }
     };
     openSheet(`<div class="eyebrow">Import team sheet</div><h2>${esc(d.team)}</h2><p class="muted">${d.players.length} named players. Players not already in your squad will be added.</p>
-      <div class="row-btns"><button class="btn" id="ipCur">Apply to ${esc(t.name)}</button><button class="btn ghost" id="ipNew">Add as new team</button></div><button class="btn ghost" data-close>Cancel</button>`,
+      <div class="row-btns"><button class="btn" id="ipCur">Apply to ${esc(t.name)}</button><button class="btn ghost" id="ipNew">Add as new selection</button></div><button class="btn ghost" data-close>Cancel</button>`,
       el => {
         $('#ipCur', el).addEventListener('click', () => { for(const n in t.selection) t.selection[n].playerId = null; apply(t); done('Team sheet applied'); });
-        $('#ipNew', el).addEventListener('click', () => { const nt = newTeam(d.team + ' (shared)'); apply(nt); S.teams.push(nt); S.currentTeamId = nt.id; done('Team added'); });
+        $('#ipNew', el).addEventListener('click', () => { const nt = newTeam(d.team + ' (shared)'); apply(nt); S.teams.push(nt); S.currentTeamId = nt.id; done('Selection added'); });
       });
   } else if(pl.kind==='move'){
     const mv = S.moves, old = mv.find(x=>x.id===d.id) || mv.find(x=>baseName(x.name)===baseName(d.name));
@@ -2033,7 +2069,7 @@ const tidyCode = el => { if(el){ el.setAttribute('autocorrect', 'off'); el.addEv
 function hashStr(s){ let h = 0x811c9dc5; for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h>>>0).toString(36) + '.' + s.length.toString(36); }
 const syncing = () => !!(S.sync && S.sync.group);
 // Roles in a group: admin (group admin), coach, player, parent. Phones from before roles are coaches.
-const ROLE_NAMES = {admin:'Group admin', coach:'Coach', player:'Player', parent:'Parent'};
+const ROLE_NAMES = {admin:'Team admin', coach:'Coach', player:'Player', parent:'Parent'};
 const viewerRole = r => r === 'player' || r === 'parent';
 const isViewer = () => syncing() && viewerRole(S.sync.role);
 const isGroupAdmin = () => syncing() && S.sync.role === 'admin';
@@ -2183,7 +2219,7 @@ async function syncNow(choices = {}, retry = true){
   }
   for(const id of legacy){ const m = JSON.parse(live(id).json); if(!S.moves.some(x => x.id===m.id)){ S.moves.push(m); got++; } newBase[id] = hashStr(live(id).json); }
   S.moves.unshift(...copyMoves);
-  if(!S.teams.length) S.teams.push(Object.assign(newTeam('My team'), {localOnly:true}));
+  if(!S.teams.length) S.teams.push(Object.assign(newTeam('Main selection'), {localOnly:true}));
   if(!S.teams.some(t => t.id===S.currentTeamId)) S.currentTeamId = S.teams[0].id;
   if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; }
   z.base = newBase; z.lastSync = Date.now(); save();
@@ -2239,7 +2275,7 @@ async function myMember(group){
 async function refreshRole(){
   const z = S.sync, m = await myMember(z.group);
   if(m === undefined) return;
-  if(m === null){ z.removed = true; save(); if(!(await fetchGroup(z.group))){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; }
+  if(m === null){ z.removed = true; save(); if(!(await fetchGroup(z.group))){ const e = new Error('This team’s code has changed.'); e.gone = true; throw e; }
     const e = new Error('This phone is no longer in ' + z.groupName); e.removed = true; throw e; }
   const was = z.role || 'coach'; z.role = m.role; z.wants = m.wants; delete z.removed; save();
   if(was !== z.role) roleChanged(was);
@@ -2248,20 +2284,20 @@ async function refreshRole(){
 function roleChanged(was){
   const z = S.sync;
   if(viewerRole(was) !== viewerRole(z.role)){
-    stopPlay(); S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id;
+    stopPlay(); S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id;
     z.base = {}; z.lastSync = 0; ME.moveId = null; ME.editing = null;
   }
   save(); syncDot(); renderAll();
-  toast(`You are now ${z.role === 'admin' ? 'the group admin' : 'a ' + z.role} in ${z.groupName}`);
+  toast(`You are now ${z.role === 'admin' ? 'the team admin' : 'a ' + z.role} in ${z.groupName}`);
   if(!SYNCING) setTimeout(() => runSync(null, true), 0);
 }
 function showRemoved(){
   const z = S.sync;
-  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This phone is no longer in the group</h2>
-    <p class="muted">The group admin (or the site admin) has removed it, or it was never registered. To come back you need an <b>invite</b>: the group's own code, or a new one, won't let it back in.</p>
-    <ul class="hint implist"><li><b>Coaches:</b> ask the group admin for a coach invite (Group → Invite a coach).</li><li><b>Players and parents:</b> use the player or parent code.</li>
-      <li><b>If you were the group admin:</b> make a new invite on the admin page (admin.html → the group → Invite group admin), or ask another group admin.</li></ul>
-    <p class="hint">Enter the invite with Enter a code. Anything on this phone stays until you leave the group.</p>
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This phone is no longer in the team</h2>
+    <p class="muted">The team admin (or the site admin) has removed it, or it was never registered. To come back you need an <b>invite</b>: the team's own code, or a new one, won't let it back in.</p>
+    <ul class="hint implist"><li><b>Coaches:</b> ask the team admin for a coach invite (Team → Invite a coach).</li><li><b>Players and parents:</b> use the player or parent code.</li>
+      <li><b>If you were the team admin:</b> make a new invite on the admin page (admin.html → the team → Invite team admin), or ask another team admin.</li></ul>
+    <p class="hint">Enter the invite with Enter a code. Anything on this phone stays until you leave the team.</p>
     <div class="row-btns"><button class="btn" id="rmJoin">Enter a code</button><button class="btn ghost" data-close>Later</button></div>
     <button class="btn danger" id="rmLeave">Leave ${esc(z.groupName)}</button>`,
     el => {
@@ -2271,7 +2307,7 @@ function showRemoved(){
 }
 async function ensureMailbox(){
   const z = S.sync, uid = tokenUid(await fbToken());
-  const read = async () => { const g = await fb('GET', '/groups/'+z.group); if(!g){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; } return g.fields.mailbox ? normCode(g.fields.mailbox.stringValue) : ''; };
+  const read = async () => { const g = await fb('GET', '/groups/'+z.group); if(!g){ const e = new Error('This team’s code has changed.'); e.gone = true; throw e; } return g.fields.mailbox ? normCode(g.fields.mailbox.stringValue) : ''; };
   let box = await read();
   if(z.memberOf !== z.group + ':' + uid){
     await refreshRole(); z.memberOf = z.group + ':' + uid; z.seenAt = 0; save();
@@ -2316,8 +2352,8 @@ function showInbox(items){
       <div class="mmeta">From ${esc(it.fromWho || 'a coach')}${it.fromGroup ? ', '+esc(it.fromGroup) : ''}</div>
       <div class="mact"><button class="chip on" data-acc="${esc(it.id)}">Accept</button><button class="chip" data-dec="${esc(it.id)}">Decline</button></div></div></div>`; };
   const finish = () => { if(accepted){ renderAll(); runSync(); } };
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Drills sent to your group</h2>
-    <p class="muted">Accepted drills are added for every team in your group. Declined drills are thrown away.</p>
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Drills sent to your team</h2>
+    <p class="muted">Accepted drills are added to your team for every selection. Declined drills are thrown away.</p>
     <div id="inList">${items.map(card).join('')}</div>
     <button class="btn ghost wide" data-close>Decide later</button>`,
     el => {
@@ -2328,7 +2364,7 @@ function showInbox(items){
         catch(e){ if(e.status !== 404){ toast(niceErr(e)); $$('button', row).forEach(b => b.disabled = false); return; } }
         if(accept){
           const m = JSON.parse(it.json); if(S.moves.some(x => x.id === m.id)) m.id = uid();
-          if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another group'})`;
+          if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another team'})`;
           S.moves.unshift(m); save(); accepted++;
         }
         row.remove(); toast(accept ? 'Drill added' : 'Drill declined');
@@ -2340,8 +2376,8 @@ function showInbox(items){
 }
 function sendToGroup(m){
   const recent = (S.ui.sendTo || []).slice(0, 4);
-  openSheet(`<div class="eyebrow">Send to another group</div><h2>${esc(m.name)}</h2>
-    <p class="muted">Enter the other group's <b>send code</b>. They are asked to accept the drill the next time one of their coaches opens the app.</p>
+  openSheet(`<div class="eyebrow">Send to another team</div><h2>${esc(m.name)}</h2>
+    <p class="muted">Enter the other team's <b>send code</b>. They are asked to accept the drill the next time one of their coaches opens the app.</p>
     <div class="field"><label class="field-label" for="sgCode">Their send code</label><input id="sgCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
     ${recent.length ? `<div class="mact">${recent.map(c => `<button class="chip" data-rc="${c}">${fmtCode(c)}</button>`).join('')}</div>` : ''}
     <div class="row-btns"><button class="btn" id="sgGo">Send move</button><button class="btn ghost" data-close>Cancel</button></div>
@@ -2352,15 +2388,15 @@ function sendToGroup(m){
       $('#sgGo', el).addEventListener('click', async () => {
         const code = normCode($('#sgCode', el).value), err = t => { $('#sgErr', el).textContent = t; };
         if(code.length !== 10) return err('Enter the 10-character send code.');
-        if(syncing() && code === S.sync.mailbox) return err('That is your own group’s send code.');
-        if(syncing() && code === S.sync.group) return err('That is your group’s join code. Ask the other group for their send code.');
+        if(syncing() && code === S.sync.mailbox) return err('That is your own team’s send code.');
+        if(syncing() && code === S.sync.group) return err('That is your team’s join code. Ask the other team for their send code.');
         $('#sgGo', el).disabled = true; err('Sending…');
         const z = S.sync || {}, fields = {json:{stringValue: JSON.stringify(Object.assign({}, m, {localOnly: undefined, draft: undefined}))}, fromGroup:{stringValue: z.groupName || ''}, fromWho:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}};
         try {
           await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`mailboxes/${code}/items/${uid()}`), fields}, currentDocument:{exists:false}}]});
           S.ui.sendTo = [code].concat((S.ui.sendTo || []).filter(c => c !== code)).slice(0, 6); save();
           closeSheet(); toast('Drill sent. They will be asked to accept it.');
-        } catch(e){ $('#sgGo', el).disabled = false; err(e.status===403 ? 'No group has that send code. Check it with the other group.' : niceErr(e)); }
+        } catch(e){ $('#sgGo', el).disabled = false; err(e.status===403 ? 'No team has that send code. Check it with the other team.' : niceErr(e)); }
       });
     });
 }
@@ -2393,11 +2429,11 @@ async function runSync(choices, quiet){
 // phone can only be moved to the same group; its teams, moves and unsynced changes carry straight on.
 function askNewCode(){
   const z = S.sync, old = z.group;
-  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This group has a new code</h2>
-    <p class="muted">The code this phone joined with no longer works. Your head coach has changed it, or removed the group. Enter the new join code to carry on; your teams, moves and any changes you haven't synced are kept.</p>
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This team has a new code</h2>
+    <p class="muted">The code this phone joined with no longer works. Your team admin has changed it, or removed the team. Enter the new join code to carry on; your selections, drills and any changes you haven't synced are kept.</p>
     <div class="field"><label class="field-label" for="ncCode">New join code</label><input id="ncCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
     <div class="row-btns"><button class="btn" id="ncGo">Continue</button><button class="btn ghost" data-close>Later</button></div>
-    <button class="btn danger" id="ncLeave">Leave this group</button>
+    <button class="btn danger" id="ncLeave">Leave this team</button>
     <p class="hint" id="ncErr" role="alert"></p>`,
     el => {
       tidyCode($('#ncCode', el));
@@ -2407,8 +2443,8 @@ function askNewCode(){
         err('Checking…');
         try {
           const grp = await fetchGroup(code);
-          if(!grp) return err('No group has that code. Check it with your head coach.');
-          if(!grp.formerly.includes(old)) return err('That code is for a different group. To join it as well, use Group → Add another group.');
+          if(!grp) return err('No team has that code. Check it with your team admin.');
+          if(!grp.formerly.includes(old)) return err('That code is for a different team. To join it as well, use Team → Add another team.');
           z.group = grp.code; z.groupName = grp.name; delete z.memberOf; delete z.mailbox; save();
           closeSheet(); renderAll(); runSync();
         } catch(e){ err(niceErr(e)); }
@@ -2419,7 +2455,7 @@ function askNewCode(){
 function askTeamConflicts(needs, choices){
   const n = needs[0];
   openSheet(`<div class="eyebrow">Sync</div><h2>${esc(n.name)} changed on two phones</h2>
-    <p class="muted">You and ${n.by ? esc(n.by) : 'another coach'} both changed this team's name, squad or team sheet since the last sync. Drills are not affected. Which version should everyone keep?</p>
+    <p class="muted">You and ${n.by ? esc(n.by) : 'another coach'} both changed this selection's name or team sheet since the last sync. Drills are not affected. Which version should everyone keep?</p>
     <div class="row-btns"><button class="btn" id="cfMine">Keep mine</button><button class="btn ghost" id="cfTheirs">Keep ${n.by ? esc(n.by)+'’s' : 'theirs'}</button></div><button class="btn ghost" data-close>Cancel sync</button>`,
     el => {
       const pick = c => { choices[n.teamId] = c; closeSheet(); runSync(choices); };
@@ -2429,7 +2465,7 @@ function askTeamConflicts(needs, choices){
 function syncDot(){
   const b = $('#syncBtn'); b.hidden = !fbOn(); if(!fbOn()) return;
   const n = pendingChanges(); b.classList.toggle('dirty', n > 0);
-  b.setAttribute('aria-label', !syncing() ? 'Join a group' : n ? `Sync (${n} change${n>1?'s':''} not sent)` : 'Sync with your group');
+  b.setAttribute('aria-label', !syncing() ? 'Join a team' : n ? `Sync (${n} change${n>1?'s':''} not sent)` : 'Sync with your team');
 }
 const ago = t => { if(!t) return 'never'; const s = (Date.now()-t)/1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s/60)+' min ago' : s < 86400 ? Math.round(s/3600)+' h ago' : new Date(t).toLocaleDateString('en-GB'); };
 $('#syncBtn').addEventListener('click', () => syncing() ? runSync() : showGate(true));
@@ -2459,32 +2495,32 @@ async function redeem(code, who){
   if(inv){
     const f = inv.fields || {}, group = f.group ? f.group.stringValue : '', role = f.role ? f.role.stringValue : '';
     const single = !!(f.single && f.single.booleanValue), usedBy = f.usedBy ? f.usedBy.stringValue : '';
-    const grp = await fetchGroup(group); if(!grp || !ROLE_NAMES[role]) return {err: 'That code is for a group that no longer exists.'};
+    const grp = await fetchGroup(group); if(!grp || !ROLE_NAMES[role]) return {err: 'That code is for a team that no longer exists.'};
     const mine = await myMember(group);
-    if(mine) return {grp, role: mine.role, note: mine.role !== role ? `This phone is already in ${grp.name} as ${ROLE_NAMES[mine.role].toLowerCase()}. The group admin can change that in Group → People.` : ''};
-    if(single && usedBy && usedBy !== uid) return {err: 'This invite has already been used. Ask your group admin for a new one.'};
+    if(mine) return {grp, role: mine.role, note: mine.role !== role ? `This phone is already in ${grp.name} as ${ROLE_NAMES[mine.role].toLowerCase()}. The team admin can change that in Team → People.` : ''};
+    if(single && usedBy && usedBy !== uid) return {err: 'This invite has already been used. Ask your team admin for a new one.'};
     const writes = [{update:{name: DOCNAME(`groups/${group}/members/${uid}`), fields:{who:{stringValue: who}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}, role:{stringValue: role}, invite:{stringValue: code}}}, currentDocument:{exists:false}}];
     if(single && !usedBy) writes.push({update:{name: DOCNAME('invites/'+code), fields:{usedBy:{stringValue: uid}, usedAt:{integerValue: now}}}, updateMask:{fieldPaths:['usedBy', 'usedAt']}, currentDocument:{updateTime: inv.updateTime}});
     try { await fb('POST', ':commit', {writes}); }
-    catch(e){ if(e.status === 403 || e.status === 400 || /FAILED_PRECONDITION/.test(e.message)) return {err: 'This invite has already been used, or was cancelled. Ask your group admin for a new one.'}; throw e; }
+    catch(e){ if(e.status === 403 || e.status === 400 || /FAILED_PRECONDITION/.test(e.message)) return {err: 'This invite has already been used, or was cancelled. Ask your team admin for a new one.'}; throw e; }
     return {grp, role};
   }
   const grp = await fetchGroup(code);
-  if(!grp) return {err: 'No group has that code. Check it with whoever gave it to you; it may have been replaced by a new one.'};
+  if(!grp) return {err: 'No team has that code. Check it with whoever gave it to you; it may have been replaced by a new one.'};
   const mine = await myMember(code);
   if(mine) return {grp, role: mine.role};
   // security rules from before roles: the group's code still registers a coach
   try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${code}/members/${uid}`), fields:{who:{stringValue: who}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}}}, currentDocument:{exists:false}}]}); return {grp, role: 'coach'}; }
-  catch(e){ if(alreadyThere(e)) return {grp, role: 'coach'}; if(e.status === 403) return {err: `${grp.name} now joins by invite, so its own code won't let a new or removed phone in. Ask your group admin for a coach invite, or for the player or parent code. If you were the group admin, make a new one on the admin page: Invite group admin.`}; throw e; }
+  catch(e){ if(alreadyThere(e)) return {grp, role: 'coach'}; if(e.status === 403) return {err: `${grp.name} now joins by invite, so its own code won't let a new or removed phone in. Ask your team admin for a coach invite, or for the player or parent code. If you were the team admin, make a new one on the admin page: Invite team admin.`}; throw e; }
 }
 function showGate(canClose){
   const g = $('#gate'), pre = normCode((location.hash.match(/join=([\w-]+)/)||[])[1]);
   g.innerHTML = `<div class="gate-in">
-    <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Add another group' : 'Join your group'}</h1>
-    <p class="muted">Enter the code you were given. Coaches get an invite from their group admin; players and parents use the group's player or parent code. Coaches share teams and drills and tap Sync to swap changes; players and parents watch the drills their coaches share.</p>
+    <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Add another team' : 'Join your team'}</h1>
+    <p class="muted">Enter the code you were given. Coaches get an invite from their team admin; players and parents use the team's player or parent code. Coaches share the squad, selections and drills, and tap Sync to swap changes; players and parents watch the drills their coaches share.</p>
     <div class="field"><label class="field-label" for="gtCode">Code</label><input id="gtCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK" value="${pre ? fmtCode(pre) : ''}"></div>
-    <div class="field"><label class="field-label" for="gtWho">Your name</label><input id="gtWho" type="text" placeholder="Shown to your group, e.g. Chris" value="${esc((S.sync||{}).who||'')}"></div>
-    <button class="btn wide" id="gtJoin">Join group</button>
+    <div class="field"><label class="field-label" for="gtWho">Your name</label><input id="gtWho" type="text" placeholder="Shown to your team, e.g. Chris" value="${esc((S.sync||{}).who||'')}"></div>
+    <button class="btn wide" id="gtJoin">Join team</button>
     ${canClose ? '<button class="btn ghost wide" id="gtClose">Cancel</button>' : ''}
     <p class="hint" id="gtErr" role="alert"></p></div>`;
   g.hidden = false;
@@ -2503,7 +2539,7 @@ function showGate(canClose){
     phoneAuth();
     const viewer = viewerRole(role);
     if(syncing()) parkGroup();
-    if(syncing() || viewer){ S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
+    if(syncing() || viewer){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
     S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, base: {}, lastSync: 0}; save();
     syncDot(); renderAll();
     if(note) toast(note); else if(role !== 'coach') toast(`Welcome to ${grp.name}. You joined as ${ROLE_NAMES[role].toLowerCase()}.`);
@@ -2528,11 +2564,11 @@ async function chooseUploads(){
   const teams = S.teams.filter(t => !t.placeholder && !inGroup('t_'+t.id)), moves = S.moves.filter(m => !inGroup('mv_'+m.id));
   const squad = S.players.filter(pl => !inGroup('p_'+pl.id)), groupHasSquad = live.some(r => r.kind==='player'), sampleSquad = squad.length && squad.every(pl => SAMPLE_NAMES.has(pl.name));
   if(!teams.length && !moves.length && !squad.length){ runSync(); return; }
-  const opt = (kind, id, name, info, dup, sample, dupText = 'the group already has one with this name') => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · '+dupText:''}${sample?' · sample data':''}</small></span></label>`;
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share with the group?</h2>
-    <p class="muted">Ticked items go to the group when you sync. Unticked teams stay on this phone, and unticked drills go into your drafts; you can share them later.</p>
-    ${teams.length ? `<div class="field-label">Teams</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, pickedCount(t)+' players picked', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
-    ${squad.length ? `<div class="field-label">Squad</div><div class="opts">${opt('s', 'all', squad.length+' player'+(squad.length>1?'s':''), esc(squad.slice(0, 4).map(pl => pl.name).join(', '))+(squad.length > 4 ? '…' : ''), groupHasSquad, sampleSquad, 'the group already has a squad; if unticked they stay on this phone')}</div>` : ''}
+  const opt = (kind, id, name, info, dup, sample, dupText = 'the team already has one with this name') => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · '+dupText:''}${sample?' · sample data':''}</small></span></label>`;
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share with the other coaches?</h2>
+    <p class="muted">Ticked items go to the team when you sync. Unticked selections stay on this phone, and unticked drills go into your drafts; you can share them later.</p>
+    ${teams.length ? `<div class="field-label">Selections</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, pickedCount(t)+' players picked', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
+    ${squad.length ? `<div class="field-label">Squad</div><div class="opts">${opt('s', 'all', squad.length+' player'+(squad.length>1?'s':''), esc(squad.slice(0, 4).map(pl => pl.name).join(', '))+(squad.length > 4 ? '…' : ''), groupHasSquad, sampleSquad, 'the team already has a squad; if unticked they stay on this phone')}</div>` : ''}
     ${moves.length ? `<div class="field-label">Drills</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
     <button class="btn wide" id="upGo">Sync now</button>`,
     el => $('#upGo', el).addEventListener('click', () => {
@@ -2573,7 +2609,7 @@ async function shareText(text, title, fallback){
 function joinText(code, role){
   const z = S.sync, link = linkBase() + '#join=' + fmtCode(code);
   return viewerRole(role) ? `${z.groupName} ${role}s: watch the drills your coaches share in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${link}`
-    : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a group admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}`;
+    : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a team admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}`;
 }
 function leaveGroup(){
   const z = S.sync, others = Object.keys(S.parked || {});
@@ -2582,10 +2618,10 @@ function leaveGroup(){
 }
 function showGroup(){
   const z = S.sync, n = pendingChanges(), viewer = isViewer(), admin = isGroupAdmin(), others = Object.keys(S.parked || {});
-  const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your group · ${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} team${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
-  const tail = `<div class="field"><label class="field-label" for="gpWho">Your name in the group</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
-    <div class="field"><div class="field-label">Groups on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
-      <button class="btn ghost" id="gpAdd">Add another group</button></div>
+  const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your team · ${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} selection${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
+  const tail = `<div class="field"><label class="field-label" for="gpWho">Your name in the team</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
+    <div class="field"><div class="field-label">Teams on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
+      <button class="btn ghost" id="gpAdd">Add another team</button></div>
     <button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>`;
   const wireTail = el => {
     $('#gpSync', el).addEventListener('click', () => { closeSheet(); runSync(); });
@@ -2594,14 +2630,14 @@ function showGroup(){
     $('#gpAdd', el).addEventListener('click', () => { closeSheet(); showGate(true); });
     $('#gpLeave', el).addEventListener('click', () => askConfirm('Leave '+z.groupName+'?',
       viewer ? 'Its drills are removed from this phone. You need the code to join again.'
-      : others.length ? `Its teams and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The group keeps everything you've synced. To come back you need a new invite from the group admin.`
-      : 'Your teams stay on this phone but stop syncing. To come back you need a new invite from the group admin.', 'Leave group', leaveGroup));
+      : others.length ? `Its selections and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The team keeps everything you've synced. To come back you need a new invite from the team admin.`
+      : 'Your selections stay on this phone but stop syncing. To come back you need a new invite from the team admin.', 'Leave team', leaveGroup));
   };
   if(viewer) return openSheet(`${card}
     <p class="muted">Updated ${ago(z.lastSync)}.</p>
     <button class="btn wide" id="gpSync">Check for new drills and fixtures</button>
-    <div class="field"><div class="field-label">Are you a coach?</div>${z.wants ? '<p class="muted">You have asked for coach access. The group admin will see your request next time they open the group.</p>'
-      : '<p class="hint">Coaches can change teams and drills. Ask the group admin to make this phone a coach.</p><button class="btn ghost" id="gpAsk">Ask for coach access</button>'}</div>
+    <div class="field"><div class="field-label">Are you a coach?</div>${z.wants ? '<p class="muted">You have asked for coach access. The team admin will see your request next time they open the team.</p>'
+      : '<p class="hint">Coaches can change the squad, selections and drills. Ask the team admin to make this phone a coach.</p><button class="btn ghost" id="gpAsk">Ask for coach access</button>'}</div>
     ${tail}`,
     el => {
       wireTail(el);
@@ -2609,7 +2645,7 @@ function showGroup(){
         ask.disabled = true;
         try { const uid = tokenUid(await fbToken());
           await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{wants:{stringValue:'coach'}}}, updateMask:{fieldPaths:['wants']}, currentDocument:{exists:true}}]});
-          z.wants = 'coach'; save(); toast('Request sent to the group admin'); showGroup(); }
+          z.wants = 'coach'; save(); toast('Request sent to the team admin'); showGroup(); }
         catch(e){ ask.disabled = false; toast(niceErr(e)); }
       });
     });
@@ -2618,12 +2654,12 @@ function showGroup(){
     <button class="btn wide" id="gpSync">Sync now</button>
     <div class="field"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
     ${admin ? `<div class="field"><div class="field-label">Invite coaches</div><p class="hint">Each invite works once, on one phone.</p>
-        <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a group admin</button></div><div id="gpInvites"></div></div>
+        <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a team admin</button></div><div id="gpInvites"></div></div>
       <div class="field"><div class="field-label">People</div><div id="gpPeople"><p class="muted">Loading…</p></div></div>`
-      : '<p class="hint">To add another coach, ask your group admin for an invite.</p>'}
-    <div class="field"><div class="field-label">Send code · give this to other groups</div><div class="rcode"><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div><button class="chip" id="gpSend">Share</button></div>
-      <p class="hint">Other groups use it to send you drills. It can't be used to see or change anything in your group.</p></div>
-    <div class="field"><div class="field-label">Drills sent to this group</div><div class="add-row"><p class="muted" id="gpInbox" style="align-self:center">Tap Check now to look for drills other groups have sent.</p><button class="btn ghost" id="gpCheck">Check now</button></div></div>
+      : '<p class="hint">To add another coach, ask your team admin for an invite.</p>'}
+    <div class="field"><div class="field-label">Send code · give this to other teams</div><div class="rcode"><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div><button class="chip" id="gpSend">Share</button></div>
+      <p class="hint">Other teams use it to send you drills. It can't be used to see or change anything in your team.</p></div>
+    <div class="field"><div class="field-label">Drills sent to this team</div><div class="add-row"><p class="muted" id="gpInbox" style="align-self:center">Tap Check now to look for drills other teams have sent.</p><button class="btn ghost" id="gpCheck">Check now</button></div></div>
     ${tail}`,
     el => {
       wireTail(el);
@@ -2633,9 +2669,9 @@ function showGroup(){
         try {
           const c = await getCodes(); if(!live()) return;
           const row = (k, label) => c[k] ? `<small class="muted">${label}</small><div class="rcode"><div class="gcode">${fmtCode(c[k])}</div><button class="chip" data-shc="${k}">Share</button>${admin ? `<button class="chip" data-nwc="${k}">New code</button>` : ''}</div>` : '';
-          box.innerHTML = c.player || c.parent ? row('player', 'Players') + row('parent', 'Parents') + '<p class="hint">Players and parents can watch the drills you share with them, and nothing else. Any number of phones can use these codes.</p>'
+          box.innerHTML = c.player || c.parent ? row('player', 'Players') + row('parent', 'Parents') + '<p class="hint">Players and parents can see the fixtures and the drills you share with them, and nothing else. Any number of phones can use these codes.</p>'
             : admin ? '<p class="hint">Players and parents join with their own codes and only see the drills you share with them.</p><button class="btn ghost" id="gpMk">Make player and parent codes</button>'
-            : '<p class="hint">Your group admin hasn’t made them yet.</p>';
+            : '<p class="hint">Your team admin hasn’t made them yet.</p>';
           $$('[data-shc]', box).forEach(b => b.addEventListener('click', () => shareText(joinText(c[b.dataset.shc], b.dataset.shc), z.groupName, 'Code: ' + fmtCode(c[b.dataset.shc]))));
           $$('[data-nwc]', box).forEach(b => b.addEventListener('click', () => {
             if(b.dataset.sure){ b.disabled = true; newRoleCode(b.dataset.nwc, c[b.dataset.nwc]).then(() => { toast('New code made. The old one no longer lets new phones in.'); loadCodes(); }, e => { b.disabled = false; toast(niceErr(e)); }); }
@@ -2668,7 +2704,7 @@ function showGroup(){
           const nm = uid => (ms.find(m => m.uid === uid) || {}).who || 'They';
           $$('[data-ok]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.ok, {role:'coach', wants:null}), `${nm(b.dataset.ok)} is now a coach`)));
           $$('[data-no]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.no, {wants:null}), 'Request declined')));
-          $$('[data-rl]', box).forEach(s => s.addEventListener('change', () => act(s, () => setMember(s.dataset.rl, viewerRole(s.value) ? {role: s.value} : {role: s.value, wants: null}), `${nm(s.dataset.rl)} is now ${s.value === 'admin' ? 'a group admin' : 'a ' + s.value}`)));
+          $$('[data-rl]', box).forEach(s => s.addEventListener('change', () => act(s, () => setMember(s.dataset.rl, viewerRole(s.value) ? {role: s.value} : {role: s.value, wants: null}), `${nm(s.dataset.rl)} is now ${s.value === 'admin' ? 'a team admin' : 'a ' + s.value}`)));
           $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
             if(b.dataset.sure) act(b, () => fb('DELETE', `/groups/${z.group}/members/${b.dataset.rm}`), `${nm(b.dataset.rm)} removed`);
             else { b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); }
@@ -2723,13 +2759,17 @@ const fixTeam = code => fixTeams().find(z => z.group === code);
 const avKey = (evId, pid) => evId + '_' + pid;
 const statusOf = (evId, pid, z = S.sync) => { const a = fixData(z).avail[avKey(evId, pid)]; return a ? a.status : ''; };
 // squad names for availability: the coaches of the open group have its squad; otherwise the roster coaches publish
-const squadNames = (z = S.sync) => z === S.sync && !isViewer() ? S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name})).sort((a, b) => a.name.localeCompare(b.name)) : (z.roster || []);
+const squadNames = (z = S.sync) => z === S.sync && !isViewer() ? S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p)})).sort((a, b) => a.name.localeCompare(b.name)) : (z.roster || []);
 const nameOfPlayer = (pid, z = S.sync) => (squadNames(z).find(p => p.id === pid) || {}).name || 'Unknown player';
 const kidsOf = z => viewerRole(z.role) ? (z.kids || []).filter(id => (z.roster || []).some(p => p.id === id)) : [];
+// the children an event is for: all of them, or those in its sub-squad
+const kidsFor = (e, z) => kidsOf(z).filter(pid => inSub((z.roster || []).find(p => p.id === pid) || {}, e.sub));
 
 async function loadFixtures(z = S.sync){
   fixData(z); const g = z.group; z.fixTried = Date.now();
-  const [ev, av, ro] = await Promise.all([listDocs(`/groups/${g}/events`), listDocs(`/groups/${g}/avail`), fb('GET', `/groups/${g}/roster/all`)]);
+  const [ev, av, ro, sq] = await Promise.all([listDocs(`/groups/${g}/events`), listDocs(`/groups/${g}/avail`), fb('GET', `/groups/${g}/roster/all`), listDocs(`/groups/${g}/squads`).catch(() => null)]);
+  if(sq) z.subs = sq.map(d => { const f = d.fields || {}; return {id: d.name.split('/').pop(), name: f.name ? f.name.stringValue : '', color: f.color ? f.color.stringValue : SUB_COLOURS[0], order: +(f.order && f.order.integerValue || 0)}; })
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
   z.events = ev.map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(e => e && e.date).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   z.avail = {};
   for(const d of av){ const f = d.fields || {}, s = k => f[k] ? f[k].stringValue : '';
@@ -2739,7 +2779,7 @@ async function loadFixtures(z = S.sync){
 }
 // coaches: keep the published squad names in step with the squad (only when they change)
 async function publishRoster(){
-  const z = S.sync, json = JSON.stringify(S.players.filter(p => !p.localOnly).map(p => ({id: p.id, name: p.name})).sort((a, b) => a.name.localeCompare(b.name)));
+  const z = S.sync, json = JSON.stringify(S.players.filter(p => !p.localOnly).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p) || undefined})).sort((a, b) => a.name.localeCompare(b.name)));
   if(z.rosterHash === hashStr(json)) return;
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/roster/all`), fields:{json:{stringValue: json}, at:{integerValue: String(Date.now())}}}}]});
   z.rosterHash = hashStr(json); save();
@@ -2764,7 +2804,7 @@ async function setAvail(evId, pid, status, z = S.sync){
 }
 function avCounts(e, z = S.sync){
   const c = {yes: 0, maybe: 0, no: 0, none: 0};
-  for(const p of squadNames(z)){ const s = statusOf(e.id, p.id, z); c[s || 'none']++; }
+  for(const p of squadNames(z)) if(inSub(p, e.sub)){ const s = statusOf(e.id, p.id, z); c[s || 'none']++; }
   return c;
 }
 const avSummary = (e, z = S.sync) => { const c = avCounts(e, z); return `<span class="st-yes">${c.yes} available</span> · <span class="st-maybe">${c.maybe} maybe</span> · <span class="st-no">${c.no} not</span> · ${c.none} no reply`; };
@@ -2773,7 +2813,7 @@ const teamPill = z => `<span class="tpill" style="--gc:${groupColour(z.group)}">
 let fixLoading = false;
 function renderFixtures(){
   const el = $('#fixBody');
-  if(!syncing()){ el.innerHTML = `<div class="empty">Fixtures and availability are shared through your group. Join a group to use them.</div>`; return; }
+  if(!syncing()){ el.innerHTML = `<div class="empty">Fixtures and availability are shared through your team. Join a team to use them.</div>`; return; }
   const all = fixTeams(), multi = all.length > 1, only = multi && all.some(z => z.group === S.ui.fixTeam) ? S.ui.fixTeam : '';
   const teams = all.filter(z => !only || z.group === only), coach = !isViewer(), past = !!S.ui.fixPast;
   const family = all.filter(z => viewerRole(z.role)), unlinked = family.filter(z => !kidsOf(z).length && (z.roster || []).length);
@@ -2786,11 +2826,11 @@ function renderFixtures(){
     const mine = z === S.sync && coach, ref = z.group + '|' + e.id;
     return `${head}<div class="evcard ev-${e.type}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
       <div class="evbody">${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
-        <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
+        <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
         ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>`
-          : kidsOf(z).map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid, z) === k ? ' on' : ''}" data-av="${z.group}|${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid, z))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
+          : kidsFor(e, z).map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid, z) === k ? ' on' : ''}" data-av="${z.group}|${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid, z))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
       </div></div>`; };
-  el.innerHTML = `<div class="section-h"><span>${only ? esc(fixTeam(only).groupName) : multi ? 'All groups' : esc(S.sync.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${S.sync.fixAt ? 'Updated ' + ago(Math.min(...all.map(z => z.fixAt || 0))) : ''}</span></div>
+  el.innerHTML = `<div class="section-h"><span>${only ? esc(fixTeam(only).groupName) : multi ? 'All teams' : esc(S.sync.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${S.sync.fixAt ? 'Updated ' + ago(Math.min(...all.map(z => z.fixAt || 0))) : ''}</span></div>
     ${multi ? `<div class="mact fixbar"><button class="chip${only ? '' : ' on'}" data-ft="">All</button>${all.map(z => `<button class="chip tchip${only === z.group ? ' on' : ''}" data-ft="${z.group}" style="--gc:${groupColour(z.group)}"><span class="gdot"></span>${esc(z.groupName)}</button>`).join('')}</div>` : ''}
     <div class="mact fixbar">${coach ? `<button class="chip on" id="fxAdd">Add${multi ? ' to ' + esc(S.sync.groupName) : ''}</button><button class="chip" id="fxImport">Import</button>` : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
       ${family.length ? `<button class="chip" id="fxKids">${players ? 'Who you are' : 'My children'}</button>` : ''}</div>
@@ -2823,10 +2863,10 @@ function linkKids(){
     return `${multi ? `<div class="section-h"><span>${teamPill(z)} ${me ? 'you, as a player' : 'your children'}</span></div>` : ''}
       ${names.length ? `<div class="opts">${names.map(p => `<label class="opt"><input type="${me ? 'radio' : 'checkbox'}" name="kid-${z.group}" data-g="${z.group}" value="${p.id}"${sel.has(p.id) ? ' checked' : ''}><span><b>${esc(p.name)}</b></span></label>`).join('')}</div>`
         : '<p class="hint">The squad list isn’t available yet. Ask a coach to open the app and sync, then tap Refresh.</p>'}`; };
-  openSheet(`<div class="eyebrow">${multi ? 'All your groups' : esc(S.sync.groupName)}</div><h2>${players ? 'Which one is you?' : 'Your children'}</h2>
-    <p class="muted">${players ? 'Pick your name, then you can say when you are available.' : 'Tick your children' + (multi ? ' in each group' : '') + '. You can then mark them available or not for each event. The coaches see who marked it.'}</p>
+  openSheet(`<div class="eyebrow">${multi ? 'All your teams' : esc(S.sync.groupName)}</div><h2>${players ? 'Which one is you?' : 'Your children'}</h2>
+    <p class="muted">${players ? 'Pick your name, then you can say when you are available.' : 'Tick your children' + (multi ? ' in each team' : '') + '. You can then mark them available or not for each event. The coaches see who marked it.'}</p>
     ${teams.map(block).join('')}
-    <p class="hint">A child in another group or club: ask that group for its parent code, then Group → Add another group. Their fixtures appear here too.</p>
+    <p class="hint">A child in another team or club: ask that team for its parent code, then Team → Add another team. Their fixtures appear here too.</p>
     <div class="row-btns"><button class="btn" id="kdSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>`,
     el => $('#kdSave', el).addEventListener('click', async () => {
       for(const z of teams) z.kids = $$(`input[data-g="${z.group}"]:checked`, el).map(i => i.value);
@@ -2839,16 +2879,16 @@ function linkKids(){
 }
 function showEvent(ref){
   const [g, id] = ref.includes('|') ? ref.split('|') : [S.sync.group, ref], z = fixTeam(g), e = z && z.events.find(x => x.id === id); if(!e) return;
-  const coach = z === S.sync && !isViewer(), coachElsewhere = z !== S.sync && !viewerRole(z.role), names = squadNames(z);
+  const coach = z === S.sync && !isViewer(), coachElsewhere = z !== S.sync && !viewerRole(z.role), names = squadNames(z).filter(p => inSub(p, e.sub)), linked = coach && selectionFor(e);
   const who = pid => { const a = z.avail[avKey(e.id, pid)]; return a && a.who ? ` <small>· ${esc(a.who)}${a.at ? ', ' + ago(a.at) : ''}</small>` : ''; };
   const groups = coach ? [...AV, ['', 'No reply', '']].map(([k, l]) => { const ps = names.filter(p => statusOf(e.id, p.id) === k);
     return ps.length ? `<div class="section-h"><span class="${k ? 'st-' + k : ''}">${l} · ${ps.length}</span></div>${ps.map(p => `<div class="mem"><div><b>${esc(p.name)}</b>${k ? who(p.id) : ''}</div>${AV.map(([s, sl, sy]) => `<button class="avb ${s}${k === s ? ' on' : ''}" data-cav="${p.id}|${s}" aria-label="${esc(p.name)}: ${sl}">${sy}</button>`).join('')}</div>`).join('')}` : ''; }).join('') : '';
-  const kids = kidsOf(z).map(pid => { const s = statusOf(e.id, pid, z); return `<div class="mem"><div><b>${esc(nameOfPlayer(pid, z))}</b></div><span class="${s ? 'st-' + s : 'muted'}">${s ? AV.find(a => a[0] === s)[1] : 'No reply yet'}</span></div>`; }).join('');
-  openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</div><h2>${esc(evTitle(e))}</h2>
+  const kids = kidsFor(e, z).map(pid => { const s = statusOf(e.id, pid, z); return `<div class="mem"><div><b>${esc(nameOfPlayer(pid, z))}</b></div><span class="${s ? 'st-' + s : 'muted'}">${s ? AV.find(a => a[0] === s)[1] : 'No reply yet'}</span></div>`; }).join('');
+  openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.sub && subById(e.sub, z) ? ' · ' + esc(subName(e.sub, z)) : ''}</div><h2>${esc(evTitle(e))}</h2>
     <p class="muted">${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
     ${kids}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
-      <div class="row-btns"><button class="btn" id="evPick">Pick team for this</button><button class="btn ghost" id="evEdit">Edit</button></div>${groups}
+      <div class="row-btns"><button class="btn" id="evPick">${linked ? `Open selection · ${pickedCount(linked)} picked` : 'Pick the team'}</button><button class="btn ghost" id="evEdit">Edit</button></div>${groups}
       <p class="hint">Tap ✓ ? ✗ to mark a player yourself, for example when a parent tells you in person.</p>` : ''}
     ${coachElsewhere ? `<button class="btn" id="evOpen">Open ${esc(z.groupName)} to see replies</button>` : ''}
     <button class="btn ghost wide" data-close>Close</button>`,
@@ -2856,7 +2896,7 @@ function showEvent(ref){
       const o = $('#evOpen', el); if(o) o.addEventListener('click', () => { closeSheet(); switchGroup(z.group); showTab('fix'); });
       if(!coach) return;
       $('#evEdit', el).addEventListener('click', () => editEvent(e));
-      $('#evPick', el).addEventListener('click', () => { S.ui.selEv = e.id; save(); closeSheet(); showTab('select'); });
+      $('#evPick', el).addEventListener('click', () => pickFor(e));
       $$('[data-cav]', el).forEach(b => b.addEventListener('click', async () => {
         const [pid, st] = b.dataset.cav.split('|'); b.disabled = true;
         try { await setAvail(e.id, pid, st); showEvent(ref); renderAll(); } catch(err){ b.disabled = false; toast(niceErr(err)); }
@@ -2869,6 +2909,7 @@ function editEvent(e){
   openSheet(`<div class="eyebrow">${isNew ? 'New event' : 'Edit event'}</div>
     <div class="field"><div class="field-label">Type</div><div class="cats">${EV_TYPES.map(([k, l]) => `<button type="button" class="chip${k === type ? ' on' : ''}" data-et="${k}">${l}</button>`).join('')}</div></div>
     <div class="field" id="evOppF"${type === 'match' ? '' : ' hidden'}><label class="field-label" for="evOpp">Opponent</label><input id="evOpp" type="text" value="${esc(e.opponent || '')}" placeholder="e.g. Hawks U12"></div>
+    ${subsOf().length ? `<div class="field"><label class="field-label" for="evSub">For</label><select id="evSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}"${e.sub === sb.id ? ' selected' : ''}>${esc(sb.name)}</option>`).join('')}</select></div>` : ''}
     <div class="field"><label class="field-label" for="evTitle">Title</label><input id="evTitle" type="text" value="${esc(e.title || '')}" placeholder="${type === 'match' ? 'Blank = “vs” and the opponent' : 'e.g. Tuesday training'}"></div>
     <div class="field evtimes"><div><label class="field-label" for="evDate">Date</label><input id="evDate" type="date" value="${e.date}"></div>
       <div><label class="field-label" for="evTime">Start</label><input id="evTime" type="time" value="${e.time || ''}"></div><div><label class="field-label" for="evEnd">End</label><input id="evEnd" type="time" value="${e.end || ''}"></div></div>
@@ -2881,6 +2922,7 @@ function editEvent(e){
       $$('[data-et]', el).forEach(b => b.addEventListener('click', () => { type = b.dataset.et; $$('[data-et]', el).forEach(x => x.classList.toggle('on', x === b)); $('#evOppF', el).hidden = type !== 'match'; }));
       $('#evSave', el).addEventListener('click', async () => {
         const v = id => $(id, el).value.trim(), ne = Object.assign({}, e, {type, title: v('#evTitle'), opponent: type === 'match' ? v('#evOpp') : '', date: v('#evDate'), time: v('#evTime'), end: v('#evEnd'), location: v('#evLoc'), notes: v('#evNotes')});
+        const es = $('#evSub', el); if(es && es.value) ne.sub = es.value; else delete ne.sub;
         if(!/^\d{4}-\d{2}-\d{2}$/.test(ne.date)) return $('#evErr', el).textContent = 'Pick a date.';
         $('#evSave', el).disabled = true;
         try { await saveEvents([ne]); closeSheet(); renderAll(); toast(isNew ? 'Event added' : 'Event saved'); }
@@ -3015,14 +3057,108 @@ function previewImport(evs, fname){
   openSheet(`<div class="eyebrow">${esc(fname)}</div><h2>Import ${evs.length} event${evs.length > 1 ? 's' : ''}?</h2>
     <p class="muted">Untick any you don't want.${past ? ` ${past} already happened and start unticked.` : ''} Events imported before from the same file are updated, not added twice.</p>
     <div class="opts">${evs.map((e, i) => `<label class="opt"><input type="checkbox" data-im="${i}"${e.date < today ? '' : ' checked'}><span><b>${esc(evTitle(e))}</b><small>${evWhen(e)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.location ? ' · ' + esc(e.location) : ''}${byKey[e.key] ? ' · updates the existing one' : ''}</small></span></label>`).join('')}</div>
+    ${subsOf().length ? `<div class="field"><label class="field-label" for="imSub">For</label><select id="imSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}">${esc(sb.name)}</option>`).join('')}</select></div>` : ''}
     <div class="row-btns"><button class="btn" id="imGo">Import</button><button class="btn ghost" data-close>Cancel</button></div><p class="hint" id="imErr" role="alert"></p>`,
     el => $('#imGo', el).addEventListener('click', async () => {
       const pick = $$('[data-im]:checked', el).map(c => evs[+c.dataset.im]); if(!pick.length) return closeSheet();
-      const list = pick.map(e => Object.assign({}, byKey[e.key] || {id: uid()}, e, {id: (byKey[e.key] || {}).id || uid()}));
+      const isub = $('#imSub', el) ? $('#imSub', el).value : '';
+      const list = pick.map(e => Object.assign({}, byKey[e.key] || {id: uid()}, e, {id: (byKey[e.key] || {}).id || uid()}, isub ? {sub: isub} : {}));
       $('#imGo', el).disabled = true; $('#imErr', el).textContent = 'Importing…';
       try { await saveEvents(list); closeSheet(); S.ui.fixPast = false; save(); showTab('fix'); toast(`${list.length} event${list.length > 1 ? 's' : ''} imported`); }
       catch(err){ $('#imGo', el).disabled = false; $('#imErr', el).textContent = niceErr(err); }
     }));
+}
+
+/* ---------- SUB-SQUADS ----------
+   A team has one squad unless its coaches split it into sub-squads (e.g. U9 Saxons, Vikings, Exiles). Sub-squads are
+   groups/<id>/squads/<sub id> ({name, color, order}), changed straight away like fixtures and loaded with them
+   (kept in the team's sync on the phone as z.subs). Each squad player has p.sub (synced with the squad); a selection
+   (t.sub) picks from one sub-squad and can borrow anyone else; an event (e.sub) can be for one sub-squad. */
+const SUB_COLOURS = ['#E4573F', '#2F7CF0', '#5BC77A', '#F2C230', '#B98CF5', '#F0883E', '#4FD1A5', '#F06BA8'];
+const subsOf = (z = S.sync) => (z && z.subs) || [];
+const subById = (id, z) => id ? subsOf(z).find(s => s.id === id) : null;
+const subOfPlayer = p => p && p.sub && subById(p.sub) ? p.sub : '';
+const subName = (id, z) => (subById(id, z) || {}).name || '';
+const subTag = (id, z) => { const s = subById(id, z); return s ? `<span class="stag" style="--sc:${s.color}">${esc(s.name)}</span>` : ''; };
+const inSub = (p, sub) => !sub || p.sub === sub; // p: a squad player or a roster entry
+async function saveSub(sub){
+  const z = S.sync;
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/squads/${sub.id}`), fields:{name:{stringValue: sub.name}, color:{stringValue: sub.color}, order:{integerValue: String(sub.order || 0)}}}}]});
+  z.subs = subsOf().filter(s => s.id !== sub.id).concat(sub).sort((a, b) => a.order - b.order || a.name.localeCompare(b.name)); save();
+}
+async function deleteSub(sub){
+  const z = S.sync;
+  await fb('DELETE', `/groups/${z.group}/squads/${sub.id}`);
+  z.subs = subsOf().filter(s => s.id !== sub.id);
+  S.players.forEach(p => { if(p.sub === sub.id) delete p.sub; }); S.teams.forEach(t => { if(t.sub === sub.id) delete t.sub; });
+  save();
+}
+function manageSubs(){
+  const z = S.sync, subs = subsOf(), count = id => S.players.filter(p => subOfPlayer(p) === id).length;
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>Sub-squads</h2>
+    <p class="muted">Split the squad into smaller squads, e.g. Saxons, Vikings and Exiles. Each selection picks from one sub-squad and can borrow players from the others. With none, the team has one squad.</p>
+    ${subs.map(s => `<div class="mem"><span class="sdot" style="--sc:${s.color}"></span><div><b>${esc(s.name)}</b><small>${count(s.id)} player${count(s.id) === 1 ? '' : 's'}</small></div><button class="chip" data-sp="${s.id}">Players</button><button class="chip" data-se="${s.id}">Edit</button></div>`).join('')}
+    ${subs.length ? `<p class="hint">${S.players.filter(p => !subOfPlayer(p)).length} not in a sub-squad.</p>` : ''}
+    <div class="field"><label class="field-label" for="sbNew">New sub-squad</label><div class="add-row"><input id="sbNew" type="text" placeholder="e.g. Saxons"><button class="btn" id="sbAdd">Add</button></div></div>
+    <button class="btn ghost wide" data-close>Done</button>`,
+    el => {
+      $$('[data-sp]', el).forEach(b => b.addEventListener('click', () => subPlayers(subById(b.dataset.sp))));
+      $$('[data-se]', el).forEach(b => b.addEventListener('click', () => editSub(subById(b.dataset.se))));
+      $('#sbAdd', el).addEventListener('click', async () => {
+        const name = $('#sbNew', el).value.trim(); if(!name) return $('#sbNew', el).focus();
+        const sub = {id: uid(), name, color: SUB_COLOURS[subs.length % SUB_COLOURS.length], order: subs.length};
+        $('#sbAdd', el).disabled = true;
+        try { await saveSub(sub); renderAll(); subPlayers(sub); } catch(e){ $('#sbAdd', el).disabled = false; toast(niceErr(e)); }
+      });
+    });
+}
+function subPlayers(sub){
+  const list = [...S.players].sort((a, b) => a.name.localeCompare(b.name));
+  openSheet(`<div class="eyebrow">Sub-squad</div><h2>${esc(sub.name)}</h2>
+    <p class="muted">Tick the players in ${esc(sub.name)}. A player is in one sub-squad; ticking someone from another moves them here.</p>
+    <div class="opts">${list.map(p => `<label class="opt"><input type="checkbox" data-pl="${p.id}"${subOfPlayer(p) === sub.id ? ' checked' : ''}><span><b>${esc(p.name)}</b><small>${subOfPlayer(p) && subOfPlayer(p) !== sub.id ? 'now in ' + esc(subName(p.sub)) : esc(p.pos || '')}</small></span></label>`).join('')}</div>
+    <div class="row-btns"><button class="btn" id="spSave">Save</button><button class="btn ghost" id="spBack">Back</button></div>`,
+    el => {
+      $('#spBack', el).addEventListener('click', manageSubs);
+      $('#spSave', el).addEventListener('click', () => {
+        let n = 0;
+        $$('[data-pl]', el).forEach(c => { const p = S.players.find(x => x.id === c.dataset.pl), was = subOfPlayer(p) === sub.id;
+          if(c.checked && !was){ p.sub = sub.id; n++; } else if(!c.checked && was){ delete p.sub; n++; } });
+        save(); renderAll(); manageSubs(); if(n) toast(`${sub.name} updated. Sync to share it with the other coaches.`);
+      });
+    });
+}
+function editSub(sub){
+  let color = sub.color;
+  openSheet(`<div class="eyebrow">Sub-squad</div><h2>${esc(sub.name)}</h2>
+    <div class="field"><label class="field-label" for="sbName">Name</label><input id="sbName" type="text" value="${esc(sub.name)}"></div>
+    <div class="field"><div class="field-label">Colour</div><div class="swatches">${SUB_COLOURS.map(c => `<button class="sw${c === color ? ' on' : ''}" data-sc="${c}" style="background:${c}" aria-label="Colour"></button>`).join('')}</div></div>
+    <div class="row-btns"><button class="btn" id="sbSave">Save</button><button class="btn ghost" id="sbBack">Back</button></div>
+    <button class="btn danger" id="sbDel">Delete ${esc(sub.name)}</button>`,
+    el => {
+      $$('[data-sc]', el).forEach(b => b.addEventListener('click', () => { color = b.dataset.sc; $$('[data-sc]', el).forEach(x => x.classList.toggle('on', x === b)); }));
+      $('#sbBack', el).addEventListener('click', manageSubs);
+      $('#sbSave', el).addEventListener('click', async () => {
+        try { await saveSub(Object.assign({}, sub, {name: $('#sbName', el).value.trim() || sub.name, color})); renderAll(); manageSubs(); } catch(e){ toast(niceErr(e)); }
+      });
+      $('#sbDel', el).addEventListener('click', () => askConfirm(`Delete ${sub.name}?`, 'Its players stay in the squad, just not in a sub-squad. Selections that picked from it pick from the whole squad.', 'Delete sub-squad',
+        async () => { try { await deleteSub(sub); renderAll(); manageSubs(); toast(`${sub.name} deleted. Sync to share the change.`); } catch(e){ toast(niceErr(e)); } }));
+    });
+}
+
+/* Selections for fixtures: "Pick the team" on an event opens the selection linked to it (t.eventId), or makes one,
+   starting from the standing selection for the same sub-squad, so there's a team sheet for every match. */
+const selectionFor = e => S.teams.find(t => t.eventId === e.id);
+const selEventOf = t => t && t.eventId && syncing() ? fixData().events.find(e => e.id === t.eventId) || null : null;
+function pickFor(e){
+  let t = selectionFor(e);
+  if(!t){
+    const standing = S.teams.filter(x => !x.eventId && !x.placeholder), base = standing.find(x => (x.sub || '') === (e.sub || '')) || (team().eventId ? standing[0] : team()) || team();
+    t = Object.assign(clone(base), {id: uid(), name: `${evTitle(e)} · ${evDate(e).toLocaleDateString('en-GB', {day: 'numeric', month: 'short'})}`, eventId: e.id});
+    delete t.localOnly; delete t.placeholder; if(e.sub) t.sub = e.sub; else delete t.sub;
+    S.teams.push(t); toast(`New selection for ${evTitle(e)}, starting from ${base.name}`);
+  }
+  S.currentTeamId = t.id; ME.moveId = null; save(); closeSheet(); showTab('select');
 }
 
 /* ---------- boot ---------- */
