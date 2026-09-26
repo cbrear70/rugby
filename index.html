@@ -251,6 +251,8 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .avrow{display:flex;align-items:center;gap:6px;margin-top:10px;flex-wrap:wrap}.avrow>span{flex-basis:100%;font-weight:600;font-size:14px}.avrow .avb{flex:1}
 .avb{padding:7px 10px;border-radius:999px;border:1px solid var(--line);background:var(--panel2);font:600 13px/1 var(--body)}
 .avb.on.yes{background:var(--ok);border-color:var(--ok);color:#06240F}.avb.on.maybe{background:#E8C547;border-color:#E8C547;color:#221A00}.avb.on.no{background:var(--danger);border-color:var(--danger);color:#fff}
+.tpill{display:inline-block;font:700 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase;padding:3px 7px;border-radius:999px;border:1px solid var(--gc);color:var(--gc);margin-bottom:5px}
+.tchip .gdot{margin-right:6px}
 .evnote{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
 .evtimes{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}
 .maprow{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin-bottom:6px}.maprow .field-label{margin:0}
@@ -1860,7 +1862,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 13:37</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 16:49</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2656,7 +2658,7 @@ function showGroup(){
           ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
           box.innerHTML = ms.map(m => asks(m)
             ? `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
-            : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length ? (m.role === 'player' ? 'is ' : 'parent of ') + esc(m.kids.map(nameOfPlayer).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
+            : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length ? (m.role === 'player' ? 'is ' : 'parent of ') + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
               : `<select data-rl="${m.uid}" aria-label="Role for ${esc(m.who)}">${Object.entries(ROLE_NAMES).map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select><button class="chip" data-rm="${m.uid}">Remove</button>`}</div>`).join('')
             + '<p class="hint">Changes reach each phone the next time it opens or syncs. A removed phone needs a new invite or code to come back.</p>';
           const act = async (b, fn, msg) => { b.disabled = true; try { await fn(); toast(msg); loadPeople(); } catch(e){ b.disabled = false; toast(niceErr(e)); } };
@@ -2695,7 +2697,11 @@ function showGroup(){
    away (no sync step, so everyone sees the same calendar). Availability is groups/<id>/avail/<event id>_<player id>
    ({event, player, status: yes|no|maybe, by, who, at}): parents mark it for their children, players for themselves,
    coaches for anyone. Parents and players see squad names from groups/<id>/roster/all, which coaches keep up to date
-   when they sync. What's loaded is kept on the phone (S.sync.events, S.sync.avail) so the calendar opens offline. */
+   when they sync. What's loaded is kept with each group on the phone (its sync: events, avail, roster, kids) so the
+   calendar opens offline.
+   The tab shows every group on the phone together (a family view): a parent with children in two age groups sees
+   one calendar, each event tagged with its group and with a Yes / Maybe / No row per child. Coaching tools (add,
+   import, who replied) are for the group that's open. */
 const EV_TYPES = [['match', 'Match'], ['training', 'Training'], ['event', 'Event']];
 const AV = [['yes', 'Available', '✓'], ['maybe', 'Maybe', '?'], ['no', 'Not available', '✗']];
 const pad2 = n => String(n).padStart(2, '0');
@@ -2706,15 +2712,19 @@ const evTitle = e => e.title || (e.type === 'match' && e.opponent ? 'vs ' + e.op
 const evPast = e => e.date < ymd(new Date());
 const evWhen = e => evDate(e).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short'}) + (e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : '');
 const guessType = s => /train|practi[cs]e|session|skills/i.test(s) ? 'training' : /\b(v|vs|versus)\b|match|fixture|game|cup|league|festival|tournament|friendly/i.test(s) ? 'match' : 'event';
-const fixData = () => { const z = S.sync; z.events = z.events || []; z.avail = z.avail || {}; return z; };
+const fixData = (z = S.sync) => { z.events = z.events || []; z.avail = z.avail || {}; return z; };
+// every group on this phone, the open one first
+const fixTeams = () => [S.sync, ...Object.values(S.parked || {}).map(w => w.sync)].filter(z => z && z.group).map(z => fixData(z));
+const fixTeam = code => fixTeams().find(z => z.group === code);
 const avKey = (evId, pid) => evId + '_' + pid;
-const statusOf = (evId, pid) => { const a = fixData().avail[avKey(evId, pid)]; return a ? a.status : ''; };
-// squad names for availability: coaches have the squad; players and parents have the roster coaches publish
-const squadNames = () => isViewer() ? (S.sync.roster || []) : S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name})).sort((a, b) => a.name.localeCompare(b.name));
-const nameOfPlayer = pid => (squadNames().find(p => p.id === pid) || {}).name || 'Unknown player';
+const statusOf = (evId, pid, z = S.sync) => { const a = fixData(z).avail[avKey(evId, pid)]; return a ? a.status : ''; };
+// squad names for availability: the coaches of the open group have its squad; otherwise the roster coaches publish
+const squadNames = (z = S.sync) => z === S.sync && !isViewer() ? S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name})).sort((a, b) => a.name.localeCompare(b.name)) : (z.roster || []);
+const nameOfPlayer = (pid, z = S.sync) => (squadNames(z).find(p => p.id === pid) || {}).name || 'Unknown player';
+const kidsOf = z => viewerRole(z.role) ? (z.kids || []).filter(id => (z.roster || []).some(p => p.id === id)) : [];
 
-async function loadFixtures(){
-  const z = fixData(), g = z.group;
+async function loadFixtures(z = S.sync){
+  fixData(z); const g = z.group;
   const [ev, av, ro] = await Promise.all([listDocs(`/groups/${g}/events`), listDocs(`/groups/${g}/avail`), fb('GET', `/groups/${g}/roster/all`)]);
   z.events = ev.map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(e => e && e.date).sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time));
   z.avail = {};
@@ -2743,92 +2753,109 @@ async function deleteEvent(e){
   for(let i = 0; i < writes.length; i += 400) await fb('POST', ':commit', {writes: writes.slice(i, i + 400)});
   z.events = z.events.filter(x => x.id !== e.id); for(const k in z.avail) if(k.startsWith(e.id + '_')) delete z.avail[k]; save();
 }
-async function setAvail(evId, pid, status){
-  const z = fixData(), uid = tokenUid(await fbToken()), k = avKey(evId, pid), now = Date.now();
+async function setAvail(evId, pid, status, z = S.sync){
+  fixData(z); const uid = tokenUid(await fbToken()), k = avKey(evId, pid), now = Date.now();
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/avail/${k}`), fields:{event:{stringValue: evId}, player:{stringValue: pid}, status:{stringValue: status}, by:{stringValue: uid}, who:{stringValue: z.who || ''}, at:{integerValue: String(now)}}}}]});
   z.avail[k] = {status, who: z.who || '', by: uid, at: now}; save();
 }
-function avCounts(e){
+function avCounts(e, z = S.sync){
   const c = {yes: 0, maybe: 0, no: 0, none: 0};
-  for(const p of squadNames()){ const s = statusOf(e.id, p.id); c[s || 'none']++; }
+  for(const p of squadNames(z)){ const s = statusOf(e.id, p.id, z); c[s || 'none']++; }
   return c;
 }
-const avSummary = e => { const c = avCounts(e); return `<span class="st-yes">${c.yes} available</span> · <span class="st-maybe">${c.maybe} maybe</span> · <span class="st-no">${c.no} not</span> · ${c.none} no reply`; };
+const avSummary = (e, z = S.sync) => { const c = avCounts(e, z); return `<span class="st-yes">${c.yes} available</span> · <span class="st-maybe">${c.maybe} maybe</span> · <span class="st-no">${c.no} not</span> · ${c.none} no reply`; };
+const teamPill = z => `<span class="tpill" style="--gc:${groupColour(z.group)}">${esc(z.groupName)}</span>`;
 
 let fixLoading = false;
 function renderFixtures(){
   const el = $('#fixBody');
   if(!syncing()){ el.innerHTML = `<div class="empty">Fixtures and availability are shared through your group. Join a group to use them.</div>`; return; }
-  const z = fixData(), coach = !isViewer(), past = !!S.ui.fixPast;
-  const kids = (z.kids || []).filter(id => squadNames().some(p => p.id === id));
-  const list = z.events.filter(e => past ? evPast(e) : !evPast(e));
-  if(past) list.reverse();
+  const all = fixTeams(), multi = all.length > 1, only = multi && all.some(z => z.group === S.ui.fixTeam) ? S.ui.fixTeam : '';
+  const teams = all.filter(z => !only || z.group === only), coach = !isViewer(), past = !!S.ui.fixPast;
+  const family = all.filter(z => viewerRole(z.role)), unlinked = family.filter(z => !kidsOf(z).length && (z.roster || []).length);
+  const list = teams.flatMap(z => z.events.filter(e => past ? evPast(e) : !evPast(e)).map(e => ({e, z})))
+    .sort((a, b) => (a.e.date + a.e.time).localeCompare(b.e.date + b.e.time) * (past ? -1 : 1));
+  const players = family.length && family.every(z => z.role === 'player');
   let month = '';
-  const card = e => {
+  const card = ({e, z}) => {
     const d = evDate(e), m = d.toLocaleDateString('en-GB', {month: 'long', year: 'numeric'}), head = m !== month ? `<div class="section-h"><span>${m}</span></div>` : ''; month = m;
+    const mine = z === S.sync && coach, ref = z.group + '|' + e.id;
     return `${head}<div class="evcard ev-${e.type}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
-      <div class="evbody"><button class="evtitle" data-evopen="${e.id}">${esc(evTitle(e))}</button>
+      <div class="evbody">${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
         <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
-        ${coach ? `<button class="avsum" data-evopen="${e.id}">${avSummary(e)}</button>`
-          : kids.map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid) === k ? ' on' : ''}" data-av="${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
+        ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>`
+          : kidsOf(z).map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid, z) === k ? ' on' : ''}" data-av="${z.group}|${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid, z))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
       </div></div>`; };
-  el.innerHTML = `<div class="section-h"><span>${esc(z.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${z.fixAt ? 'Updated ' + ago(z.fixAt) : ''}</span></div>
-    <div class="mact fixbar">${coach ? '<button class="chip on" id="fxAdd">Add</button><button class="chip" id="fxImport">Import</button>' : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
-      ${!coach ? `<button class="chip" id="fxKids">${z.role === 'player' ? (kids.length ? 'Not you?' : 'Which one is you?') : kids.length ? 'My children' : 'Link my children'}</button>` : ''}</div>
-    ${!coach && !kids.length ? `<div class="evnote"><b>${z.role === 'player' ? 'Tell the coaches which player you are' : 'Link your children'}</b><p class="hint">Then you can say whether ${z.role === 'player' ? 'you are' : 'they are'} available for each fixture and training session.</p><button class="btn" id="fxKids2">${z.role === 'player' ? 'Choose your name' : 'Choose your children'}</button></div>` : ''}
-    ${list.length ? list.map(card).join('') : `<div class="empty">${past ? 'No past events.' : coach ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. Your coaches add fixtures and training here.'}</div>`}`;
+  el.innerHTML = `<div class="section-h"><span>${only ? esc(fixTeam(only).groupName) : multi ? 'All groups' : esc(S.sync.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${S.sync.fixAt ? 'Updated ' + ago(Math.min(...all.map(z => z.fixAt || 0))) : ''}</span></div>
+    ${multi ? `<div class="mact fixbar"><button class="chip${only ? '' : ' on'}" data-ft="">All</button>${all.map(z => `<button class="chip tchip${only === z.group ? ' on' : ''}" data-ft="${z.group}" style="--gc:${groupColour(z.group)}"><span class="gdot"></span>${esc(z.groupName)}</button>`).join('')}</div>` : ''}
+    <div class="mact fixbar">${coach ? `<button class="chip on" id="fxAdd">Add${multi ? ' to ' + esc(S.sync.groupName) : ''}</button><button class="chip" id="fxImport">Import</button>` : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
+      ${family.length ? `<button class="chip" id="fxKids">${players ? 'Who you are' : 'My children'}</button>` : ''}</div>
+    ${unlinked.length ? `<div class="evnote"><b>${players ? 'Tell the coaches which player you are' : 'Link your children'}${multi ? ' in ' + unlinked.map(z => esc(z.groupName)).join(' and ') : ''}</b><p class="hint">Then you can say whether ${players ? 'you are' : 'they are'} available for each fixture and training session.</p><button class="btn" id="fxKids2">${players ? 'Choose your name' : 'Choose your children'}</button></div>` : ''}
+    ${list.length ? list.map(card).join('') : `<div class="empty">${past ? 'No past events.' : coach && !only ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. The coaches add fixtures and training here.'}</div>`}`;
   $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
+  $$('[data-ft]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixTeam = b.dataset.ft; save(); renderFixtures(); }));
   $$('[data-av]', el).forEach(b => b.addEventListener('click', async () => {
-    const [ev, pid, st] = b.dataset.av.split('|'); $$(`[data-av^="${ev}|${pid}|"]`, el).forEach(x => x.disabled = true);
-    try { await setAvail(ev, pid, st); toast(`${nameOfPlayer(pid)}: ${AV.find(a => a[0] === st)[1].toLowerCase()}`); } catch(e){ toast(niceErr(e)); }
+    const [g, ev, pid, st] = b.dataset.av.split('|'), z = fixTeam(g); $$(`[data-av^="${g}|${ev}|${pid}|"]`, el).forEach(x => x.disabled = true);
+    try { await setAvail(ev, pid, st, z); toast(`${nameOfPlayer(pid, z)}: ${AV.find(a => a[0] === st)[1].toLowerCase()}`); } catch(e){ toast(niceErr(e)); }
     renderFixtures();
   }));
   const on = (id, fn) => { const b = $(id, el); if(b) b.addEventListener('click', fn); };
   on('#fxAdd', () => editEvent(null)); on('#fxImport', () => importEvents());
   on('#fxPast', () => { S.ui.fixPast = !past; save(); renderFixtures(); });
   on('#fxRefresh', () => refreshFixtures(true)); on('#fxKids', linkKids); on('#fxKids2', linkKids);
-  if(!fixLoading && Date.now() - (z.fixAt || 0) > 60e3) refreshFixtures(false);
+  if(!fixLoading && all.some(z => Date.now() - (z.fixAt || 0) > 60e3)) refreshFixtures(false);
 }
 async function refreshFixtures(loud){
   if(fixLoading || !syncing()) return; fixLoading = true;
-  try { await loadFixtures(); if(loud) toast('Fixtures up to date'); }
-  catch(e){ if(loud) toast(niceErr(e)); }
+  // groups this phone has been removed from are skipped quietly
+  try { const r = await Promise.allSettled(fixTeams().map(z => loadFixtures(z)));
+    const bad = r.filter(x => x.status === 'rejected'); if(loud) toast(bad.length === r.length ? niceErr(bad[0].reason) : 'Fixtures up to date'); }
   finally { fixLoading = false; if(TAB === 'fix') renderFixtures(); else if(TAB === 'select') renderSelect(); }
 }
-// parents pick their children (players pick themselves) from the squad names; kept on the phone and in the group
+// parents pick their children (players pick themselves) from each group's squad names; kept on the phone and in the group
 function linkKids(){
-  const z = fixData(), me = z.role === 'player', names = squadNames(), sel = new Set(z.kids || []);
-  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>${me ? 'Which one is you?' : 'Your children'}</h2>
-    <p class="muted">${me ? 'Pick your name, then you can say when you are available.' : 'Tick your children. You can then mark them available or not for each event. The coaches see who marked it.'}</p>
-    ${names.length ? `<div class="opts">${names.map(p => `<label class="opt"><input type="${me ? 'radio' : 'checkbox'}" name="kid" value="${p.id}"${sel.has(p.id) ? ' checked' : ''}><span><b>${esc(p.name)}</b></span></label>`).join('')}</div>`
-      : '<p class="hint">The squad list isn’t available yet. Ask a coach to open the app and sync, then tap Refresh.</p>'}
+  const teams = fixTeams().filter(z => viewerRole(z.role)), multi = teams.length > 1, players = teams.every(z => z.role === 'player');
+  const block = z => { const me = z.role === 'player', names = z.roster || [], sel = new Set(z.kids || []);
+    return `${multi ? `<div class="section-h"><span>${teamPill(z)} ${me ? 'you, as a player' : 'your children'}</span></div>` : ''}
+      ${names.length ? `<div class="opts">${names.map(p => `<label class="opt"><input type="${me ? 'radio' : 'checkbox'}" name="kid-${z.group}" data-g="${z.group}" value="${p.id}"${sel.has(p.id) ? ' checked' : ''}><span><b>${esc(p.name)}</b></span></label>`).join('')}</div>`
+        : '<p class="hint">The squad list isn’t available yet. Ask a coach to open the app and sync, then tap Refresh.</p>'}`; };
+  openSheet(`<div class="eyebrow">${multi ? 'All your groups' : esc(S.sync.groupName)}</div><h2>${players ? 'Which one is you?' : 'Your children'}</h2>
+    <p class="muted">${players ? 'Pick your name, then you can say when you are available.' : 'Tick your children' + (multi ? ' in each group' : '') + '. You can then mark them available or not for each event. The coaches see who marked it.'}</p>
+    ${teams.map(block).join('')}
+    <p class="hint">A child in another group or club: ask that group for its parent code, then Group → Add another group. Their fixtures appear here too.</p>
     <div class="row-btns"><button class="btn" id="kdSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>`,
     el => $('#kdSave', el).addEventListener('click', async () => {
-      z.kids = $$('input[name=kid]:checked', el).map(i => i.value); save(); closeSheet(); renderFixtures();
-      try { const uid = tokenUid(await fbToken());
-        await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{kids:{arrayValue:{values: z.kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}}]}); }
-      catch(e){} // only tells the coaches who is linked; availability works without it
+      for(const z of teams) z.kids = $$(`input[data-g="${z.group}"]:checked`, el).map(i => i.value);
+      save(); closeSheet(); renderFixtures();
+      const uid = tokenUid(await fbToken());
+      for(const z of teams) try {
+        await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{kids:{arrayValue:{values: z.kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}}]});
+      } catch(e){} // only tells the coaches who is linked; availability works without it
     }));
 }
-function showEvent(id){
-  const z = fixData(), e = z.events.find(x => x.id === id); if(!e) return;
-  const coach = !isViewer(), names = squadNames();
+function showEvent(ref){
+  const [g, id] = ref.includes('|') ? ref.split('|') : [S.sync.group, ref], z = fixTeam(g), e = z && z.events.find(x => x.id === id); if(!e) return;
+  const coach = z === S.sync && !isViewer(), coachElsewhere = z !== S.sync && !viewerRole(z.role), names = squadNames(z);
   const who = pid => { const a = z.avail[avKey(e.id, pid)]; return a && a.who ? ` <small>· ${esc(a.who)}${a.at ? ', ' + ago(a.at) : ''}</small>` : ''; };
   const groups = coach ? [...AV, ['', 'No reply', '']].map(([k, l]) => { const ps = names.filter(p => statusOf(e.id, p.id) === k);
     return ps.length ? `<div class="section-h"><span class="${k ? 'st-' + k : ''}">${l} · ${ps.length}</span></div>${ps.map(p => `<div class="mem"><div><b>${esc(p.name)}</b>${k ? who(p.id) : ''}</div>${AV.map(([s, sl, sy]) => `<button class="avb ${s}${k === s ? ' on' : ''}" data-cav="${p.id}|${s}" aria-label="${esc(p.name)}: ${sl}">${sy}</button>`).join('')}</div>`).join('')}` : ''; }).join('') : '';
-  openSheet(`<div class="eyebrow">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</div><h2>${esc(evTitle(e))}</h2>
+  const kids = kidsOf(z).map(pid => { const s = statusOf(e.id, pid, z); return `<div class="mem"><div><b>${esc(nameOfPlayer(pid, z))}</b></div><span class="${s ? 'st-' + s : 'muted'}">${s ? AV.find(a => a[0] === s)[1] : 'No reply yet'}</span></div>`; }).join('');
+  openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</div><h2>${esc(evTitle(e))}</h2>
     <p class="muted">${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
+    ${kids}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
       <div class="row-btns"><button class="btn" id="evPick">Pick team for this</button><button class="btn ghost" id="evEdit">Edit</button></div>${groups}
       <p class="hint">Tap ✓ ? ✗ to mark a player yourself, for example when a parent tells you in person.</p>` : ''}
+    ${coachElsewhere ? `<button class="btn" id="evOpen">Open ${esc(z.groupName)} to see replies</button>` : ''}
     <button class="btn ghost wide" data-close>Close</button>`,
     el => {
+      const o = $('#evOpen', el); if(o) o.addEventListener('click', () => { closeSheet(); switchGroup(z.group); showTab('fix'); });
       if(!coach) return;
       $('#evEdit', el).addEventListener('click', () => editEvent(e));
       $('#evPick', el).addEventListener('click', () => { S.ui.selEv = e.id; save(); closeSheet(); showTab('select'); });
       $$('[data-cav]', el).forEach(b => b.addEventListener('click', async () => {
         const [pid, st] = b.dataset.cav.split('|'); b.disabled = true;
-        try { await setAvail(e.id, pid, st); showEvent(e.id); renderAll(); } catch(err){ b.disabled = false; toast(niceErr(err)); }
+        try { await setAvail(e.id, pid, st); showEvent(ref); renderAll(); } catch(err){ b.disabled = false; toast(niceErr(err)); }
       }));
     });
 }
