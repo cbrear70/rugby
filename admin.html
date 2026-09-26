@@ -96,7 +96,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 26 Sep 2026, 22:24</p>
+  <p class="hint" style="text-align:center">Version 26 Sep 2026, 23:56</p>
 </main>
 <script>
 (() => {
@@ -266,7 +266,7 @@ async function showMembers(code, el){
     const stale = ms.filter(m => Date.now() - (m.seen || 0) > 60 * 864e5);
     const count = r => ms.filter(m => m.role === r).length, admins = count('admin');
     box.querySelector('summary').textContent = ms.length ? `People · ${ms.length} phone${ms.length > 1 ? 's' : ''} (${ROLES.map(([k, l]) => count(k) ? count(k) + ' ' + l.toLowerCase() + (count(k) > 1 ? 's' : '') : '').filter(Boolean).join(', ')})${admins ? '' : ' · no team admin'}` : 'People · none registered yet';
-    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}</small></td>
+    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}ID ${esc(m.id.slice(0, 8))} · joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}</small></td>
         <td><select data-role="${esc(m.id)}" aria-label="Role for ${esc(m.who)}">${ROLES.map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select></td><td>${when(m.seen)}</td><td><button class="btn ghost sm" data-rm="${esc(m.id)}">Remove</button></td></tr>`).join('')}</tbody></table>
       ${stale.length ? `<div class="row"><button class="btn ghost sm" data-rmold>Remove ${stale.length} not active for 60 days</button></div>` : ''}
       <p class="hint">Each phone or browser registers once, when it joins with an invite or code (a coach with an iPhone and a PC appears twice). Phones from before roles count as coaches. A removed phone can't see the team any more; it needs a new invite, or the player or parent code, to come back. The team admin can also manage people in the app: Team → People.</p>` : '<p class="hint">Phones register when they join with an invite or code. Use Invite team admin to get the first person in.</p>';

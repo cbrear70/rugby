@@ -1898,7 +1898,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Selection settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New selection${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. Saxons, Cup side"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 22:24</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 23:56</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2090,6 +2090,11 @@ async function fbToken(){
   if(z.refresh){
     const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB.apiKey}`, {method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:'grant_type=refresh_token&refresh_token='+encodeURIComponent(z.refresh)});
     if(r.ok){ const j = await r.json(); z.token = j.id_token; z.refresh = j.refresh_token; z.tokenExp = Date.now() + (+j.expires_in)*1000; save(); return z.token; }
+    // only a login that no longer exists is replaced; anything else (no signal, a busy server) is tried again later,
+    // because a new login isn't registered in any team
+    const why = await fbErr(r);
+    if(!/TOKEN_EXPIRED|USER_NOT_FOUND|INVALID_REFRESH_TOKEN|USER_DISABLED|MISSING_REFRESH_TOKEN/.test(why)){ const e = new Error('Could not sign in (' + why + '). Try again in a moment.'); e.status = r.status; throw e; }
+    z.lost = Date.now();
   }
   const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${FB.apiKey}`, {method:'POST', headers:{'Content-Type':'application/json'}, body:'{"returnSecureToken":true}'});
   if(!r.ok) throw new Error('Could not sign in: ' + await fbErr(r));
@@ -2273,8 +2278,10 @@ async function myMember(group){
 }
 // The group admin can change a phone's role or remove it at any time: check before syncing
 async function refreshRole(){
-  const z = S.sync, m = await myMember(z.group);
+  const z = S.sync, t0 = Date.now(), m = await myMember(z.group);
   if(m === undefined) return;
+  // a check that started before the phone (re)joined is out of date
+  if(m === null && (z.joinedAt || 0) >= t0) return;
   if(m === null){ z.removed = true; save(); if(!(await fetchGroup(z.group))){ const e = new Error('This team’s code has changed.'); e.gone = true; throw e; }
     const e = new Error('This phone is no longer in ' + z.groupName); e.removed = true; throw e; }
   const was = z.role || 'coach'; z.role = m.role; z.wants = m.wants; delete z.removed; save();
@@ -2293,14 +2300,20 @@ function roleChanged(was){
 }
 function showRemoved(){
   const z = S.sync;
+  if(!$('#gate').hidden) return; // joining with a code right now
+  const twin = groupsOnPhone().find(g => !g.active && g.name.trim().toLowerCase() === (z.groupName || '').trim().toLowerCase());
   openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This phone is no longer in the team</h2>
     <p class="muted">The team admin (or the site admin) has removed it, or it was never registered. To come back you need an <b>invite</b>: the team's own code, or a new one, won't let it back in.</p>
     <ul class="hint implist"><li><b>Coaches:</b> ask the team admin for a coach invite (Team → Invite a coach).</li><li><b>Players and parents:</b> use the player or parent code.</li>
       <li><b>If you were the team admin:</b> make a new invite on the admin page (admin.html → the team → Invite team admin), or ask another team admin.</li></ul>
+    ${twin ? `<div class="evnote"><b>This phone has another ${esc(twin.name)}</b><p class="hint">Probably the one you joined again, under a newer code. Open it, and leave this old copy.</p><button class="btn" id="rmTwin">Open the other ${esc(twin.name)}</button></div>` : ''}
     <p class="hint">Enter the invite with Enter a code. Anything on this phone stays until you leave the team.</p>
     <div class="row-btns"><button class="btn" id="rmJoin">Enter a code</button><button class="btn ghost" data-close>Later</button></div>
-    <button class="btn danger" id="rmLeave">Leave ${esc(z.groupName)}</button>`,
+    <button class="btn danger" id="rmLeave">Leave ${esc(z.groupName)}</button>
+    <p class="hint" id="rmIds">Team code ${fmtCode(z.group)}</p>`,
     el => {
+      fbToken().then(t => { const i = $('#rmIds', el); if(i) i.textContent = `Team code ${fmtCode(z.group)} · this phone's ID ${tokenUid(t).slice(0, 8)}${S.auth && S.auth.lost ? ' (new since ' + new Date(S.auth.lost).toLocaleDateString('en-GB') + ')' : ''}. On the admin page, the team's People list shows each phone's ID.`; }).catch(() => {});
+      const tw = $('#rmTwin', el); if(tw) tw.addEventListener('click', () => { closeSheet(); switchGroup(twin.code); });
       $('#rmJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
       $('#rmLeave', el).addEventListener('click', () => { closeSheet(); leaveGroup(); });
     });
@@ -2531,10 +2544,10 @@ function showGate(canClose){
   const busy = on => $$('button', g).forEach(b => b.disabled = on);
   const enter = async (grp, role, note) => {
     if(/join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
-    g.hidden = true;
+    g.hidden = true; closeSheet(); // e.g. "no longer in the team", from before joining
     const me = grp.code + ':' + tokenUid(await fbToken());
     // back into a group this phone already has: pick up the role, keep everything
-    const back = () => { const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = me; delete z.removed; save();
+    const back = () => { const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = me; z.joinedAt = Date.now(); delete z.removed; save();
       if(was !== role) roleChanged(was); else { toast(note || 'You are in ' + grp.name); runSync(null, true); } };
     if(syncing() && S.sync.group === grp.code) return back();
     if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return back(); }
@@ -2542,7 +2555,7 @@ function showGate(canClose){
     const viewer = viewerRole(role);
     if(syncing()) parkGroup();
     if(syncing() || viewer){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
-    S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, club: grp.club || '', base: {}, lastSync: 0}; save();
+    S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, club: grp.club || '', base: {}, lastSync: 0, joinedAt: Date.now()}; save();
     syncDot(); renderAll();
     if(note) toast(note); else if(role !== 'coach') toast(`Welcome to ${grp.name}. You joined as ${ROLE_NAMES[role].toLowerCase()}.`);
     if(viewer) runSync(null, true); else await chooseUploads();
@@ -2708,7 +2721,7 @@ function showGroup(){
           ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
           box.innerHTML = ms.map(m => asks(m)
             ? `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
-            : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length ? (m.role === 'player' ? 'is ' : 'parent of ') + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
+            : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length ? (m.role === 'player' ? 'is ' : 'parent of ') + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
               : `<select data-rl="${m.uid}" aria-label="Role for ${esc(m.who)}">${Object.entries(ROLE_NAMES).map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select><button class="chip" data-rm="${m.uid}">Remove</button>`}</div>`).join('')
             + '<p class="hint">Changes reach each phone the next time it opens or syncs. A removed phone needs a new invite or code to come back.</p>';
           const act = async (b, fn, msg) => { b.disabled = true; try { await fn(); toast(msg); loadPeople(); } catch(e){ b.disabled = false; toast(niceErr(e)); } };
@@ -2772,7 +2785,7 @@ const statusOf = (evId, pid, z = S.sync) => { const a = fixData(z).avail[avKey(e
 // squad names for availability: the coaches of the open group have its squad; otherwise the roster coaches publish
 const squadNames = (z = S.sync) => z === S.sync && !isViewer() ? S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p)})).sort((a, b) => a.name.localeCompare(b.name)) : (z.roster || []);
 const nameOfPlayer = (pid, z = S.sync) => (squadNames(z).find(p => p.id === pid) || {}).name || 'Unknown player';
-const kidsOf = z => viewerRole(z.role) ? (z.kids || []).filter(id => (z.roster || []).some(p => p.id === id)) : [];
+const kidsOf = z => (z.kids || []).filter(id => (z.roster || []).some(p => p.id === id));
 // the children an event is for: all of them, or those in its sub-squad
 const kidsFor = (e, z) => kidsOf(z).filter(pid => inSub((z.roster || []).find(p => p.id === pid) || {}, e.sub));
 
@@ -2827,7 +2840,7 @@ function renderFixtures(){
   if(!syncing()){ el.innerHTML = `<div class="empty">Fixtures and availability are shared through your team. Join a team to use them.</div>`; return; }
   const all = fixTeams(), multi = all.length > 1, only = multi && all.some(z => z.group === S.ui.fixTeam) ? S.ui.fixTeam : '';
   const teams = all.filter(z => !only || z.group === only), coach = !isViewer(), past = !!S.ui.fixPast;
-  const family = all.filter(z => viewerRole(z.role)), unlinked = family.filter(z => !kidsOf(z).length && (z.roster || []).length);
+  const family = all.filter(z => viewerRole(z.role)), unlinked = family.filter(z => !kidsOf(z).length && (z.roster || []).length), anyKids = all.some(z => kidsOf(z).length);
   const list = teams.flatMap(z => z.events.filter(e => past ? evPast(e) : !evPast(e)).map(e => ({e, z})))
     .sort((a, b) => (a.e.date + a.e.time).localeCompare(b.e.date + b.e.time) * (past ? -1 : 1));
   const players = family.length && family.every(z => z.role === 'player');
@@ -2838,13 +2851,13 @@ function renderFixtures(){
     return `${head}<div class="evcard ev-${e.type}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
       <div class="evbody">${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
         <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
-        ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>`
-          : kidsFor(e, z).map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid, z) === k ? ' on' : ''}" data-av="${z.group}|${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid, z))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
+        ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>` : ''}
+          ${kidsFor(e, z).map(pid => `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${statusOf(e.id, pid, z) === k ? ' on' : ''}" data-av="${z.group}|${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid, z))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}</div>`).join('')}
       </div></div>`; };
   el.innerHTML = `<div class="section-h"><span>${only ? esc(fixTeam(only).groupName) : multi ? 'All teams' : esc(S.sync.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${S.sync.fixAt ? 'Updated ' + ago(Math.min(...all.map(z => z.fixAt || 0))) : ''}</span></div>
     ${multi ? `<div class="mact fixbar"><button class="chip${only ? '' : ' on'}" data-ft="">All</button>${all.map(z => `<button class="chip tchip${only === z.group ? ' on' : ''}" data-ft="${z.group}" style="--gc:${groupColour(z.group)}"><span class="gdot"></span>${esc(z.groupName)}</button>`).join('')}</div>` : ''}
     <div class="mact fixbar">${coach ? `<button class="chip on" id="fxAdd">Add${multi ? ' to ' + esc(S.sync.groupName) : ''}</button><button class="chip" id="fxImport">Import</button>` : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
-      ${family.length ? `<button class="chip" id="fxKids">${players ? 'Who you are' : 'My children'}</button>` : ''}</div>
+      ${family.length || coach ? `<button class="chip" id="fxKids">${players ? 'Who you are' : 'My children'}</button>` : ''}</div>
     ${unlinked.length ? `<div class="evnote"><b>${players ? 'Tell the coaches which player you are' : 'Link your children'}${multi ? ' in ' + unlinked.map(z => esc(z.groupName)).join(' and ') : ''}</b><p class="hint">Then you can say whether ${players ? 'you are' : 'they are'} available for each fixture and training session.</p><button class="btn" id="fxKids2">${players ? 'Choose your name' : 'Choose your children'}</button></div>` : ''}
     ${list.length ? list.map(card).join('') : `<div class="empty">${past ? 'No past events.' : coach && !only ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. The coaches add fixtures and training here.'}</div>`}`;
   $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
@@ -2869,9 +2882,9 @@ async function refreshFixtures(loud){
 }
 // parents pick their children (players pick themselves) from each group's squad names; kept on the phone and in the group
 function linkKids(){
-  const teams = fixTeams().filter(z => viewerRole(z.role)), multi = teams.length > 1, players = teams.every(z => z.role === 'player');
+  const teams = fixTeams(), multi = teams.length > 1, players = teams.every(z => z.role === 'player');
   const block = z => { const me = z.role === 'player', names = z.roster || [], sel = new Set(z.kids || []);
-    return `${multi ? `<div class="section-h"><span>${teamPill(z)} ${me ? 'you, as a player' : 'your children'}</span></div>` : ''}
+    return `${multi || !viewerRole(z.role) ? `<div class="section-h"><span>${teamPill(z)} ${me ? 'you, as a player' : viewerRole(z.role) ? 'your children' : 'your own children, if any play here'}</span></div>` : ''}
       ${names.length ? `<div class="opts">${names.map(p => `<label class="opt"><input type="${me ? 'radio' : 'checkbox'}" name="kid-${z.group}" data-g="${z.group}" value="${p.id}"${sel.has(p.id) ? ' checked' : ''}><span><b>${esc(p.name)}</b></span></label>`).join('')}</div>`
         : '<p class="hint">The squad list isn’t available yet. Ask a coach to open the app and sync, then tap Refresh.</p>'}`; };
   openSheet(`<div class="eyebrow">${multi ? 'All your teams' : esc(S.sync.groupName)}</div><h2>${players ? 'Which one is you?' : 'Your children'}</h2>
@@ -3233,9 +3246,9 @@ async function joinClubTeams(c, list){
   return joined;
 }
 function showClub(c){
-  const club = (S.clubs || {})[c] || {name: fixTeams().find(z => z.club === c)?.clubName || 'Club', role: ''}, admin = club.role === 'admin', parent = club.role === 'parent';
+  const club = (S.clubs || {})[c] || {name: fixTeams().find(z => z.club === c)?.clubName || 'Club', role: ''}, admin = club.role === 'admin', parent = club.role === 'parent' || !!club.code;
   const onPhone = code => fixTeams().some(z => z.group === code);
-  openSheet(`<div class="gcard" style="--gc:var(--accent)"><span class="eyebrow">Club${club.role ? ' · ' + CLUB_ROLES[club.role] : ''}</span><b>${esc(club.name)}</b><small>${admin ? 'Teams, invites and the club calendar' : parent ? 'Your children’s teams' : 'Teams in the club'}</small></div>
+  openSheet(`<div class="gcard" style="--gc:var(--accent)"><span class="eyebrow">Club${club.role ? ' · ' + CLUB_ROLES[club.role] : ''}</span><b>${esc(club.name)}</b><small>${admin ? 'Teams, invites and the club calendar' + (club.code ? ', and your children’s teams' : '') : parent ? 'Your children’s teams' : 'Teams in the club'}</small></div>
     <div class="field"><div class="field-label">Teams</div><div id="clTeams"><p class="muted">Loading…</p></div></div>
     ${admin ? `<div class="field"><label class="field-label" for="clNew">New team in ${esc(club.name)}</label><div class="add-row"><input id="clNew" type="text" placeholder="e.g. U10, 2nd XV"><button class="btn" id="clMake">Create</button></div>
         <p class="hint">Then tap Invite admin for it and send the link to whoever runs the team.</p></div>
