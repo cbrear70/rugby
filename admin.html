@@ -85,7 +85,7 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the group's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 25 Sep 2026, 20:36</p>
+  <p class="hint" style="text-align:center">Version 26 Sep 2026, 12:47</p>
 </main>
 <script>
 (() => {
@@ -164,11 +164,11 @@ async function load(){
       el.innerHTML = `<h2>${esc(name)}</h2>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
-        <details class="members" data-members><summary>Coaches · checking…</summary><div class="mlist"></div></details>
+        <details class="members" data-members><summary>People · checking…</summary><div class="mlist"></div></details>
         ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p><div class="row" data-fix hidden><button class="btn" data-a="repair">Repair inbox</button></div>` : ''}
         ${(boxesByGroup[code] || []).filter(b => b !== mail).map(b => `<p class="hint err" data-stray="${esc(b)}">Send code ${fmt(b)} also leads to this group, but its coaches look in ${mail ? fmt(mail) : 'no inbox'}, so moves sent to ${fmt(b)} never reach them. Checking…</p>
           <div class="row"><button class="btn" data-a="adopt" data-box="${esc(b)}">Make ${fmt(b)} the send code</button></div>`).join('')}
-        <div class="row"><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
+        <div class="row"><button class="btn" data-a="invite">Invite group admin</button><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
       el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, raw, was, box: b.dataset.box}, el)));
       showMembers(code, el);
       el.querySelectorAll('[data-stray]').forEach(p => list(`/mailboxes/${p.dataset.stray}/items`).then(w => {
@@ -188,22 +188,37 @@ async function load(){
 // Phones that joined the group (one per phone, so a coach with two phones shows twice), newest activity first
 const when = ms => { if(!ms) return '—'; const d = new Date(+ms), days = (Date.now() - d) / 864e5;
   return days < 1 ? 'today' : days < 2 ? 'yesterday' : days < 7 ? Math.floor(days) + ' days ago' : d.toLocaleDateString('en-GB', {day:'numeric', month:'short', year: days > 300 ? 'numeric' : undefined}); };
+const ROLES = [['admin', 'Group admin'], ['coach', 'Coach'], ['player', 'Player'], ['parent', 'Parent']];
 async function showMembers(code, el){
   const box = el.querySelector('[data-members]');
   try {
-    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue}; })
+    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue, role: f.role?.stringValue || 'coach', wants: f.wants?.stringValue || ''}; })
       .sort((a, b) => (b.seen || 0) - (a.seen || 0));
     const stale = ms.filter(m => Date.now() - (m.seen || 0) > 60 * 864e5);
-    const names = new Set(ms.map(m => m.who.trim().toLowerCase()));
-    box.querySelector('summary').textContent = ms.length ? `Coaches · ${names.size}${ms.length > names.size ? ` (${ms.length} phones)` : ''}` : 'Coaches · none registered yet';
-    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}joined ${when(m.joined)}</small></td><td>${when(m.seen)}</td><td><button class="btn ghost sm" data-rm="${esc(m.id)}">Remove</button></td></tr>`).join('')}</tbody></table>
+    const count = r => ms.filter(m => m.role === r).length, admins = count('admin');
+    box.querySelector('summary').textContent = ms.length ? `People · ${ms.length} phone${ms.length > 1 ? 's' : ''} (${ROLES.map(([k, l]) => count(k) ? count(k) + ' ' + l.toLowerCase() + (count(k) > 1 ? 's' : '') : '').filter(Boolean).join(', ')})${admins ? '' : ' · no group admin'}` : 'People · none registered yet';
+    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}</small></td>
+        <td><select data-role="${esc(m.id)}" aria-label="Role for ${esc(m.who)}">${ROLES.map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select></td><td>${when(m.seen)}</td><td><button class="btn ghost sm" data-rm="${esc(m.id)}">Remove</button></td></tr>`).join('')}</tbody></table>
       ${stale.length ? `<div class="row"><button class="btn ghost sm" data-rmold>Remove ${stale.length} not active for 60 days</button></div>` : ''}
-      <p class="hint">Each phone or browser registers once, the first time it syncs with the group (a coach with an iPhone and a PC appears twice). Removing an entry only tidies this list: a phone that's still in use registers again by itself. To stop someone having access, change the join code and give the new one only to coaches who should keep it.</p>` : '<p class="hint">Phones register when they first sync with the group.</p>';
+      <p class="hint">Each phone or browser registers once, when it joins with an invite or code (a coach with an iPhone and a PC appears twice). Phones from before roles count as coaches. A removed phone can't see the group any more; it needs a new invite, or the player or parent code, to come back. The group admin can also manage people in the app: Group → People.</p>` : '<p class="hint">Phones register when they join with an invite or code. Use Invite group admin to get the first person in.</p>';
     const drop = async ids => { await commit(ids.map(id => del(`groups/${code}/members/${id}`))); await showMembers(code, el); box.open = true; };
     box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await drop([b.dataset.rm]); } catch(e){ status(e.message, 'err'); b.disabled = false; } }));
+    box.querySelectorAll('[data-role]').forEach(s => s.addEventListener('change', async () => {
+      s.disabled = true;
+      try { const m = ms.find(x => x.id === s.dataset.role), clear = m.wants && (s.value === 'coach' || s.value === 'admin');
+        await commit([{update:{name: NAME(`groups/${code}/members/${m.id}`), fields:{role: str(s.value)}}, updateMask:{fieldPaths: clear ? ['role', 'wants'] : ['role']}, currentDocument:{exists:true}}]);
+        status(`${m.who} is now ${ROLES.find(r => r[0] === s.value)[1].toLowerCase()}. Their phone picks it up next time it syncs.`, 'ok'); await showMembers(code, el); box.open = true; }
+      catch(e){ status(e.message, 'err'); s.disabled = false; }
+    }));
     const old = box.querySelector('[data-rmold]'); if(old) old.addEventListener('click', async () => { old.disabled = true; try { await drop(stale.map(m => m.id)); } catch(e){ status(e.message, 'err'); old.disabled = false; } });
-  } catch(e){ box.querySelector('summary').textContent = 'Coaches · could not load (' + e.message + ')'; }
+  } catch(e){ box.querySelector('summary').textContent = 'People · could not load (' + e.message + ')'; }
 }
+// Invite codes pointing at a group (player and parent codes, and coach and group admin invites)
+async function invitesOf(code){
+  const r = await fb('POST', ':runQuery', {structuredQuery:{from:[{collectionId:'invites'}], where:{fieldFilter:{field:{fieldPath:'group'}, op:'EQUAL', value: str(code)}}}});
+  return (r || []).filter(x => x.document).map(x => x.document);
+}
+const appLink = code => new URL('./', location.href).href + '#join=' + fmt(code);
 // Is the group's send code linked to an inbox that points back at the group? Coaches can only read an inbox when
 // mailboxes/<send code>.group is exactly the group's join code, and the phone looks under the group's mailbox field.
 async function inboxHealth(code, raw){
@@ -269,6 +284,14 @@ async function act(what, g, el){
       busy(true); status('Repairing the inbox…'); await repairInbox(g);
       status(`${g.name}: inbox repaired. Send code ${fmt(g.mail)}. Coaches will see waiting moves on their next sync or Check now.`, 'ok');
     }
+    // a single-use code that makes the phone that uses it the group's admin
+    if(what === 'invite'){
+      busy(true); const c = newCode(), link = appLink(c);
+      await commit([create('invites/' + c, {group: str(g.code), role: str('admin'), single: {booleanValue: true}, by: str('Site admin'), at: {integerValue: String(Date.now())}})]);
+      try { await navigator.clipboard.writeText(link); } catch(e){}
+      status(`${g.name}: group admin invite ${fmt(c)}. It works once. Open ${link} on the group admin's phone, or enter the code in Group → Add another group (the link is copied).`, 'ok');
+      busy(false); return;
+    }
     if(what === 'rename'){
       const n = prompt('New name for the group', g.name); if(!n || !n.trim()) return;
       busy(true); await fb('PATCH', `/groups/${g.code}?updateMask.fieldPaths=name&currentDocument.exists=true`, {fields:{name: str(n.trim())}});
@@ -282,12 +305,16 @@ async function act(what, g, el){
       if(!confirm(`Change ${g.name}'s join code from ${fmt(g.code)} to ${fmt(c)}?\n\nThe old code stops working straight away. Coaches will be asked for the new code on their next sync and keep all their data. Give the new code only to coaches who should still have access.`)) return;
       busy(true); status('Copying teams and moves…');
       const old = await fb('GET', '/groups/'+g.code), items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`);
+      const shared = await list(`/groups/${g.code}/shared`), settings = await list(`/groups/${g.code}/settings`), invites = await invitesOf(g.code);
       const fields = Object.assign({}, old.fields, {formerly:{arrayValue:{values: [...new Set([g.code, ...g.was])].filter(x => x !== c).map(str)}}});
       await commit([create('groups/'+c, fields), ...items.map(d => create(`groups/${c}/items/${idOf(d)}`, d.fields || {})),
-        ...members.map(d => create(`groups/${c}/members/${idOf(d)}`, d.fields || {}))]);
+        ...members.map(d => create(`groups/${c}/members/${idOf(d)}`, d.fields || {})),
+        ...shared.map(d => create(`groups/${c}/shared/${idOf(d)}`, d.fields || {})), ...settings.map(d => create(`groups/${c}/settings/${idOf(d)}`, d.fields || {})),
+        ...invites.map(d => ({update:{name: d.name, fields:{group: str(c)}}, updateMask:{fieldPaths:['group']}, currentDocument:{exists:true}}))]);
       if(g.mail) await commit([{update:{name: NAME('mailboxes/'+g.mail), fields:{group: str(c)}}, currentDocument:{exists:true}}]);
       status('Removing the old code…');
-      await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)), del('groups/'+g.code)]);
+      await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)),
+        ...shared.map(d => del(`groups/${g.code}/shared/${idOf(d)}`)), ...settings.map(d => del(`groups/${g.code}/settings/${idOf(d)}`)), del('groups/'+g.code)]);
       status(`${g.name}: new join code ${fmt(c)} (${items.length} items copied).`, 'ok');
     }
     if(what === 'send'){
@@ -309,7 +336,8 @@ async function act(what, g, el){
       if(typed === null) return; if(same(typed) !== same(g.name)) return status('The name didn’t match, so nothing was deleted.', 'err');
       busy(true); status('Deleting…');
       const items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`), waiting = g.mail ? await list(`/mailboxes/${g.mail}/items`) : [];
-      await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)),
+      const extra = [...await list(`/groups/${g.code}/shared`), ...await list(`/groups/${g.code}/settings`), ...await invitesOf(g.code)];
+      await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)), ...extra.map(d => ({delete: d.name})),
         ...waiting.map(d => del(`mailboxes/${g.mail}/items/${idOf(d)}`)), ...(g.mail ? [del('mailboxes/'+g.mail)] : []), del('groups/'+g.code)]);
       status(`${g.name} deleted.`, 'ok');
     }

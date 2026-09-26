@@ -228,6 +228,14 @@ textarea{resize:vertical;min-height:84px}
 .cones-pick{display:flex;flex-wrap:wrap;gap:6px}
 .conechip i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:6px;vertical-align:-1px;outline:1px solid rgba(0,0,0,.4)}
 .mcard.draft{border-style:dashed;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
+/* players and parents: watch shared drills, nothing else */
+body.viewer .tabbar, body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
+body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!important}
+.prow{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+.prow>div{flex:1;min-width:0}.prow b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.prow small{display:block;color:var(--muted);font-size:12px}
+.prow select{width:auto;min-width:0;padding:6px 8px}.prow.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
+.rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
+.dtag.pl{color:var(--muted);border-color:var(--line)}
 .dtag{display:inline-block;font:700 10.5px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--accent);border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);border-radius:999px;padding:2px 6px;margin-right:2px;vertical-align:1px}
 .mcard .thumb{width:62px;height:88px;border-radius:6px;overflow:hidden;background:#1B4F27;border:0;padding:0}
 .mcard .thumb svg{width:100%;height:100%;display:block}
@@ -810,6 +818,7 @@ function wireSwatches(el, fn){ $$('[data-color]', el).forEach(b => b.addEventLis
 /* ---------- tabs ---------- */
 let TAB = S.ui.tab || 'pitch';
 function showTab(tab){
+  if(isViewer()) tab = 'moves';
   TAB = tab; S.ui.tab = tab; save();
   $$('.tabbar [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
   for(const v of ['pitch','squad','select','moves']) $('#v-'+v).hidden = v !== tab;
@@ -818,7 +827,9 @@ function showTab(tab){
 }
 $$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function renderAll(){
-  $('#teamName').textContent = team().name;
+  document.body.classList.toggle('viewer', isViewer());
+  if(isViewer() && TAB !== 'moves'){ showTab('moves'); return; }
+  $('#teamName').textContent = isViewer() ? 'Drills' : team().name;
   const gn = $('#groupName'); gn.hidden = !syncing();
   if(syncing()){ gn.textContent = S.sync.groupName; gn.style.setProperty('--gc', groupColour(S.sync.group)); }
   if(TAB==='pitch'){ renderTeamPitch(); renderBench(); requestAnimationFrame(()=>{ teamCtl.refresh(); if(!teamZoomed) teamZoomed = zoomTeam(); syncFitChip(); }); }
@@ -992,14 +1003,15 @@ function renderMoves(){
   const edit = !!curMove();
   $('#movesList').hidden = edit; $('#moveEditor').hidden = !edit;
   if(edit){ renderEditor(); return; }
+  if(isViewer()) return renderViewerMoves();
   const all = S.moves, el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
   const mv = all.filter(m => catOf(m) === cur), catName = CATS.find(c => c[0] === cur)[1];
   const card = m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length, draft = grp && m.draft;
       return `<div class="mcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
         ${m.desc?`<div class="mdesc">${esc(m.desc)}</div>`:''}
-        <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames · ${secs(framesOf(m))}</div>
-        <div class="mact">${draft ? `<button class="chip on" data-togroup="${m.id}">Share with group</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another group</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button></div>
+        <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${grp && !draft && m.forPlayers ? '<span class="dtag">Players see this</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames · ${secs(framesOf(m))}</div>
+        <div class="mact">${draft ? `<button class="chip on" data-togroup="${m.id}">Share with group</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another group</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-fp="${m.id}">${m.forPlayers ? 'Hide from players' : 'Share with players'}</button><button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button></div>
       </div></div>`; };
   const drafts = grp ? mv.filter(m => m.draft) : [], shared = grp ? mv.filter(m => !m.draft) : mv;
   el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>
@@ -1014,12 +1026,32 @@ function renderMoves(){
     openMove(m.id); pickPlayers();
   });
   $$('[data-undraft]', el).forEach(b => b.addEventListener('click', () => unshareMove(all.find(x => x.id===b.dataset.undraft))));
+  $$('[data-fp]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x => x.id===b.dataset.fp); setForPlayers(m, !m.forPlayers); renderMoves(); }));
   $$('[data-open]', el).forEach(b => b.addEventListener('click', () => openMove(b.dataset.open)));
   $$('[data-share]', el).forEach(b => b.addEventListener('click', () => openShare({kind:'move', moveId:b.dataset.share})));
   $$('[data-send]', el).forEach(b => b.addEventListener('click', () => sendToGroup(all.find(x => x.id===b.dataset.send))));
   $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => shareMove(all.find(x => x.id===b.dataset.togroup))));
   $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { const m = clone(all.find(x=>x.id===b.dataset.dup)); m.id = uid(); m.name += ' (copy)'; if(grp) m.draft = true; all.splice(all.findIndex(x=>x.id===b.dataset.dup)+1, 0, m); save(); renderMoves(); toast('Drill duplicated'); }));
   $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This drill will be deleted for every team, and from everyone in the group when you sync.' : 'This drill will be deleted for every team on this phone.', 'Delete move', () => { S.moves = S.moves.filter(x=>x!==m); save(); renderMoves(); toast('Drill deleted'); }); }));
+}
+// Players and parents see drills a coach marks for them, after the coach syncs; they can watch but not change them
+function setForPlayers(m, on){
+  if(on) m.forPlayers = true; else delete m.forPlayers; save();
+  toast(on ? `Players and parents will see ${m.name} after you sync` : `${m.name} will be taken off players' phones when you sync`);
+}
+function renderViewerMoves(){
+  const z = S.sync, el = $('#movesList'), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
+  const cats = CATS.filter(([k]) => S.moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CATS[0])[0];
+  const mv = S.moves.filter(m => catOf(m) === c);
+  el.innerHTML = `<div class="section-h"><span>${esc(z.groupName)} · ${ROLE_NAMES[z.role]}</span><span>Updated ${ago(z.lastSync)}</span></div>
+    ${z.role === 'parent' ? '<p class="hint">Fixtures, training and availability are coming soon. For now you can watch the drills the coaches share.</p>' : ''}
+    ${S.moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${l}<small>${S.moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
+      ${mv.map(m => `<div class="mcard"><button class="thumb" data-open="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
+        <button class="mname" data-open="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
+        <div class="mmeta">${framesOf(m)} frames · ${secs(framesOf(m))}</div><div class="mact"><button class="chip on" data-open="${m.id}">Watch</button></div></div></div>`).join('')}`
+    : `<div class="empty">Your coaches haven't shared any drills yet. Tap the cloud button at the top to check for new ones.</div>`}`;
+  $$('[data-tabcat]', el).forEach(b => b.addEventListener('click', () => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); }));
+  $$('[data-open]', el).forEach(b => b.addEventListener('click', () => openMove(b.dataset.open)));
 }
 // Drafts stay on this phone; sharing sends a move to the group on the next sync, unsharing removes it from the others
 function shareMove(m){ delete m.draft; save(); renderMoves(); toast(`${m.name} will be shared with ${S.sync.groupName} when you sync`); }
@@ -1037,7 +1069,7 @@ $('#edBack').addEventListener('click', () => { stopPlay(); ME.moveId = null; ME.
 
 const moveCtl = PitchCtl($('#movePitch'), {
   pick: (x,y) => {
-    if(!ME.editing) return null;
+    if(!ME.editing || isViewer()) return null;
     const m = curMove(), ic = m && m.icons[ME.editing]; if(!ic) return null;
     let best = null, bd = 1e9;
     // a touch on the middle of the selected shirt goes to the shirt (tap, double-tap, drag), not the dots under it
@@ -1047,24 +1079,27 @@ const moveCtl = PitchCtl($('#movePitch'), {
     return bd <= lim ? best : null;
   },
   tap: id => {
+    if(isViewer()) return;
     if(id.startsWith('c:')) return showCone(id.slice(2));
     if(id.startsWith('start:') || id.startsWith('end:')) return startPathEdit(id.split(':')[1]);
     if(id.startsWith('dot:')){ ME.frame = +id.slice(4); renderMoveLayer(); updateTransport(); return; }
     startPathEdit(id.slice(2)); // select the player and show their path
   },
   doubleTap: id => {
+    if(isViewer()) return;
     if(id.startsWith('c:')) return showCone(id.slice(2));
     if(id.startsWith('start:') || id.startsWith('end:')) return showMoveIcon(id.split(':')[1]);
     if(id.startsWith('dot:')){ const k = +id.slice(4); const ic = curMove().icons[ME.editing]; if(k!==0 && k!==lastOf(curMove()) && ic.keys[k]){ delete ic.keys[k]; save(); renderMoveLayer(); toast('Frame '+(k+1)+' set back to straight line'); } return; }
     showMoveIcon(id.slice(2)); // runs, timing and speeds
   },
   dragStart: id => {
+    if(isViewer()) return;
     if(ME.playing) stopPlay();
     const m = curMove(), f = Math.round(ME.frame);
     if(id==='i:ball' && m && !ballFree(m,f)){ const c = carrierAt(m,f); toast(c ? `#${c} has the ball at frame ${f+1}. Drag #${c} instead.` : `The ball is being passed at frame ${f+1}`); }
   },
   drag: (id, x, y) => {
-    const m = curMove(); if(!m) return;
+    const m = curMove(); if(!m || isViewer()) return;
     if(id.startsWith('start:') || id.startsWith('end:')){ moveEnd(m, id, x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('c:')){ const c = (m.cones || []).find(q => q.id === id.slice(2)); if(c) moveCone(m, c, x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('dot:')){ const k = +id.slice(4); m.icons[ME.editing].keys[k] = [x,y]; ME.frame = k; }
@@ -1072,7 +1107,7 @@ const moveCtl = PitchCtl($('#movePitch'), {
     save(); renderMoveLayer(); updateTransport();
   },
   dragEnd: id => {
-    const m = curMove(); if(!m || !(m.cones || []).length) return;
+    const m = curMove(); if(!m || isViewer() || !(m.cones || []).length) return;
     let ic, k;
     if(id.startsWith('start:') || id.startsWith('end:')){ const iid = id.split(':')[1], c = nearestCone(m, endPoint(m, id)); if(c){ moveEnd(m, id, c.x, c.y); save(); renderMoveLayer(); toast('Snapped to the ' + (CONES.find(x => x[0] === c.c) || CONES[0])[2].toLowerCase() + ' cone'); } return; }
     if(id.startsWith('dot:')){ ic = m.icons[ME.editing]; k = +id.slice(4); }
@@ -1123,7 +1158,7 @@ function showCone(cid){
 function renderEditor(){
   const m = curMove();
   $('#edName').textContent = m.name;
-  $('#edDesc').textContent = m.desc || 'Tap to name, describe, set category and length';
+  $('#edDesc').textContent = isViewer() ? (m.desc || 'Tap play to watch') : m.desc || 'Tap to name, describe, set category and length';
   syncShowChip();
   $('#edPasses').hidden = false; // always there: in a drill without the ball, tapping it adds the ball
   const st = $('#edState'); st.hidden = !syncing(); st.textContent = m.draft ? 'Draft · share' : 'Shared'; st.classList.toggle('on', !!m.draft);
@@ -1256,12 +1291,16 @@ function straighten(id){
 function startPathEdit(id){ stopPlay(); if(ME.editing !== id && (!ME.runSel || ME.runSel.id !== id)) ME.runSel = null; ME.editing = id; renderBanner(); renderMoveLayer(); }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
+  if(isViewer()) return openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>${esc(m.name)}</h2>${m.desc ? `<p>${esc(m.desc)}</p>` : ''}
+    <p class="muted">${CATS.find(c => c[0] === catOf(m))[1]} · ${framesOf(m)} frames · ${secs(framesOf(m))}. Tap play to watch; ½ and ¼ slow it down.</p><button class="btn ghost wide" data-close>Close</button>`);
   openSheet(`<div class="eyebrow">Drill details</div>
     <div class="field"><label class="field-label" for="mvName">Name</label><input id="mvName" type="text" value="${esc(m.name)}" placeholder="e.g. Loop 10-12, Lineout 4-man drive"></div>
     <div class="field"><label class="field-label" for="mvDesc">Description</label><textarea id="mvDesc" placeholder="Calls, triggers, who does what">${esc(m.desc)}</textarea></div>
     <div class="field"><div class="field-label">Category</div><div class="cats" id="mvCat">${CATS.map(([k,l]) => `<button type="button" class="chip${catOf(m)===k?' on':''}" data-cat="${k}">${l}</button>`).join('')}</div></div>
     <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames · ${secs(n)}${n===20?' (standard)':''}</option>`).join('')}</select>
       <p class="hint">Extra frames are added at the end: everyone holds their last position until you give them more to do. Shortening cuts frames off the end.</p></div>
+    ${syncing() ? `<label class="check"><input type="checkbox" id="mvPlayers"${m.forPlayers ? ' checked' : ''}> Share with players and parents</label>
+      <p class="hint">They can watch it but not change it. They see it after you sync${m.draft ? ', once it is shared with the group' : ''}.</p>` : ''}
     <div class="row-btns"><button class="btn" id="mvSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn ghost" id="mvShare">Share this drill</button>
     ${fbOn() ? '<button class="btn ghost" id="mvSend">Send to another group</button>' : ''}`,
@@ -1271,6 +1310,7 @@ $('#edTitle').addEventListener('click', () => {
       $('#mvSave', el).addEventListener('click', () => {
         m.name = $('#mvName', el).value.trim() || 'Untitled drill'; m.desc = $('#mvDesc', el).value.trim(); m.cat = cat;
         setFrames(m, +$('#mvFrames', el).value); S.ui.drillCat = cat;
+        const fp = $('#mvPlayers', el); if(fp && fp.checked !== !!m.forPlayers) setForPlayers(m, fp.checked);
         save(); closeSheet(); renderEditor(); });
       $('#mvShare', el).addEventListener('click', () => openShare({kind:'move', moveId:m.id}));
       const sg = $('#mvSend', el); if(sg) sg.addEventListener('click', () => sendToGroup(m));
@@ -1770,6 +1810,7 @@ function teamSettings(t, isNew){
       if(S.players.length){ showTab('select'); toast(`Team created. Pick its team from the squad of ${S.players.length}.`); } else { showTab('squad'); toast('Team created. Add your squad.'); } } });
 }
 $('#teamBtn').addEventListener('click', () => {
+  if(isViewer()) return showGroup();
   const t = team();
   const gc = syncing() ? groupColour(S.sync.group) : 'var(--accent)', others = Object.keys(S.parked || {}).length;
   openSheet(`${fbOn() ? (syncing() ? `<button class="gcard" id="tmGroup" style="--gc:${gc}"><span class="eyebrow">Group${others ? ` · 1 of ${others+1} on this phone` : ''}</span><b>${esc(S.sync.groupName)}</b><small>${others ? 'Switch group, ' : ''}sync, invite coaches, codes ›</small></button>` : `<button class="btn ghost" id="tmGroup">Join a coaching group</button>`) : ''}
@@ -1779,7 +1820,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Team settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New team${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. U16 Colts, 2nd XV"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 25 Sep 2026, 20:36</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 12:47</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -1949,6 +1990,11 @@ const fmtCode = c => String(c||'').replace(/^(.{4})(.{4})(.*)$/, '$1-$2-$3').rep
 const tidyCode = el => { if(el){ el.setAttribute('autocorrect', 'off'); el.addEventListener('input', () => { el.value = fmtCode(normCode(el.value)); }); } };
 function hashStr(s){ let h = 0x811c9dc5; for(let i=0;i<s.length;i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } return (h>>>0).toString(36) + '.' + s.length.toString(36); }
 const syncing = () => !!(S.sync && S.sync.group);
+// Roles in a group: admin (group admin), coach, player, parent. Phones from before roles are coaches.
+const ROLE_NAMES = {admin:'Group admin', coach:'Coach', player:'Player', parent:'Parent'};
+const viewerRole = r => r === 'player' || r === 'parent';
+const isViewer = () => syncing() && viewerRole(S.sync.role);
+const isGroupAdmin = () => syncing() && S.sync.role === 'admin';
 
 async function fbErr(r){ try { const j = await r.json(); return (j.error && (j.error.message || j.error.status)) || 'HTTP '+r.status; } catch(e){ return 'HTTP '+r.status; } }
 // One anonymous Firebase login per phone, shared by all its groups and kept when leaving one, so each phone is one
@@ -2013,7 +2059,7 @@ const itemTeam = id => id.startsWith('t_') ? id.slice(2) : id.startsWith('m_') ?
 const keptOnPhone = base => new Set(S.teams.filter(t => t.localOnly).map(t => 't_'+t.id).concat(S.moves.filter(m => m.draft && !base['mv_'+m.id]).map(m => 'mv_'+m.id))
   .concat(S.players.filter(p => p.localOnly && !base['p_'+p.id]).map(p => 'p_'+p.id)));
 function pendingChanges(){
-  if(!syncing()) return 0;
+  if(!syncing() || isViewer()) return 0;
   const base = S.sync.base || {}, loc = localItems(), localOnly = keptOnPhone(base); let n = 0;
   for(const id in loc) if(hashStr(loc[id].json) !== base[id]) n++;
   for(const id in base) if(!loc[id] && !id.startsWith('m_') && !localOnly.has(id)) n++;
@@ -2102,6 +2148,31 @@ async function syncNow(choices = {}, retry = true){
   return {sent: push.length + copyMoves.length, got, copies: copyMoves.length};
 }
 
+async function listDocs(path){
+  const out = []; let page = '';
+  do { const j = await fb('GET', `${path}?pageSize=300${page?'&pageToken='+encodeURIComponent(page):''}`) || {}; out.push(...(j.documents || [])); page = j.nextPageToken; } while(page);
+  return out;
+}
+// groups/<id>/shared/<drill id> holds each drill coaches have marked for players; the syncing coach keeps it matching
+async function publishShared(){
+  const g = S.sync.group, have = {}, want = {}, writes = [];
+  for(const d of await listDocs(`/groups/${g}/shared`)) have[d.name.split('/').pop()] = d.fields && d.fields.json ? d.fields.json.stringValue : '';
+  for(const m of S.moves) if(m.forPlayers && !m.draft){ const mm = Object.assign({}, m); delete mm.draft; delete mm.localOnly; want[m.id] = JSON.stringify(mm); }
+  for(const id in want) if(have[id] !== want[id]) writes.push({update:{name: DOCNAME(`groups/${g}/shared/${id}`), fields:{json:{stringValue: want[id]}, at:{integerValue: String(Date.now())}}}});
+  for(const id in have) if(!(id in want)) writes.push({delete: DOCNAME(`groups/${g}/shared/${id}`)});
+  for(let i=0;i<writes.length;i+=400) await fb('POST', ':commit', {writes: writes.slice(i, i+400)});
+  return writes.length;
+}
+async function pullShared(){
+  const was = new Set(S.moves.map(m => hashStr(JSON.stringify(m))));
+  const moves = (await listDocs(`/groups/${S.sync.group}/shared`)).map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(Boolean)
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const got = moves.filter(m => !was.has(hashStr(JSON.stringify(m)))).length, gone = Math.max(0, was.size - (moves.length - got));
+  S.moves = moves; S.sync.lastSync = Date.now();
+  if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; }
+  save(); return {got, gone, total: moves.length};
+}
+
 /* Sending moves between groups. Each group has two codes: the private join code (full access) and a public send code
    that only lets others drop a move into the group's inbox. mailboxes/<send code> holds {group: join code}; only the
    security rules can read it. Phones register under groups/<code>/members/<uid>, and only members can read the inbox.
@@ -2115,15 +2186,52 @@ function deviceLabel(){
   const kind = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : 'Device';
   return kind + (home ? ' · home screen app' : ' · browser');
 }
+// This phone's entry in a group: {role, wants}, null if it has none, undefined if the security rules predate roles
+async function myMember(group){
+  const uid = tokenUid(await fbToken());
+  try { const d = await fb('GET', `/groups/${group}/members/${uid}`); if(!d) return null; const f = d.fields || {};
+    return {role: f.role ? f.role.stringValue : 'coach', wants: f.wants ? f.wants.stringValue : ''}; }
+  catch(e){ if(e.status === 403) return undefined; throw e; }
+}
+// The group admin can change a phone's role or remove it at any time: check before syncing
+async function refreshRole(){
+  const z = S.sync, m = await myMember(z.group);
+  if(m === undefined) return;
+  if(m === null){ if(!(await fetchGroup(z.group))){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; }
+    const e = new Error('This phone is no longer in ' + z.groupName); e.removed = true; throw e; }
+  const was = z.role || 'coach'; z.role = m.role; z.wants = m.wants; save();
+  if(was !== z.role) roleChanged(was);
+}
+// Coaches keep the group's teams, squad and drills on the phone; players and parents only the shared drills
+function roleChanged(was){
+  const z = S.sync;
+  if(viewerRole(was) !== viewerRole(z.role)){
+    stopPlay(); S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id;
+    z.base = {}; z.lastSync = 0; ME.moveId = null; ME.editing = null;
+  }
+  save(); syncDot(); renderAll();
+  toast(`You are now ${z.role === 'admin' ? 'the group admin' : 'a ' + z.role} in ${z.groupName}`);
+  if(!SYNCING) setTimeout(() => runSync(null, true), 0);
+}
+function showRemoved(){
+  const z = S.sync;
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This phone is no longer in the group</h2>
+    <p class="muted">The group admin has removed it, or it was never registered. Ask them for an invite (coaches) or the player or parent code, then enter it here. Anything on this phone stays until you leave the group.</p>
+    <div class="row-btns"><button class="btn" id="rmJoin">Enter a code</button><button class="btn ghost" data-close>Later</button></div>
+    <button class="btn danger" id="rmLeave">Leave ${esc(z.groupName)}</button>`,
+    el => {
+      $('#rmJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
+      $('#rmLeave', el).addEventListener('click', () => { closeSheet(); leaveGroup(); });
+    });
+}
 async function ensureMailbox(){
   const z = S.sync, uid = tokenUid(await fbToken());
   const read = async () => { const g = await fb('GET', '/groups/'+z.group); if(!g){ const e = new Error('This group’s code has changed.'); e.gone = true; throw e; } return g.fields.mailbox ? normCode(g.fields.mailbox.stringValue) : ''; };
   let box = await read();
   if(z.memberOf !== z.group + ':' + uid){
-    try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, device:{stringValue: deviceLabel()}, at:{integerValue: String(Date.now())}, seen:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}); }
-    catch(e){ if(!alreadyThere(e)) throw e; }
-    z.memberOf = z.group + ':' + uid; z.seenAt = Date.now(); z.seenWho = z.who; save();
-  } else if(Date.now() - (z.seenAt || 0) > 3600e3 || z.seenWho !== z.who){
+    await refreshRole(); z.memberOf = z.group + ':' + uid; z.seenAt = 0; save();
+  }
+  if(Date.now() - (z.seenAt || 0) > 3600e3 || z.seenWho !== z.who){
     try {
       await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{who:{stringValue: z.who||''}, device:{stringValue: deviceLabel()}, seen:{integerValue: String(Date.now())}}},
         updateMask:{fieldPaths:['who', 'device', 'seen']}, currentDocument:{exists:true}}]});
@@ -2144,6 +2252,7 @@ async function ensureMailbox(){
 const inboxOnScreen = () => !sheetEl.hidden && !!$('#inList', sheetEl);
 async function checkInbox(again){
   if(!syncing() || inboxOnScreen()) return 0;
+  await refreshRole(); if(isViewer()) return 0;
   const box = await ensureMailbox(); let j;
   try { j = await fb('GET', `/mailboxes/${box}/items?pageSize=50`) || {}; }
   catch(e){ if(e.status === 403 && !again){ delete S.sync.memberOf; save(); return checkInbox(true); } throw e; }
@@ -2153,7 +2262,7 @@ async function checkInbox(again){
   return items.length;
 }
 // on opening the app or switching group: check quietly, but a changed join code needs the coach's attention
-const checkInboxQuietly = () => checkInbox().catch(e => { if(e.gone) askNewCode(); });
+const checkInboxQuietly = () => isViewer() ? runSync(null, true) : checkInbox().catch(e => { if(e.gone) askNewCode(); else if(e.removed) showRemoved(); });
 function showInbox(items){
   let accepted = 0;
   const card = it => { const m = JSON.parse(it.json);
@@ -2212,18 +2321,25 @@ function sendToGroup(m){
 }
 
 let SYNCING = false;
-async function runSync(choices){
-  if(SYNCING) return; SYNCING = true; $('#syncBtn').classList.add('spin');
+async function runSync(choices, quiet){
+  if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
+    await refreshRole();
+    if(isViewer()){
+      const r = await pullShared(); if(!curMove()) stopPlay(); renderAll();
+      if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
+      return;
+    }
     const r = await syncNow(choices);
     if(r.needs){ SYNCING = false; askTeamConflicts(r.needs, choices || {}); return; }
+    try { await publishShared(); } catch(e){ if(e.status !== 403) throw e; } // 403: security rules from before roles
     stopPlay(); renderAll();
-    toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} drill${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
+    if(!quiet || r.sent || r.got) toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} drill${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
     checkInboxQuietly();
   } catch(e){
-    // the admin removed the group: say so rather than showing a permissions error
-    let gone = false; if(e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
-    if(gone) askNewCode(); else toast(niceErr(e));
+    // the admin removed the group or this phone: say so rather than showing a permissions error
+    let gone = !!e.gone; if(!gone && e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
+    if(gone) askNewCode(); else if(e.removed) showRemoved(); else toast(niceErr(e));
   }
   finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); }
 }
@@ -2288,13 +2404,39 @@ function switchGroup(code){
   save(); syncDot(); renderAll(); toast(`Now in ${S.sync.groupName} · last synced ${ago(S.sync.lastSync)}`);
   checkInboxQuietly();
 }
-// Join or create a group. Shown on first open (a code is needed to use the app) and after leaving a group.
+// Join a group with a code. Shown on first open (a code is needed to use the app) and after leaving a group.
+// Codes: the group's player and parent codes (used by many phones), coach and group admin invites (each works once),
+// and for phones registered before roles, the group's own code.
+async function redeem(code, who){
+  const uid = tokenUid(await fbToken()), now = String(Date.now());
+  let inv = null; try { inv = await fb('GET', '/invites/'+code); } catch(e){ if(e.status !== 403) throw e; }
+  if(inv){
+    const f = inv.fields || {}, group = f.group ? f.group.stringValue : '', role = f.role ? f.role.stringValue : '';
+    const single = !!(f.single && f.single.booleanValue), usedBy = f.usedBy ? f.usedBy.stringValue : '';
+    const grp = await fetchGroup(group); if(!grp || !ROLE_NAMES[role]) return {err: 'That code is for a group that no longer exists.'};
+    const mine = await myMember(group);
+    if(mine) return {grp, role: mine.role, note: mine.role !== role ? `This phone is already in ${grp.name} as ${ROLE_NAMES[mine.role].toLowerCase()}. The group admin can change that in Group → People.` : ''};
+    if(single && usedBy && usedBy !== uid) return {err: 'This invite has already been used. Ask your group admin for a new one.'};
+    const writes = [{update:{name: DOCNAME(`groups/${group}/members/${uid}`), fields:{who:{stringValue: who}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}, role:{stringValue: role}, invite:{stringValue: code}}}, currentDocument:{exists:false}}];
+    if(single && !usedBy) writes.push({update:{name: DOCNAME('invites/'+code), fields:{usedBy:{stringValue: uid}, usedAt:{integerValue: now}}}, updateMask:{fieldPaths:['usedBy', 'usedAt']}, currentDocument:{updateTime: inv.updateTime}});
+    try { await fb('POST', ':commit', {writes}); }
+    catch(e){ if(e.status === 403 || e.status === 400 || /FAILED_PRECONDITION/.test(e.message)) return {err: 'This invite has already been used, or was cancelled. Ask your group admin for a new one.'}; throw e; }
+    return {grp, role};
+  }
+  const grp = await fetchGroup(code);
+  if(!grp) return {err: 'No group has that code. Check it with whoever gave it to you; it may have been replaced by a new one.'};
+  const mine = await myMember(code);
+  if(mine) return {grp, role: mine.role};
+  // security rules from before roles: the group's code still registers a coach
+  try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${code}/members/${uid}`), fields:{who:{stringValue: who}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}}}, currentDocument:{exists:false}}]}); return {grp, role: 'coach'}; }
+  catch(e){ if(alreadyThere(e)) return {grp, role: 'coach'}; if(e.status === 403) return {err: `${grp.name} now joins by invite. Ask your group admin for a coach invite, or for the player or parent code.`}; throw e; }
+}
 function showGate(canClose){
   const g = $('#gate'), pre = normCode((location.hash.match(/join=([\w-]+)/)||[])[1]);
   g.innerHTML = `<div class="gate-in">
-    <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Add another group' : 'Join your coaching group'}</h1>
-    <p class="muted">Your group shares teams and moves. You edit on your phone, then tap Sync to send your changes and get everyone else's. Ask your head coach for the group code.</p>
-    <div class="field"><label class="field-label" for="gtCode">Group code</label><input id="gtCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK" value="${pre ? fmtCode(pre) : ''}"></div>
+    <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Add another group' : 'Join your group'}</h1>
+    <p class="muted">Enter the code you were given. Coaches get an invite from their group admin; players and parents use the group's player or parent code. Coaches share teams and drills and tap Sync to swap changes; players and parents watch the drills their coaches share.</p>
+    <div class="field"><label class="field-label" for="gtCode">Code</label><input id="gtCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK" value="${pre ? fmtCode(pre) : ''}"></div>
     <div class="field"><label class="field-label" for="gtWho">Your name</label><input id="gtWho" type="text" placeholder="Shown to your group, e.g. Chris" value="${esc((S.sync||{}).who||'')}"></div>
     <button class="btn wide" id="gtJoin">Join group</button>
     ${canClose ? '<button class="btn ghost wide" id="gtClose">Cancel</button>' : ''}
@@ -2303,21 +2445,29 @@ function showGate(canClose){
   tidyCode($('#gtCode', g));
   const err = m => { $('#gtErr', g).textContent = m; }, who = () => $('#gtWho', g).value.trim();
   const busy = on => $$('button', g).forEach(b => b.disabled = on);
-  const enter = async grp => {
+  const enter = async (grp, role, note) => {
     if(/join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
     g.hidden = true;
-    if(syncing() && S.sync.group === grp.code){ toast('You are already in '+grp.name); return; }
-    if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return; }
+    const me = grp.code + ':' + tokenUid(await fbToken());
+    // back into a group this phone already has: pick up the role, keep everything
+    const back = () => { const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = me; save();
+      if(was !== role) roleChanged(was); else { toast(note || 'You are in ' + grp.name); runSync(null, true); } };
+    if(syncing() && S.sync.group === grp.code) return back();
+    if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return back(); }
     phoneAuth();
-    if(syncing()){ parkGroup(); S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; }
-    S.sync = {group: grp.code, groupName: grp.name, who: who(), base: {}, lastSync: 0}; save();
-    syncDot(); renderAll(); await chooseUploads();
+    const viewer = viewerRole(role);
+    if(syncing()) parkGroup();
+    if(syncing() || viewer){ S.teams = [Object.assign(newTeam('My team'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
+    S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, base: {}, lastSync: 0}; save();
+    syncDot(); renderAll();
+    if(note) toast(note); else if(role !== 'coach') toast(`Welcome to ${grp.name}. You joined as ${ROLE_NAMES[role].toLowerCase()}.`);
+    if(viewer) runSync(null, true); else await chooseUploads();
   };
   $('#gtJoin', g).addEventListener('click', async () => {
     const code = normCode($('#gtCode', g).value);
-    if(code.length !== 10) return err('Enter the 10-character code from your group.'); if(!who()) return err('Enter your name.');
+    if(code.length !== 10) return err('Enter the 10-character code you were given.'); if(!who()) return err('Enter your name.');
     busy(true); err('Checking…');
-    try { const grp = await fetchGroup(code); if(!grp){ err('No group has that code. Check it with whoever gave it to you.'); busy(false); return; } await enter(grp); }
+    try { const r = await redeem(code, who()); if(r.err){ err(r.err); busy(false); return; } await enter(r.grp, r.role, r.note); }
     catch(e){ err(niceErr(e)); busy(false); }
   });
   const c = $('#gtClose', g); if(c) c.addEventListener('click', () => { g.hidden = true; });
@@ -2345,48 +2495,157 @@ async function chooseUploads(){
         const x = (k==='t' ? S.teams : S.moves).find(y => y.id===id); if(!x) return; if(k==='t') x.localOnly = !c.checked; else if(c.checked) delete x.draft; else x.draft = true; });
       save(); closeSheet(); runSync(); }));
 }
+/* Group admin tools. invites/<code> = {group, role, single}: the player and parent codes are reusable (their codes are
+   kept in groups/<id>/settings/codes so coaches can hand them out); coach and group admin invites work once. */
+async function getCodes(){ const d = await fb('GET', `/groups/${S.sync.group}/settings/codes`), f = d && d.fields || {}; return {player: f.player ? f.player.stringValue : '', parent: f.parent ? f.parent.stringValue : ''}; }
+const inviteDoc = (code, role, single) => ({update:{name: DOCNAME('invites/'+code), fields:{group:{stringValue: S.sync.group}, role:{stringValue: role}, single:{booleanValue: single}, by:{stringValue: S.sync.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}});
+// a new player or parent code; the old one stops letting new phones in (phones already in stay)
+async function newRoleCode(kind, old){
+  const code = newCode(), writes = [inviteDoc(code, kind, false), {update:{name: DOCNAME(`groups/${S.sync.group}/settings/codes`), fields:{[kind]:{stringValue: code}}}, updateMask:{fieldPaths:[kind]}}];
+  if(old) writes.push({delete: DOCNAME('invites/'+old)});
+  await fb('POST', ':commit', {writes}); return code;
+}
+async function newInvite(role){ const code = newCode(); await fb('POST', ':commit', {writes:[inviteDoc(code, role, true)]}); return code; }
+async function groupInvites(){
+  const r = await fb('POST', ':runQuery', {structuredQuery:{from:[{collectionId:'invites'}], where:{fieldFilter:{field:{fieldPath:'group'}, op:'EQUAL', value:{stringValue: S.sync.group}}}}});
+  return (r || []).filter(x => x.document).map(x => { const f = x.document.fields || {}; return {code: x.document.name.split('/').pop(), role: f.role ? f.role.stringValue : '', single: !!(f.single && f.single.booleanValue), usedBy: f.usedBy ? f.usedBy.stringValue : '', at: +(f.at && f.at.integerValue || 0), by: f.by ? f.by.stringValue : ''}; });
+}
+async function groupMembers(){
+  return (await listDocs(`/groups/${S.sync.group}/members`)).map(d => { const f = d.fields || {};
+    return {uid: d.name.split('/').pop(), who: f.who ? f.who.stringValue : '', device: f.device ? f.device.stringValue : '', role: f.role ? f.role.stringValue : 'coach', wants: f.wants ? f.wants.stringValue : '', seen: +(f.seen && f.seen.integerValue || f.at && f.at.integerValue || 0)}; });
+}
+// fields: {role?, wants?}; null removes the field
+async function setMember(uid, fields){
+  const vals = {}; for(const k in fields) if(fields[k] != null) vals[k] = {stringValue: fields[k]};
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${S.sync.group}/members/${uid}`), fields: vals}, updateMask:{fieldPaths: Object.keys(fields)}, currentDocument:{exists:true}}]});
+}
+async function shareText(text, title, fallback){
+  try { if(canShare()) await navigator.share({title, text}); else { await navigator.clipboard.writeText(text); toast('Copied'); } }
+  catch(e){ if(e.name !== 'AbortError') toast(fallback); }
+}
+function joinText(code, role){
+  const z = S.sync, link = linkBase() + '#join=' + fmtCode(code);
+  return viewerRole(role) ? `${z.groupName} ${role}s: watch the drills your coaches share in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${link}`
+    : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a group admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}`;
+}
+function leaveGroup(){
+  const z = S.sync, others = Object.keys(S.parked || {});
+  if(others.length){ S.sync = null; const next = others[0]; S.parked[next] && switchGroup(next); }
+  else { S.sync = {who: z.who}; save(); syncDot(); renderAll(); showGate(false); }
+}
 function showGroup(){
-  const z = S.sync, n = pendingChanges(), link = linkBase() + '#join=' + fmtCode(z.group);
-  openSheet(`<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your group</span><b>${esc(z.groupName)}</b><small>${S.teams.length} team${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}</small></div>
-    <div class="field"><div class="field-label">Join code · only for your own coaches</div><div class="gcode">${fmtCode(z.group)}</div></div>
-    <div class="field"><div class="field-label">Send code · give this to other groups</div><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div>
-      <p class="hint">Other groups use it to send you moves. It can't be used to see or change anything in your group.</p></div>
-    <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
-    <div class="row-btns"><button class="btn" id="gpSync">Sync now</button><button class="btn ghost" id="gpInvite">Invite a coach</button><button class="btn ghost" id="gpSend">Share send code</button></div>
-    <div class="field"><div class="field-label">Drills sent to this group</div><div class="add-row"><p class="muted" id="gpInbox" style="align-self:center">Tap Check now to look for moves other groups have sent.</p><button class="btn ghost" id="gpCheck">Check now</button></div></div>
-    <div class="field"><label class="field-label" for="gpWho">Your name in the group</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
-    <div class="field"><div class="field-label">Groups on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.teams} team${gr.teams===1?'':'s'} · ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
+  const z = S.sync, n = pendingChanges(), viewer = isViewer(), admin = isGroupAdmin(), others = Object.keys(S.parked || {});
+  const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your group · ${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} team${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
+  const tail = `<div class="field"><label class="field-label" for="gpWho">Your name in the group</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
+    <div class="field"><div class="field-label">Groups on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
       <button class="btn ghost" id="gpAdd">Add another group</button></div>
-    <button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>
-    <p class="hint">Anyone with the join code can see and change the group's teams and moves, so only give it to your coaches.</p>`,
+    <button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>`;
+  const wireTail = el => {
+    $('#gpSync', el).addEventListener('click', () => { closeSheet(); runSync(); });
+    $('#gpWhoSave', el).addEventListener('click', () => { z.who = $('#gpWho', el).value.trim() || z.who; save(); toast('Name saved'); });
+    $$('[data-gsw]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.gsw !== z.group) switchGroup(b.dataset.gsw); else closeSheet(); }));
+    $('#gpAdd', el).addEventListener('click', () => { closeSheet(); showGate(true); });
+    $('#gpLeave', el).addEventListener('click', () => askConfirm('Leave '+z.groupName+'?',
+      viewer ? 'Its drills are removed from this phone. You need the code to join again.'
+      : others.length ? `Its teams and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The group keeps everything you've synced. To come back you need a new invite from the group admin.`
+      : 'Your teams stay on this phone but stop syncing. To come back you need a new invite from the group admin.', 'Leave group', leaveGroup));
+  };
+  if(viewer) return openSheet(`${card}
+    <p class="muted">Updated ${ago(z.lastSync)}.</p>
+    ${z.role === 'parent' ? '<p class="hint">Fixtures, training and availability are coming soon.</p>' : ''}
+    <button class="btn wide" id="gpSync">Check for new drills</button>
+    <div class="field"><div class="field-label">Are you a coach?</div>${z.wants ? '<p class="muted">You have asked for coach access. The group admin will see your request next time they open the group.</p>'
+      : '<p class="hint">Coaches can change teams and drills. Ask the group admin to make this phone a coach.</p><button class="btn ghost" id="gpAsk">Ask for coach access</button>'}</div>
+    ${tail}`,
     el => {
-      $('#gpSync', el).addEventListener('click', () => { closeSheet(); runSync(); });
-      $('#gpInvite', el).addEventListener('click', async () => {
-        const text = `Join ${z.groupName} in Rugby Team Picker. Open this link, or enter code ${fmtCode(z.group)}: ${link}`;
-        try { if(canShare()) await navigator.share({title: z.groupName, text}); else { await navigator.clipboard.writeText(text); toast('Invite copied'); } } catch(e){ if(e.name!=='AbortError') toast('Code: '+fmtCode(z.group)); }
+      wireTail(el);
+      const ask = $('#gpAsk', el); if(ask) ask.addEventListener('click', async () => {
+        ask.disabled = true;
+        try { const uid = tokenUid(await fbToken());
+          await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{wants:{stringValue:'coach'}}}, updateMask:{fieldPaths:['wants']}, currentDocument:{exists:true}}]});
+          z.wants = 'coach'; save(); toast('Request sent to the group admin'); showGroup(); }
+        catch(e){ ask.disabled = false; toast(niceErr(e)); }
       });
+    });
+  openSheet(`${card}
+    <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
+    <button class="btn wide" id="gpSync">Sync now</button>
+    <div class="field"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
+    ${admin ? `<div class="field"><div class="field-label">Invite coaches</div><p class="hint">Each invite works once, on one phone.</p>
+        <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a group admin</button></div><div id="gpInvites"></div></div>
+      <div class="field"><div class="field-label">People</div><div id="gpPeople"><p class="muted">Loading…</p></div></div>`
+      : '<p class="hint">To add another coach, ask your group admin for an invite.</p>'}
+    <div class="field"><div class="field-label">Send code · give this to other groups</div><div class="rcode"><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div><button class="chip" id="gpSend">Share</button></div>
+      <p class="hint">Other groups use it to send you drills. It can't be used to see or change anything in your group.</p></div>
+    <div class="field"><div class="field-label">Drills sent to this group</div><div class="add-row"><p class="muted" id="gpInbox" style="align-self:center">Tap Check now to look for drills other groups have sent.</p><button class="btn ghost" id="gpCheck">Check now</button></div></div>
+    ${tail}`,
+    el => {
+      wireTail(el);
+      const live = () => el.isConnected && !sheetEl.hidden;
+      const loadCodes = async () => {
+        const box = $('#gpCodes', el); if(!box) return;
+        try {
+          const c = await getCodes(); if(!live()) return;
+          const row = (k, label) => c[k] ? `<small class="muted">${label}</small><div class="rcode"><div class="gcode">${fmtCode(c[k])}</div><button class="chip" data-shc="${k}">Share</button>${admin ? `<button class="chip" data-nwc="${k}">New code</button>` : ''}</div>` : '';
+          box.innerHTML = c.player || c.parent ? row('player', 'Players') + row('parent', 'Parents') + '<p class="hint">Players and parents can watch the drills you share with them, and nothing else. Any number of phones can use these codes.</p>'
+            : admin ? '<p class="hint">Players and parents join with their own codes and only see the drills you share with them.</p><button class="btn ghost" id="gpMk">Make player and parent codes</button>'
+            : '<p class="hint">Your group admin hasn’t made them yet.</p>';
+          $$('[data-shc]', box).forEach(b => b.addEventListener('click', () => shareText(joinText(c[b.dataset.shc], b.dataset.shc), z.groupName, 'Code: ' + fmtCode(c[b.dataset.shc]))));
+          $$('[data-nwc]', box).forEach(b => b.addEventListener('click', () => {
+            if(b.dataset.sure){ b.disabled = true; newRoleCode(b.dataset.nwc, c[b.dataset.nwc]).then(() => { toast('New code made. The old one no longer lets new phones in.'); loadCodes(); }, e => { b.disabled = false; toast(niceErr(e)); }); }
+            else { b.dataset.sure = 1; b.textContent = 'Replace? Tap again'; b.classList.add('on'); }
+          }));
+          const mk = $('#gpMk', box); if(mk) mk.addEventListener('click', async () => { mk.disabled = true; try { await newRoleCode('player'); await newRoleCode('parent'); loadCodes(); } catch(e){ mk.disabled = false; toast(niceErr(e)); } });
+        } catch(e){ box.innerHTML = `<p class="hint">Could not load the codes: ${esc(niceErr(e))}</p>`; }
+      };
+      const loadInvites = async () => {
+        const box = $('#gpInvites', el); if(!box) return;
+        try {
+          const list = (await groupInvites()).filter(i => i.single && !i.usedBy).sort((a, b) => b.at - a.at); if(!live()) return;
+          box.innerHTML = list.length ? `<small class="muted">Not used yet</small>` + list.map(i => `<div class="prow"><div><b>${fmtCode(i.code)}</b><small>${ROLE_NAMES[i.role] || i.role} invite · made ${ago(i.at)}</small></div><button class="chip" data-shi="${i.code}" data-r="${i.role}">Share</button><button class="chip" data-cxi="${i.code}">Cancel</button></div>`).join('') : '';
+          $$('[data-shi]', box).forEach(b => b.addEventListener('click', () => shareText(joinText(b.dataset.shi, b.dataset.r), z.groupName, 'Invite code: ' + fmtCode(b.dataset.shi))));
+          $$('[data-cxi]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await fb('DELETE', '/invites/' + b.dataset.cxi); toast('Invite cancelled'); loadInvites(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+        } catch(e){ box.innerHTML = `<p class="hint">Could not list invites: ${esc(niceErr(e))}</p>`; }
+      };
+      const loadPeople = async () => {
+        const box = $('#gpPeople', el); if(!box) return;
+        try {
+          const me = tokenUid(await fbToken()), ms = await groupMembers(), order = {admin:0, coach:1, player:2, parent:3}; if(!live()) return;
+          const asks = m => m.wants && viewerRole(m.role);
+          ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
+          box.innerHTML = ms.map(m => asks(m)
+            ? `<div class="prow req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
+            : `<div class="prow"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
+              : `<select data-rl="${m.uid}" aria-label="Role for ${esc(m.who)}">${Object.entries(ROLE_NAMES).map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select><button class="chip" data-rm="${m.uid}">Remove</button>`}</div>`).join('')
+            + '<p class="hint">Changes reach each phone the next time it opens or syncs. A removed phone needs a new invite or code to come back.</p>';
+          const act = async (b, fn, msg) => { b.disabled = true; try { await fn(); toast(msg); loadPeople(); } catch(e){ b.disabled = false; toast(niceErr(e)); } };
+          const nm = uid => (ms.find(m => m.uid === uid) || {}).who || 'They';
+          $$('[data-ok]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.ok, {role:'coach', wants:null}), `${nm(b.dataset.ok)} is now a coach`)));
+          $$('[data-no]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.no, {wants:null}), 'Request declined')));
+          $$('[data-rl]', box).forEach(s => s.addEventListener('change', () => act(s, () => setMember(s.dataset.rl, viewerRole(s.value) ? {role: s.value} : {role: s.value, wants: null}), `${nm(s.dataset.rl)} is now ${s.value === 'admin' ? 'a group admin' : 'a ' + s.value}`)));
+          $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
+            if(b.dataset.sure) act(b, () => fb('DELETE', `/groups/${z.group}/members/${b.dataset.rm}`), `${nm(b.dataset.rm)} removed`);
+            else { b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); }
+          }));
+        } catch(e){ box.innerHTML = `<p class="hint">Could not load people: ${esc(niceErr(e))}</p>`; }
+      };
+      loadCodes(); loadInvites(); loadPeople();
+      const invite = async (b, role) => { b.disabled = true;
+        try { const code = await newInvite(role); loadInvites(); await shareText(joinText(code, role), z.groupName, 'Invite code: ' + fmtCode(code)); }
+        catch(e){ toast(niceErr(e)); } finally { b.disabled = false; } };
+      const ic = $('#gpInvC', el); if(ic) ic.addEventListener('click', () => invite(ic, 'coach'));
+      const ia = $('#gpInvA', el); if(ia) ia.addEventListener('click', () => invite(ia, 'admin'));
       if(!z.mailbox) ensureMailbox().then(b => { const g = $('#gpBox', el); if(g) g.textContent = fmtCode(b); }).catch(() => { const g = $('#gpBox', el); if(g) g.textContent = 'Sync first'; });
       $('#gpSend', el).addEventListener('click', async () => {
         let box = z.mailbox; try { box = box || await ensureMailbox(); } catch(e){ return toast(niceErr(e)); }
-        const text = `To send a drill to ${z.groupName} in Rugby Team Picker, use send code ${fmtCode(box)}`;
-        try { if(canShare()) await navigator.share({title: z.groupName, text}); else { await navigator.clipboard.writeText(text); toast('Send code copied'); } } catch(e){ if(e.name!=='AbortError') toast('Send code: '+fmtCode(box)); }
+        shareText(`To send a drill to ${z.groupName} in Rugby Team Picker, use send code ${fmtCode(box)}`, z.groupName, 'Send code: ' + fmtCode(box));
       });
       $('#gpCheck', el).addEventListener('click', async () => {
         const out = $('#gpInbox', el), btn = $('#gpCheck', el); btn.disabled = true; out.textContent = 'Checking…';
         try { const n = await checkInbox(); if(!n) out.textContent = 'No drills waiting. Drills sent to your send code ' + fmtCode(S.sync.mailbox) + ' appear here.'; }
-        catch(e){ if(e.gone){ closeSheet(); askNewCode(); } else out.textContent = 'Could not check: ' + niceErr(e); }
+        catch(e){ if(e.gone){ closeSheet(); askNewCode(); } else if(e.removed){ closeSheet(); showRemoved(); } else out.textContent = 'Could not check: ' + niceErr(e); }
         finally { btn.disabled = false; }
       });
-      $('#gpWhoSave', el).addEventListener('click', () => { z.who = $('#gpWho', el).value.trim() || z.who; save(); toast('Name saved'); });
-      $$('[data-gsw]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.gsw !== z.group) switchGroup(b.dataset.gsw); else closeSheet(); }));
-      $('#gpAdd', el).addEventListener('click', () => { closeSheet(); showGate(true); });
-      const others = Object.keys(S.parked || {});
-      $('#gpLeave', el).addEventListener('click', () => askConfirm('Leave '+z.groupName+'?',
-        others.length ? `Its teams and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The group keeps everything you've synced, and you can join again with the code.`
-                      : 'Your teams stay on this phone but stop syncing. You need the code to join again.', 'Leave group', () => {
-        if(others.length){ S.sync = null; const next = others[0]; S.parked[next] && switchGroup(next); }
-        else { S.sync = {who: z.who}; save(); syncDot(); showGate(false); }
-      }));
     });
 }
 
@@ -2401,7 +2660,7 @@ syncDot();
 function checkJoinLink(){ if(fbOn() && /join=/.test(location.hash)) showGate(syncing()); }
 if(fbOn() && !syncing()) showGate(false); else { checkJoinLink(); if(fbOn()) setTimeout(checkInboxQuietly, 1200); }
 window.addEventListener('hashchange', checkJoinLink);
-window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup};
+window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup};
 })();
 </script>
 
