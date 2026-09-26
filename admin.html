@@ -23,7 +23,7 @@ h2{margin:0;font:800 21px/1.1 var(--display);text-transform:uppercase;letter-spa
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .field{display:flex;flex-direction:column;gap:6px}
 .field-label{font:700 12px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;font-family:inherit}
+input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;font-family:inherit}
 .code-in{font:800 20px/1.1 var(--display);letter-spacing:.12em;text-transform:uppercase}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{border:0;border-radius:10px;padding:10px 14px;background:var(--accent);color:var(--accent-ink);font:700 14px/1.1 var(--body);cursor:pointer}
@@ -46,7 +46,7 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
 .members .hint{margin-top:8px}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 [hidden]{display:none !important}
-.tabs{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
 .tabs button{border:0;border-radius:9px;padding:10px 8px;background:none;color:var(--muted);font:700 14px/1.1 var(--body);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .panel{display:flex;flex-direction:column;gap:12px}
@@ -69,11 +69,22 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <div class="tabs" role="tablist">
       <button role="tab" id="tabGroups" aria-selected="true" aria-controls="pGroups">Teams</button>
       <button role="tab" id="tabNew" aria-selected="false" aria-controls="pNew">New team</button>
+      <button role="tab" id="tabClubs" aria-selected="false" aria-controls="pClubs">Clubs</button>
     </div>
+    <section class="panel" id="pClubs" role="tabpanel" hidden>
+    <div class="card">
+      <h2>New club</h2>
+      <div class="field"><label class="field-label" for="cName">Club name</label><input id="cName" type="text" placeholder="e.g. Old Pats RFC"></div>
+      <div class="row"><button class="btn" id="cCreate">Create club</button></div>
+    </div>
+    <div id="clubs" class="panel"></div>
+    <p class="hint">A club groups its teams: club admins (invited here) can make teams, invite each team's admin, see every team's fixtures and make one parent code for the whole club. Put existing teams into a club with Add a team; their coaches, players and parents carry on as before.</p>
+    </section>
     <section class="panel" id="pNew" role="tabpanel" hidden>
     <div class="card">
       <h2>New team</h2>
       <div class="field"><label class="field-label" for="nName">Team name</label><input id="nName" type="text" placeholder="e.g. Old Pats U12"></div>
+      <div class="field"><label class="field-label" for="nClub">Club</label><select id="nClub"><option value="">No club</option></select></div>
       <div class="field"><label class="field-label" for="nCode">Join code (leave blank for a random one)</label><input id="nCode" class="code-in" type="text" autocapitalize="characters" autocorrect="off" autocomplete="off" spellcheck="false" maxlength="12" placeholder="ABCD-EFGH-JK"></div>
       <div class="row"><button class="btn" id="create">Create team</button></div>
     </div>
@@ -85,7 +96,7 @@ input{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 26 Sep 2026, 17:34</p>
+  <p class="hint" style="text-align:center">Version 26 Sep 2026, 22:24</p>
 </main>
 <script>
 (() => {
@@ -149,10 +160,67 @@ async function signIn(){
   finally { $('#go').disabled = false; }
 }
 
+/* ---------- clubs ----------
+   clubs/<id> = {name}; a team joins a club with groups/<code>.club and a clubs/<id>/teams/<code> = {name} entry (which
+   is what the club's parents and admins can list). Club admins are invited with a single-use invite {club, role: admin}. */
+async function clubNames(){ const out = {}; for(const d of await list('/clubs').catch(() => [])) out[idOf(d)] = d.fields?.name?.stringValue || ''; return out; }
+async function loadClubs(){
+  const box = $('#clubs'); box.innerHTML = '<p class="muted">Loading clubs…</p>';
+  try {
+    const clubs = await list('/clubs'), groups = await list('/groups');
+    const name = d => d.fields?.name?.stringValue || '(no name)';
+    const sel = $('#nClub'); sel.innerHTML = '<option value="">No club</option>' + clubs.map(c => `<option value="${idOf(c)}">${esc(name(c))}</option>`).join('');
+    box.innerHTML = clubs.length ? '' : '<p class="muted">No clubs yet.</p>';
+    for(const c of clubs.sort((a, b) => name(a).localeCompare(name(b)))){
+      const id = idOf(c), teams = groups.filter(g => g.fields?.club?.stringValue === id).sort((a, b) => name(a).localeCompare(name(b), 'en', {numeric: true}));
+      const free = groups.filter(g => !g.fields?.club?.stringValue).sort((a, b) => name(a).localeCompare(name(b)));
+      const members = await list(`/clubs/${id}/members`).catch(() => []), admins = members.filter(m => m.fields?.role?.stringValue === 'admin');
+      const el = document.createElement('section'); el.className = 'card';
+      el.innerHTML = `<h2>${esc(name(c))}</h2>
+        <div class="field"><div class="field-label">Teams · ${teams.length}</div>${teams.length ? `<table class="members"><tbody>${teams.map(g => `<tr><td>${esc(name(g))}<small>${fmt(idOf(g))}</small></td><td><button class="btn ghost sm" data-out="${idOf(g)}">Take out of club</button></td></tr>`).join('')}</tbody></table>` : '<p class="hint">No teams yet.</p>'}</div>
+        ${free.length ? `<div class="row"><select data-addsel style="flex:1">${free.map(g => `<option value="${idOf(g)}">${esc(name(g))}</option>`).join('')}</select><button class="btn ghost" data-add>Add a team</button></div>` : ''}
+        <p class="hint">Club admins: ${admins.length ? admins.map(m => esc(m.fields?.who?.stringValue || '(no name)')).join(', ') : 'none yet'}. Parents who joined with the club code: ${members.length - admins.length}.</p>
+        <div class="row"><button class="btn" data-cinv>Invite club admin</button><button class="btn ghost" data-cren>Rename</button><button class="btn danger" data-cdel>Delete club</button></div>`;
+      const run = async fn => { el.querySelectorAll('button').forEach(b => b.disabled = true); try { await fn(); } catch(e){ status(e.message, 'err'); } await loadClubs(); load(); };
+      el.querySelectorAll('[data-out]').forEach(b => b.addEventListener('click', () => run(async () => {
+        await commit([{update:{name: NAME('groups/' + b.dataset.out), fields:{}}, updateMask:{fieldPaths:['club']}, currentDocument:{exists:true}}, del(`clubs/${id}/teams/${b.dataset.out}`)]);
+        status('Taken out of the club.', 'ok'); })));
+      const add = el.querySelector('[data-add]'); if(add) add.addEventListener('click', () => run(async () => {
+        const g = el.querySelector('[data-addsel]').value, gd = groups.find(x => idOf(x) === g);
+        await commit([{update:{name: NAME('groups/' + g), fields:{club: str(id)}}, updateMask:{fieldPaths:['club']}, currentDocument:{exists:true}}, {update:{name: NAME(`clubs/${id}/teams/${g}`), fields:{name: str(name(gd))}}}]);
+        status(`${name(gd)} is now in ${name(c)}.`, 'ok'); }));
+      el.querySelector('[data-cinv]').addEventListener('click', async () => {
+        const code = newCode(), link = appLink(code);
+        try { await commit([create('invites/' + code, {club: str(id), role: str('admin'), single: {booleanValue: true}, by: str('Site admin'), at: {integerValue: String(Date.now())}})]);
+          try { await navigator.clipboard.writeText(link); } catch(e){}
+          status(`${name(c)}: club admin invite ${fmt(code)}. It works once. Open ${link} on the club admin's phone, or enter the code in Team → Add another team (the link is copied).`, 'ok'); }
+        catch(e){ status(e.message, 'err'); }
+      });
+      el.querySelector('[data-cren]').addEventListener('click', () => { const n = prompt('New name for the club', name(c)); if(n && n.trim()) run(async () => { await fb('PATCH', `/clubs/${id}?updateMask.fieldPaths=name`, {fields:{name: str(n.trim())}}); status('Renamed.', 'ok'); }); });
+      el.querySelector('[data-cdel]').addEventListener('click', () => {
+        if(!confirm(`Delete ${name(c)}? Its teams are kept and carry on as teams without a club; club admins and the club parent code stop working.`)) return;
+        run(async () => {
+          const inv = (await fb('POST', ':runQuery', {structuredQuery:{from:[{collectionId:'invites'}], where:{fieldFilter:{field:{fieldPath:'club'}, op:'EQUAL', value: str(id)}}}}) || []).filter(x => x.document).map(x => x.document);
+          const sub = []; for(const k of ['members', 'teams', 'settings']) sub.push(...await list(`/clubs/${id}/${k}`));
+          await commit([...teams.map(g => ({update:{name: NAME('groups/' + idOf(g)), fields:{}}, updateMask:{fieldPaths:['club']}, currentDocument:{exists:true}})), ...sub.map(d => ({delete: d.name})), ...inv.map(d => ({delete: d.name})), del('clubs/' + id)]);
+          status(`${name(c)} deleted. Its teams carry on without a club.`, 'ok');
+        });
+      });
+      box.appendChild(el);
+    }
+  } catch(e){ box.innerHTML = ''; status(e.message, 'err'); }
+}
+$('#cCreate').addEventListener('click', async () => {
+  const n = $('#cName').value.trim(); if(!n) return status('Enter a club name.', 'err');
+  $('#cCreate').disabled = true;
+  try { await commit([create('clubs/' + newCode().toLowerCase(), {name: str(n)})]); $('#cName').value = ''; status(`Created ${n}. Add its teams, then invite a club admin.`, 'ok'); await loadClubs(); }
+  catch(e){ status(e.message, 'err'); } finally { $('#cCreate').disabled = false; }
+});
+
 async function load(){
   const keepMsg = $('#status').textContent; if(!keepMsg) status('Loading teams…');
   try {
-    const docs = await list('/groups'), box = $('#groups'), boxesByGroup = {};
+    const docs = await list('/groups'), box = $('#groups'), boxesByGroup = {}, clubs = await clubNames();
     for(const m of await list('/mailboxes').catch(() => [])){ const g = m.fields?.group?.stringValue; if(g) (boxesByGroup[g] = boxesByGroup[g] || []).push(idOf(m)); }
     $('#gCount').textContent = `Teams · ${docs.length}`;
     box.innerHTML = docs.length ? '' : '<p class="muted">No teams yet.</p>';
@@ -164,12 +232,13 @@ async function load(){
       el.innerHTML = `<h2>${esc(name)}</h2>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
+        ${f.club?.stringValue ? `<p class="hint">Club: ${esc(clubs[f.club.stringValue] || 'missing club')}</p>` : ''}
         <details class="members" data-members><summary>People · checking…</summary><div class="mlist"></div></details>
         ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p><div class="row" data-fix hidden><button class="btn" data-a="repair">Repair inbox</button></div>` : ''}
         ${(boxesByGroup[code] || []).filter(b => b !== mail).map(b => `<p class="hint err" data-stray="${esc(b)}">Send code ${fmt(b)} also leads to this team, but its coaches look in ${mail ? fmt(mail) : 'no inbox'}, so moves sent to ${fmt(b)} never reach them. Checking…</p>
           <div class="row"><button class="btn" data-a="adopt" data-box="${esc(b)}">Make ${fmt(b)} the send code</button></div>`).join('')}
         <div class="row"><button class="btn" data-a="invite">Invite team admin</button><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
-      el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, raw, was, box: b.dataset.box}, el)));
+      el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, raw, was, box: b.dataset.box, club: f.club?.stringValue || ''}, el)));
       showMembers(code, el);
       el.querySelectorAll('[data-stray]').forEach(p => list(`/mailboxes/${p.dataset.stray}/items`).then(w => {
         p.textContent = p.textContent.replace('Checking…', w.length ? `${w.length} move${w.length>1?'s':''} waiting there.` : 'Nothing waiting there.'); }).catch(() => {}));
@@ -295,6 +364,7 @@ async function act(what, g, el){
     if(what === 'rename'){
       const n = prompt('New name for the team', g.name); if(!n || !n.trim()) return;
       busy(true); await fb('PATCH', `/groups/${g.code}?updateMask.fieldPaths=name&currentDocument.exists=true`, {fields:{name: str(n.trim())}});
+      if(g.club) await commit([{update:{name: NAME(`clubs/${g.club}/teams/${g.code}`), fields:{name: str(n.trim())}}}]);
       status('Renamed.', 'ok');
     }
     if(what === 'join'){
@@ -313,6 +383,7 @@ async function act(what, g, el){
         ...subs.map(([k, d]) => create(`groups/${c}/${k}/${idOf(d)}`, d.fields || {})),
         ...invites.map(d => ({update:{name: d.name, fields:{group: str(c)}}, updateMask:{fieldPaths:['group']}, currentDocument:{exists:true}}))]);
       if(g.mail) await commit([{update:{name: NAME('mailboxes/'+g.mail), fields:{group: str(c)}}, currentDocument:{exists:true}}]);
+      if(g.club) await commit([{update:{name: NAME(`clubs/${g.club}/teams/${c}`), fields:{name: str(g.name)}}}, del(`clubs/${g.club}/teams/${g.code}`)]);
       status('Removing the old code…');
       await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)),
         ...subs.map(([k, d]) => del(`groups/${g.code}/${k}/${idOf(d)}`)), del('groups/'+g.code)]);
@@ -339,7 +410,7 @@ async function act(what, g, el){
       const items = await list(`/groups/${g.code}/items`), members = await list(`/groups/${g.code}/members`), waiting = g.mail ? await list(`/mailboxes/${g.mail}/items`) : [];
       const extra = [...await invitesOf(g.code)]; for(const c of ['shared', 'settings', 'events', 'roster', 'avail', 'squads']) extra.push(...await list(`/groups/${g.code}/${c}`));
       await commit([...items.map(d => del(`groups/${g.code}/items/${idOf(d)}`)), ...members.map(d => del(`groups/${g.code}/members/${idOf(d)}`)), ...extra.map(d => ({delete: d.name})),
-        ...waiting.map(d => del(`mailboxes/${g.mail}/items/${idOf(d)}`)), ...(g.mail ? [del('mailboxes/'+g.mail)] : []), del('groups/'+g.code)]);
+        ...waiting.map(d => del(`mailboxes/${g.mail}/items/${idOf(d)}`)), ...(g.mail ? [del('mailboxes/'+g.mail)] : []), ...(g.club ? [del(`clubs/${g.club}/teams/${g.code}`)] : []), del('groups/'+g.code)]);
       status(`${g.name} deleted.`, 'ok');
     }
     await load();
@@ -354,18 +425,19 @@ $('#create').addEventListener('click', async () => {
   try {
     if(await fb('GET', '/groups/'+c)) throw new Error('That code is already used by another team.');
     if(await fb('GET', '/mailboxes/'+c)) throw new Error('That code is already a send code. Pick a different join code.');
-    await commit([create('groups/'+c, {name: str(name)})]);
+    const club = $('#nClub').value;
+    await commit([create('groups/'+c, club ? {name: str(name), club: str(club)} : {name: str(name)}), ...(club ? [{update:{name: NAME(`clubs/${club}/teams/${c}`), fields:{name: str(name)}}}] : [])]);
     $('#nName').value = ''; $('#nCode').value = ''; tab('groups'); await load(); status(`Created ${name}. Join code ${fmt(c)}.`, 'ok');
   } catch(e){ status(e.message, 'err'); }
   finally { $('#create').disabled = false; }
 });
 tidy($('#nCode'));
 function tab(which){
-  const g = which === 'groups';
-  $('#tabGroups').setAttribute('aria-selected', g); $('#tabNew').setAttribute('aria-selected', !g);
-  $('#pGroups').hidden = !g; $('#pNew').hidden = g;
-  if(!g) $('#nName').focus();
+  for(const [t, pnl, k] of [['#tabGroups', '#pGroups', 'groups'], ['#tabNew', '#pNew', 'new'], ['#tabClubs', '#pClubs', 'clubs']]){ $(t).setAttribute('aria-selected', which === k); $(pnl).hidden = which !== k; }
+  if(which === 'new'){ $('#nName').focus(); clubNames().then(n => { $('#nClub').innerHTML = '<option value="">No club</option>' + Object.entries(n).map(([id, nm]) => `<option value="${id}">${esc(nm)}</option>`).join(''); }); }
+  if(which === 'clubs') loadClubs();
 }
+$('#tabClubs').addEventListener('click', () => tab('clubs'));
 $('#tabGroups').addEventListener('click', () => tab('groups'));
 $('#tabNew').addEventListener('click', () => tab('new'));
 $('#go').addEventListener('click', signIn);

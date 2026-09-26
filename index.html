@@ -1898,7 +1898,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Selection settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New selection${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. Saxons, Cup side"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 26 Sep 2026, 17:34</p>
+    <p class="hint" style="text-align:center">Version 26 Sep 2026, 22:24</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2107,7 +2107,7 @@ const niceErr = e => /fetch|network|load failed/i.test(e.message||'') ? 'No conn
 async function fetchGroup(code){
   const d = await fb('GET', '/groups/'+code); if(!d) return null;
   const f = d.fields || {}, was = f.formerly && f.formerly.arrayValue && f.formerly.arrayValue.values || [];
-  return {code, name: f.name.stringValue, formerly: was.map(v => v.stringValue)};
+  return {code, name: f.name.stringValue, formerly: was.map(v => v.stringValue), club: f.club ? f.club.stringValue : ''};
 }
 async function listItems(code){
   const out = {}; let page = '';
@@ -2405,7 +2405,7 @@ let SYNCING = false;
 async function runSync(choices, quiet){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
-    await refreshRole();
+    await refreshRole(); refreshClub().catch(() => {});
     if(isViewer()){
       const r = await pullShared(); try { await loadFixtures(); } catch(e){} if(!curMove()) stopPlay(); renderAll();
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
@@ -2494,6 +2494,7 @@ async function redeem(code, who){
   let inv = null; try { inv = await fb('GET', '/invites/'+code); } catch(e){ if(e.status !== 403) throw e; }
   if(inv){
     const f = inv.fields || {}, group = f.group ? f.group.stringValue : '', role = f.role ? f.role.stringValue : '';
+    if(!group && f.club) return joinClub(inv, code, who);
     const single = !!(f.single && f.single.booleanValue), usedBy = f.usedBy ? f.usedBy.stringValue : '';
     const grp = await fetchGroup(group); if(!grp || !ROLE_NAMES[role]) return {err: 'That code is for a team that no longer exists.'};
     const mine = await myMember(group);
@@ -2517,10 +2518,11 @@ function showGate(canClose){
   const g = $('#gate'), pre = normCode((location.hash.match(/join=([\w-]+)/)||[])[1]);
   g.innerHTML = `<div class="gate-in">
     <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Add another team' : 'Join your team'}</h1>
-    <p class="muted">Enter the code you were given. Coaches get an invite from their team admin; players and parents use the team's player or parent code. Coaches share the squad, selections and drills, and tap Sync to swap changes; players and parents watch the drills their coaches share.</p>
+    <p class="muted">Enter the code you were given. Coaches get an invite from their team admin; players and parents use the team's player or parent code, or the club's parent code. Coaches share the squad, selections and drills, and tap Sync to swap changes; players and parents watch the drills their coaches share.</p>
     <div class="field"><label class="field-label" for="gtCode">Code</label><input id="gtCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK" value="${pre ? fmtCode(pre) : ''}"></div>
     <div class="field"><label class="field-label" for="gtWho">Your name</label><input id="gtWho" type="text" placeholder="Shown to your team, e.g. Chris" value="${esc((S.sync||{}).who||'')}"></div>
-    <button class="btn wide" id="gtJoin">Join team</button>
+    <button class="btn wide" id="gtJoin">Join</button>
+    ${clubsOnPhone().length ? `<div class="field"><div class="field-label">Your clubs</div>${clubsOnPhone().map(c => `<button class="btn ghost wide" data-gclub="${c.id}">${esc(c.name)} · ${CLUB_ROLES[c.role] || ''}</button>`).join('')}</div>` : ''}
     ${canClose ? '<button class="btn ghost wide" id="gtClose">Cancel</button>' : ''}
     <p class="hint" id="gtErr" role="alert"></p></div>`;
   g.hidden = false;
@@ -2540,7 +2542,7 @@ function showGate(canClose){
     const viewer = viewerRole(role);
     if(syncing()) parkGroup();
     if(syncing() || viewer){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
-    S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, base: {}, lastSync: 0}; save();
+    S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, club: grp.club || '', base: {}, lastSync: 0}; save();
     syncDot(); renderAll();
     if(note) toast(note); else if(role !== 'coach') toast(`Welcome to ${grp.name}. You joined as ${ROLE_NAMES[role].toLowerCase()}.`);
     if(viewer) runSync(null, true); else await chooseUploads();
@@ -2549,10 +2551,14 @@ function showGate(canClose){
     const code = normCode($('#gtCode', g).value);
     if(code.length !== 10) return err('Enter the 10-character code you were given.'); if(!who()) return err('Enter your name.');
     busy(true); err('Checking…');
-    try { const r = await redeem(code, who()); if(r.err){ err(r.err); busy(false); return; } await enter(r.grp, r.role, r.note); }
+    try { const r = await redeem(code, who()); if(r.err){ err(r.err); busy(false); return; }
+      if(r.club){ if(/join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); g.hidden = true;
+        toast(`Welcome to ${r.name}`); if(r.role === 'parent') pickClubTeams(r.club); else showClub(r.club); return; }
+      await enter(r.grp, r.role, r.note); }
     catch(e){ err(niceErr(e)); busy(false); }
   });
   const c = $('#gtClose', g); if(c) c.addEventListener('click', () => { g.hidden = true; });
+  $$('[data-gclub]', g).forEach(b => b.addEventListener('click', () => { g.hidden = true; showClub(b.dataset.gclub); }));
 }
 // On joining, choose which of this phone's teams go to the group. Samples, and names the group already has, start unticked.
 const isSampleMove = m => m.name === 'Crash ball 12' && /^Off first-phase ball: 9 to 10/.test(m.desc || '');
@@ -2618,12 +2624,15 @@ function leaveGroup(){
 }
 function showGroup(){
   const z = S.sync, n = pendingChanges(), viewer = isViewer(), admin = isGroupAdmin(), others = Object.keys(S.parked || {});
-  const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Your team · ${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} selection${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
+  const clubIds = [...new Set([z.club].concat(Object.keys(S.clubs || {})).filter(Boolean))];
+  const clubBtns = clubIds.length ? `<div class="row-btns">${clubIds.map(c => `<button class="btn ghost" data-club="${c}">${esc((S.clubs || {})[c] ? S.clubs[c].name : c === z.club ? z.clubName || 'Club' : 'Club')} ›</button>`).join('')}</div>` : '';
+  const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">${z.clubName ? esc(z.clubName) + ' · ' : ''}Your team · ${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} selection${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
   const tail = `<div class="field"><label class="field-label" for="gpWho">Your name in the team</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
     <div class="field"><div class="field-label">Teams on this phone</div><div class="tlist">${groupsOnPhone().map(gr => `<div class="trow"><button class="btn ghost${gr.active?' cur':''}" data-gsw="${gr.code}" style="--gc:${groupColour(gr.code)}${gr.active ? ';outline-color:'+groupColour(gr.code) : ''}"><span class="gdot"></span>${esc(gr.name)} <span class="muted" style="font-weight:500">· ${gr.active ? 'open now' : 'synced '+ago(gr.lastSync)}</span></button></div>`).join('')}</div>
       <button class="btn ghost" id="gpAdd">Add another team</button></div>
     <button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>`;
   const wireTail = el => {
+    $$('[data-club]', el).forEach(b => b.addEventListener('click', () => showClub(b.dataset.club)));
     $('#gpSync', el).addEventListener('click', () => { closeSheet(); runSync(); });
     $('#gpWhoSave', el).addEventListener('click', () => { z.who = $('#gpWho', el).value.trim() || z.who; save(); toast('Name saved'); });
     $$('[data-gsw]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.gsw !== z.group) switchGroup(b.dataset.gsw); else closeSheet(); }));
@@ -2636,6 +2645,7 @@ function showGroup(){
   if(viewer) return openSheet(`${card}
     <p class="muted">Updated ${ago(z.lastSync)}.</p>
     <button class="btn wide" id="gpSync">Check for new drills and fixtures</button>
+    ${clubBtns}
     <div class="field"><div class="field-label">Are you a coach?</div>${z.wants ? '<p class="muted">You have asked for coach access. The team admin will see your request next time they open the team.</p>'
       : '<p class="hint">Coaches can change the squad, selections and drills. Ask the team admin to make this phone a coach.</p><button class="btn ghost" id="gpAsk">Ask for coach access</button>'}</div>
     ${tail}`,
@@ -2652,6 +2662,7 @@ function showGroup(){
   openSheet(`${card}
     <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
     <button class="btn wide" id="gpSync">Sync now</button>
+    ${clubBtns}
     <div class="field"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
     ${admin ? `<div class="field"><div class="field-label">Invite coaches</div><p class="hint">Each invite works once, on one phone.</p>
         <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a team admin</button></div><div id="gpInvites"></div></div>
@@ -3161,6 +3172,174 @@ function pickFor(e){
   S.currentTeamId = t.id; ME.moveId = null; save(); closeSheet(); showTab('select');
 }
 
+/* ---------- CLUBS ----------
+   A team (group) can belong to a club: groups/<id>.club. clubs/<id> = {name}; clubs/<id>/members/<uid> = club admins
+   and parents who joined with the club parent code; clubs/<id>/teams/<group id> = {name} lists the club's teams;
+   clubs/<id>/settings/codes = {parent}. Invites with {club} (no group) are club admin invites and the club parent code.
+   The phone keeps the clubs it belongs to in S.clubs[<id>] = {name, role, who}; each team's sync notes its club. */
+const CLUB_ROLES = {admin: 'Club admin', parent: 'Parent'};
+const clubsOnPhone = () => Object.entries(S.clubs || {}).map(([id, c]) => Object.assign({id}, c));
+// which club a team is in (and the club's name); checked on sync
+async function refreshClub(z = S.sync){
+  const g = await fb('GET', '/groups/' + z.group); if(!g) return;
+  const c = g.fields && g.fields.club ? g.fields.club.stringValue : '';
+  if(c !== (z.club || '')){ z.club = c; delete z.clubName; }
+  if(c && !z.clubName){ const d = await fb('GET', '/clubs/' + c); z.clubName = d && d.fields && d.fields.name ? d.fields.name.stringValue : ''; }
+  save();
+}
+async function clubTeams(c){
+  return (await listDocs(`/clubs/${c}/teams`)).map(d => ({code: d.name.split('/').pop(), name: d.fields && d.fields.name ? d.fields.name.stringValue : ''})).sort((a, b) => a.name.localeCompare(b.name, 'en', {numeric: true}));
+}
+// join a club with a club invite (club admin, or the club parent code)
+async function joinClub(inv, code, who){
+  const uid = tokenUid(await fbToken()), now = String(Date.now()), f = inv.fields || {}, c = f.club.stringValue, role = f.role.stringValue;
+  const single = !!(f.single && f.single.booleanValue), usedBy = f.usedBy ? f.usedBy.stringValue : '';
+  const club = await fb('GET', '/clubs/' + c); if(!club) return {err: 'That code is for a club that no longer exists.'};
+  const name = club.fields && club.fields.name ? club.fields.name.stringValue : 'Club';
+  let mine = null; try { mine = await fb('GET', `/clubs/${c}/members/${uid}`); } catch(e){}
+  if(!mine){
+    if(single && usedBy && usedBy !== uid) return {err: 'This invite has already been used. Ask for a new one.'};
+    const writes = [{update:{name: DOCNAME(`clubs/${c}/members/${uid}`), fields:{who:{stringValue: who}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}, role:{stringValue: role}, invite:{stringValue: code}}}, currentDocument:{exists:false}}];
+    if(single && !usedBy) writes.push({update:{name: DOCNAME('invites/' + code), fields:{usedBy:{stringValue: uid}, usedAt:{integerValue: now}}}, updateMask:{fieldPaths:['usedBy', 'usedAt']}, currentDocument:{updateTime: inv.updateTime}});
+    try { await fb('POST', ':commit', {writes}); }
+    catch(e){ if(e.status === 403 || e.status === 400 || /FAILED_PRECONDITION/.test(e.message)) return {err: 'This invite has already been used, or was cancelled. Ask for a new one.'}; throw e; }
+  }
+  const was = (S.clubs || {})[c];
+  S.clubs = Object.assign({}, S.clubs, {[c]: {name, role: mine && mine.fields.role ? mine.fields.role.stringValue : role, who, code: role === 'parent' ? code : (was && was.code) || ''}}); save();
+  return {club: c, name, role: S.clubs[c].role};
+}
+// a new team workspace on this phone (the open one is put aside), as when joining with a team code
+function addTeamWorkspace(grp, role, who, memberOf){
+  if(syncing() && S.sync.group === grp.code) return;
+  if(S.parked && S.parked[grp.code]) return;
+  phoneAuth();
+  if(syncing()) parkGroup();
+  if(syncing() || viewerRole(role)){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
+  S.sync = {group: grp.code, groupName: grp.name, who, role, memberOf, club: grp.club || '', base: {}, lastSync: 0}; save();
+}
+// a club parent joins some of the club's teams as a parent, with the club parent code
+async function joinClubTeams(c, list){
+  const club = S.clubs[c], uid = tokenUid(await fbToken()), now = String(Date.now()), joined = [];
+  for(const t of list){
+    const mine = await myMember(t.code);
+    if(!mine) try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${t.code}/members/${uid}`), fields:{who:{stringValue: club.who || ''}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now}, role:{stringValue: 'parent'}, invite:{stringValue: club.code}}}, currentDocument:{exists:false}}]}); }
+      catch(e){ if(e.status === 403) throw new Error(`The club parent code has changed. Ask ${club.name} for the new one and enter it with Team → Add another team.`); throw e; }
+    addTeamWorkspace({code: t.code, name: t.name, club: c}, mine ? mine.role : 'parent', club.who || '', t.code + ':' + uid);
+    S.sync.clubName = club.name; joined.push(t);
+  }
+  save(); syncDot(); renderAll();
+  // their squad lists, so the children can be linked straight away
+  await Promise.allSettled(fixTeams().filter(z => joined.some(t => t.code === z.group)).map(z => loadFixtures(z)));
+  return joined;
+}
+function showClub(c){
+  const club = (S.clubs || {})[c] || {name: fixTeams().find(z => z.club === c)?.clubName || 'Club', role: ''}, admin = club.role === 'admin', parent = club.role === 'parent';
+  const onPhone = code => fixTeams().some(z => z.group === code);
+  openSheet(`<div class="gcard" style="--gc:var(--accent)"><span class="eyebrow">Club${club.role ? ' · ' + CLUB_ROLES[club.role] : ''}</span><b>${esc(club.name)}</b><small>${admin ? 'Teams, invites and the club calendar' : parent ? 'Your children’s teams' : 'Teams in the club'}</small></div>
+    <div class="field"><div class="field-label">Teams</div><div id="clTeams"><p class="muted">Loading…</p></div></div>
+    ${admin ? `<div class="field"><label class="field-label" for="clNew">New team in ${esc(club.name)}</label><div class="add-row"><input id="clNew" type="text" placeholder="e.g. U10, 2nd XV"><button class="btn" id="clMake">Create</button></div>
+        <p class="hint">Then tap Invite admin for it and send the link to whoever runs the team.</p></div>
+      <div class="field"><div class="field-label">Club parent code</div><div id="clCode"><p class="muted">Loading…</p></div></div>
+      <div class="row-btns"><button class="btn ghost" id="clCal">Club calendar</button><button class="btn ghost" id="clAdmin">Invite a club admin</button></div>` : ''}
+    <button class="btn ghost wide" data-close>Close</button>`,
+    el => {
+      const live = () => el.isConnected && !sheetEl.hidden;
+      const loadTeams = async () => {
+        const box = $('#clTeams', el);
+        if(!club.role){ box.innerHTML = `<p class="hint">${esc(S.sync.groupName)} is one of ${esc(club.name)}'s teams. Only club admins, and parents who joined with the club parent code, can see the club's other teams.</p>`; return; }
+        try {
+          const ts = await clubTeams(c); if(!live()) return;
+          box.innerHTML = ts.length ? ts.map(t => `<div class="mem"><span class="sdot" style="--sc:${groupColour(t.code)}"></span><div><b>${esc(t.name)}</b><small>${onPhone(t.code) ? 'On this phone' : parent ? 'Not on this phone' : ''}</small></div>
+              ${parent && !onPhone(t.code) ? `<button class="chip on" data-cj="${t.code}">Join as parent</button>` : ''}${onPhone(t.code) ? `<button class="chip" data-co="${t.code}">Open</button>` : ''}${admin ? `<button class="chip" data-ci="${t.code}">Invite admin</button>` : ''}</div>`).join('')
+            : '<p class="hint">No teams in the club yet.</p>';
+          $$('[data-cj]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
+            try { const t = ts.find(x => x.code === b.dataset.cj); await joinClubTeams(c, [t]); closeSheet(); showTab('fix'); toast(`You are a parent in ${t.name}. Link your children to mark availability.`); linkKids(); }
+            catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+          $$('[data-co]', box).forEach(b => b.addEventListener('click', () => { closeSheet(); if(b.dataset.co !== S.sync.group) switchGroup(b.dataset.co); }));
+          $$('[data-ci]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
+            const t = ts.find(x => x.code === b.dataset.ci), code = newCode();
+            try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('invites/' + code), fields:{group:{stringValue: t.code}, role:{stringValue: 'admin'}, single:{booleanValue: true}, by:{stringValue: club.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]});
+              await shareText(`You're invited to run ${t.name} (${club.name}) in Rugby Team Picker as its team admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}`, t.name, 'Team admin invite: ' + fmtCode(code)); }
+            catch(e){ toast(niceErr(e)); } finally { b.disabled = false; } }));
+        } catch(e){ box.innerHTML = `<p class="hint">Could not load the teams: ${esc(niceErr(e))}</p>`; }
+      };
+      loadTeams();
+      if(!admin) return;
+      const loadCode = async () => {
+        const box = $('#clCode', el);
+        try {
+          const d = await fb('GET', `/clubs/${c}/settings/codes`), code = d && d.fields && d.fields.parent ? d.fields.parent.stringValue : ''; if(!live()) return;
+          box.innerHTML = code ? `<div class="rcode"><div class="gcode">${fmtCode(code)}</div><button class="chip" id="clShare">Share</button><button class="chip" id="clNewCode">New code</button></div><p class="hint">One code for every parent in the club: they pick their children's teams, then their children.</p>`
+            : `<p class="hint">One code for every parent in the club: they pick their children's teams, then their children. Each team's own parent code still works.</p><button class="btn ghost" id="clNewCode">Make the club parent code</button>`;
+          const sh = $('#clShare', box); if(sh) sh.addEventListener('click', () => shareText(`${club.name} parents: see fixtures, mark availability and watch drills in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}`, club.name, 'Club parent code: ' + fmtCode(code)));
+          const nc = $('#clNewCode', box); nc.addEventListener('click', async () => {
+            if(code && !nc.dataset.sure){ nc.dataset.sure = 1; nc.textContent = 'Replace? Tap again'; nc.classList.add('on'); return; }
+            nc.disabled = true; const nw = newCode();
+            try { const writes = [{update:{name: DOCNAME('invites/' + nw), fields:{club:{stringValue: c}, role:{stringValue: 'parent'}, single:{booleanValue: false}, by:{stringValue: club.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}},
+                {update:{name: DOCNAME(`clubs/${c}/settings/codes`), fields:{parent:{stringValue: nw}}}}];
+              if(code) writes.push({delete: DOCNAME('invites/' + code)});
+              await fb('POST', ':commit', {writes}); loadCode(); }
+            catch(e){ nc.disabled = false; toast(niceErr(e)); }
+          });
+        } catch(e){ box.innerHTML = `<p class="hint">Could not load the code: ${esc(niceErr(e))}</p>`; }
+      };
+      loadCode();
+      $('#clMake', el).addEventListener('click', async () => {
+        const name = $('#clNew', el).value.trim(); if(!name) return $('#clNew', el).focus();
+        const code = newCode(); $('#clMake', el).disabled = true;
+        try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('groups/' + code), fields:{name:{stringValue: name}, club:{stringValue: c}}}, currentDocument:{exists:false}},
+            {update:{name: DOCNAME(`clubs/${c}/teams/${code}`), fields:{name:{stringValue: name}}}}]});
+          $('#clNew', el).value = ''; toast(`${name} created. Tap Invite admin to send it to whoever runs it.`); loadTeams(); }
+        catch(e){ toast(niceErr(e)); } finally { $('#clMake', el).disabled = false; }
+      });
+      $('#clAdmin', el).addEventListener('click', async () => {
+        const code = newCode();
+        try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('invites/' + code), fields:{club:{stringValue: c}, role:{stringValue: 'admin'}, single:{booleanValue: true}, by:{stringValue: club.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]});
+          await shareText(`You're invited to help run ${club.name} in Rugby Team Picker as a club admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}`, club.name, 'Club admin invite: ' + fmtCode(code)); }
+        catch(e){ toast(niceErr(e)); }
+      });
+      $('#clCal', el).addEventListener('click', () => clubCalendar(c));
+    });
+}
+// club admins: every team's fixtures in one list
+async function clubCalendar(c){
+  const club = S.clubs[c];
+  openSheet(`<div class="eyebrow">${esc(club.name)}</div><h2>Club calendar</h2><div id="ccList"><p class="muted">Loading…</p></div><button class="btn ghost wide" id="ccBack">Back</button>`,
+    async el => {
+      $('#ccBack', el).addEventListener('click', () => showClub(c));
+      try {
+        const ts = await clubTeams(c), today = ymd(new Date()), all = [];
+        await Promise.all(ts.map(async t => { try { for(const d of await listDocs(`/groups/${t.code}/events`)){ const e = JSON.parse(d.fields.json.stringValue); if(e.date >= today) all.push({e, t}); } } catch(e){} }));
+        all.sort((a, b) => (a.e.date + a.e.time).localeCompare(b.e.date + b.e.time));
+        if(!el.isConnected) return;
+        let day = '';
+        $('#ccList', el).innerHTML = all.length ? all.map(({e, t}) => { const d = evDate(e).toLocaleDateString('en-GB', {weekday: 'long', day: 'numeric', month: 'long'}), h = d !== day ? `<div class="section-h"><span>${d}</span></div>` : ''; day = d;
+          return `${h}<div class="mem"><span class="tpill" style="--gc:${groupColour(t.code)}">${esc(t.name)}</span><div><b>${esc(evTitle(e))}</b><small>${(EV_TYPES.find(x => x[0] === e.type) || EV_TYPES[2])[1]}${e.time ? ' · ' + e.time : ''}${e.location ? ' · ' + esc(e.location) : ''}</small></div></div>`; }).join('')
+          : '<p class="hint">Nothing coming up in any team.</p>';
+      } catch(e){ $('#ccList', el).innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; }
+    });
+}
+// after joining with the club parent code: pick the children's teams
+async function pickClubTeams(c){
+  const club = S.clubs[c];
+  openSheet(`<div class="eyebrow">${esc(club.name)}</div><h2>Which teams are your children in?</h2><div id="ctList"><p class="muted">Loading…</p></div>
+    <div class="row-btns"><button class="btn" id="ctGo" disabled>Join</button><button class="btn ghost" data-close>Later</button></div>
+    <p class="hint">You can add more later: Team → your club.</p>`,
+    async el => {
+      try {
+        const ts = await clubTeams(c), on = code => fixTeams().some(z => z.group === code);
+        $('#ctList', el).innerHTML = ts.length ? `<div class="opts">${ts.map(t => `<label class="opt"><input type="checkbox" data-ct="${t.code}"${on(t.code) ? ' checked disabled' : ''}><span><b>${esc(t.name)}</b>${on(t.code) ? '<small>already on this phone</small>' : ''}</span></label>`).join('')}</div>` : '<p class="hint">The club has no teams yet.</p>';
+        $('#ctGo', el).disabled = false;
+        $('#ctGo', el).addEventListener('click', async () => {
+          const pick = $$('[data-ct]:checked:not(:disabled)', el).map(x => ts.find(t => t.code === x.dataset.ct)); if(!pick.length) return closeSheet();
+          $('#ctGo', el).disabled = true;
+          try { await joinClubTeams(c, pick); closeSheet(); showTab('fix'); linkKids(); }
+          catch(e){ $('#ctGo', el).disabled = false; toast(niceErr(e)); }
+        });
+      } catch(e){ $('#ctList', el).innerHTML = `<p class="hint">Could not load the teams: ${esc(niceErr(e))}</p>`; }
+    });
+}
+
 /* ---------- boot ---------- */
 document.addEventListener('gesturestart', e => e.preventDefault());
 if(ME.moveId === null && S.ui.tab === 'moves') {}
@@ -3172,7 +3351,7 @@ syncDot();
 function checkJoinLink(){ if(fbOn() && /join=/.test(location.hash)) showGate(syncing()); }
 if(fbOn() && !syncing()) showGate(false); else { checkJoinLink(); if(fbOn()) setTimeout(checkInboxQuietly, 1200); }
 window.addEventListener('hashchange', checkJoinLink);
-window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup};
+window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup, showClub};
 })();
 </script>
 
