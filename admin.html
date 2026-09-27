@@ -50,6 +50,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
 .tabs button{border:0;border-radius:9px;padding:10px 8px;background:none;color:var(--muted);font:700 14px/1.1 var(--body);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .panel{display:flex;flex-direction:column;gap:12px}
+.sw{display:flex;gap:10px;align-items:center;font-weight:600}.sw input{width:22px;height:22px;accent-color:var(--accent)}
 </style>
 </head>
 <body>
@@ -91,12 +92,18 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
     <p class="hint">New teams join by invite: after creating one, tap Invite team admin on its card and send the link to whoever runs the team. They invite the coaches and hand out the player and parent codes from the app.</p>
     </section>
     <section class="panel" id="pGroups" role="tabpanel">
+    <div class="card">
+      <h2>Development switches</h2>
+      <label class="sw"><input type="checkbox" id="swFixC"> Fixtures and availability for coaches and team admins</label>
+      <label class="sw"><input type="checkbox" id="swFixV"> Fixtures and availability for players and parents</label>
+      <p class="hint" id="swNote">Off hides the Fixtures tab, fixture choices on the Selection tab and the club calendar; nothing already entered is lost. Phones pick up a change when they next open or sync.</p>
+    </div>
     <div class="top"><h2 id="gCount">Teams</h2><button class="btn ghost" id="reload">Refresh</button></div>
     <div id="groups" class="panel"></div>
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 27 Sep 2026, 00:12</p>
+  <p class="hint" style="text-align:center">Version 27 Sep 2026, 15:41</p>
 </main>
 <script>
 (() => {
@@ -217,7 +224,19 @@ $('#cCreate').addEventListener('click', async () => {
   catch(e){ status(e.message, 'err'); } finally { $('#cCreate').disabled = false; }
 });
 
+// development switches: config/app
+async function loadSwitches(){
+  try { const d = await fb('GET', '/config/app'), f = d?.fields || {}; $('#swFixC').checked = !!f.fixCoaches?.booleanValue; $('#swFixV').checked = !!f.fixViewers?.booleanValue; }
+  catch(e){ $('#swNote').textContent = 'Could not read the switches: ' + e.message; }
+}
+for(const [id, key] of [['#swFixC', 'fixCoaches'], ['#swFixV', 'fixViewers']]) $(id).addEventListener('change', async () => {
+  const el = $(id); el.disabled = true;
+  try { await fb('PATCH', `/config/app?updateMask.fieldPaths=${key}`, {fields:{[key]: {booleanValue: el.checked}}}); status(`Fixtures ${el.checked ? 'on' : 'off'} for ${key === 'fixCoaches' ? 'coaches' : 'players and parents'}.`, 'ok'); }
+  catch(e){ el.checked = !el.checked; status(e.message, 'err'); } finally { el.disabled = false; }
+});
+
 async function load(){
+  loadSwitches();
   const keepMsg = $('#status').textContent; if(!keepMsg) status('Loading teams…');
   try {
     const docs = await list('/groups'), box = $('#groups'), boxesByGroup = {}, clubs = await clubNames();

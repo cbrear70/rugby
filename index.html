@@ -230,6 +230,7 @@ textarea{resize:vertical;min-height:84px}
 .mcard.draft{border-style:dashed;border-color:color-mix(in srgb,var(--accent) 45%,var(--line))}
 /* players and parents: watch shared drills, nothing else */
 body.viewer .tabbar{grid-template-columns:repeat(2,1fr)}
+body.nofix .tabbar [data-tab=fix]{display:none}body.nofix .tabbar{grid-template-columns:repeat(4,1fr)}body.viewer.nofix .tabbar{display:none}
 body.viewer .tabbar [data-tab=pitch], body.viewer .tabbar [data-tab=squad], body.viewer .tabbar [data-tab=select], body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
 body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!important}
 .mem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
@@ -848,7 +849,8 @@ function wireSwatches(el, fn){ $$('[data-color]', el).forEach(b => b.addEventLis
 /* ---------- tabs ---------- */
 let TAB = S.ui.tab || 'pitch';
 function showTab(tab){
-  if(isViewer() && tab !== 'moves' && tab !== 'fix') tab = S.sync.role === 'parent' ? 'fix' : 'moves';
+  if(tab === 'fix' && syncing() && !fixOn()) tab = isViewer() ? 'moves' : 'pitch';
+  if(isViewer() && tab !== 'moves' && tab !== 'fix') tab = S.sync.role === 'parent' && fixOn() ? 'fix' : 'moves';
   TAB = tab; S.ui.tab = tab; save();
   $$('.tabbar [data-tab]').forEach(b => b.setAttribute('aria-selected', b.dataset.tab === tab));
   for(const v of ['pitch','squad','select','moves','fix']) $('#v-'+v).hidden = v !== tab;
@@ -858,7 +860,8 @@ function showTab(tab){
 $$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
 function renderAll(){
   document.body.classList.toggle('viewer', isViewer());
-  if(isViewer() && TAB !== 'moves' && TAB !== 'fix'){ showTab(S.sync.role === 'parent' ? 'fix' : 'moves'); return; }
+  document.body.classList.toggle('nofix', syncing() && !fixOn());
+  if((isViewer() && TAB !== 'moves' && TAB !== 'fix') || (TAB === 'fix' && syncing() && !fixOn())){ showTab(isViewer() && fixOn() && S.sync.role === 'parent' ? 'fix' : isViewer() ? 'moves' : 'pitch'); return; }
   $('#teamName').textContent = isViewer() ? (TAB === 'fix' ? 'Fixtures' : 'Drills') : team().name;
   const gn = $('#groupName'); gn.hidden = !syncing();
   if(syncing()){ gn.textContent = S.sync.groupName; gn.style.setProperty('--gc', groupColour(S.sync.group)); }
@@ -1024,11 +1027,12 @@ function editPlayer(pid){
 function selEvent(){
   if(!syncing()) return null;
   if(team().eventId) return selEventOf(team());
+  if(!fixOn()) return null;
   const up = fixData().events.filter(e => !evPast(e));
   return S.ui.selEv === '' ? null : up.find(e => e.id === S.ui.selEv) || up.find(e => e.type === 'match') || null;
 }
 function renderSelect(){
-  const t = team(), el = $('#selectBody'), ev = selEvent(), up = syncing() ? fixData().events.filter(e => !evPast(e)).slice(0, 20) : [];
+  const t = team(), el = $('#selectBody'), ev = selEvent(), up = fixOn() ? fixData().events.filter(e => !evPast(e)).slice(0, 20) : [];
   const avOf = p => ev ? statusOf(ev.id, p.id) : '';
   const picked = n => !!playerAt(t,n);
   const N = teamSize(t), B = benchSize(t), onPitch = pitchNums(t), subs = benchNums(t);
@@ -1038,7 +1042,7 @@ function renderSelect(){
   const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
   const linked = selEventOf(t);
   el.innerHTML = `${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
-    ${t.eventId ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
+    ${t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
     : up.length ? `<div class="field"><label class="field-label" for="selEv">Availability for</label><select id="selEv"><option value=""${ev ? '' : ' selected'}>No event</option>${up.map(e => `<option value="${e.id}"${ev && ev.id === e.id ? ' selected' : ''}>${esc(evWhen(e).split(' · ')[0])} · ${esc(evTitle(e))}</option>`).join('')}</select>
       ${ev ? `<p class="hint">${avSummary(ev)}${selectionFor(ev) && selectionFor(ev) !== t ? ` · <button class="chip" id="selOpen">Open its team sheet</button>` : ` · <button class="chip" id="selMake">Make a team sheet for it</button>`}</p>` : ''}</div>` : ''}
     <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear sheet</button></div>
@@ -1269,7 +1273,7 @@ function renderMoveLayer(){
     }
     const p = iconPos(m, id, f);
     const p2 = playerAt(t, +id);
-    const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: 'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 ? surname(p2.name) : '', hit: 'i:'+id, dim, ghost:isEd});
+    const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: 'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 && !isViewer() ? surname(p2.name) : '', hit: 'i:'+id, dim, ghost:isEd});
     if(isEd) edTok = tok; else if(!hideTok) toks += tok; // ball is last in iconIds, so it draws on top
   }
   const cones = (m.cones || []).map(c => coneSVG(c, !!ME.editing)).join('');
@@ -1898,7 +1902,7 @@ $('#teamBtn').addEventListener('click', () => {
     <button class="btn ghost" id="tmSettings">Selection settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New selection${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. Saxons, Cup side"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
-    <p class="hint" style="text-align:center">Version 27 Sep 2026, 00:12</p>
+    <p class="hint" style="text-align:center">Version 27 Sep 2026, 15:41</p>
 `,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { S.currentTeamId = b.dataset.sw; ME.moveId = null; ME.editing = null; save(); closeSheet(); renderAll(); }));
@@ -2073,6 +2077,17 @@ const ROLE_NAMES = {admin:'Team admin', coach:'Coach', player:'Player', parent:'
 const viewerRole = r => r === 'player' || r === 'parent';
 const isViewer = () => syncing() && viewerRole(S.sync.role);
 const isGroupAdmin = () => syncing() && S.sync.role === 'admin';
+// Fixtures can be switched off while the rest of the app is tried out: config/app = {fixCoaches, fixViewers}, set on
+// the admin page. Off unless switched on (and off if it can't be read).
+const fixOn = () => syncing() && !!(S.cfg && (isViewer() ? S.cfg.fixViewers : S.cfg.fixCoaches));
+async function loadConfig(){
+  const before = fixOn();
+  try { const d = await fb('GET', '/config/app'), f = d && d.fields || {};
+    S.cfg = {fixCoaches: !!(f.fixCoaches && f.fixCoaches.booleanValue), fixViewers: !!(f.fixViewers && f.fixViewers.booleanValue)}; }
+  catch(e){ if(e.status === 403) S.cfg = {fixCoaches: false, fixViewers: false}; else return; }
+  save();
+  if(!before && fixOn() && isViewer() && S.sync.role === 'parent' && TAB === 'moves' && !curMove()) showTab('fix'); else renderAll();
+}
 
 async function fbErr(r){ try { const j = await r.json(); return (j.error && (j.error.message || j.error.status)) || 'HTTP '+r.status; } catch(e){ return 'HTTP '+r.status; } }
 // One anonymous Firebase login per phone, shared by all its groups and kept when leaving one, so each phone is one
@@ -2247,6 +2262,8 @@ async function publishShared(){
   return writes.length;
 }
 async function pullShared(){
+  // a player's or parent's phone holds only the team's shared drills: nothing left over from coaching or the samples
+  if(S.teams.length !== 1 || !S.teams[0].placeholder || S.players.length){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.currentTeamId = S.teams[0].id; }
   const was = new Set(S.moves.map(m => hashStr(JSON.stringify(m))));
   const moves = (await listDocs(`/groups/${S.sync.group}/shared`)).map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(Boolean)
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -2422,7 +2439,7 @@ let SYNCING = false;
 async function runSync(choices, quiet){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
-    await refreshRole(); refreshClub().catch(() => {});
+    await refreshRole(); refreshClub().catch(() => {}); loadConfig();
     if(isViewer()){
       const r = await pullShared(); try { await loadFixtures(); } catch(e){} if(!curMove()) stopPlay(); renderAll();
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
@@ -2558,6 +2575,7 @@ function showGate(canClose){
     phoneAuth();
     const viewer = viewerRole(role);
     if(syncing()) parkGroup();
+    else if(onlySamples()){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; }
     if(syncing() || viewer){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
     S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, club: grp.club || '', base: {}, lastSync: 0, joinedAt: Date.now()}; save();
     syncDot(); renderAll();
@@ -2578,6 +2596,8 @@ function showGate(canClose){
   $$('[data-gclub]', g).forEach(b => b.addEventListener('click', () => { g.hidden = true; showClub(b.dataset.gclub); }));
 }
 // On joining, choose which of this phone's teams go to the group. Samples, and names the group already has, start unticked.
+// a phone that has only ever had the built-in example (sample team, squad and drill)
+const onlySamples = () => S.teams.every(t => /\(sample\)/i.test(t.name) || t.placeholder) && S.players.every(pl => SAMPLE_NAMES.has(pl.name)) && S.moves.every(m => isSampleMove(m));
 const isSampleMove = m => m.name === 'Crash ball 12' && /^Off first-phase ball: 9 to 10/.test(m.desc || '');
 async function chooseUploads(){
   let remote = {}; try { remote = await listItems(S.sync.group); } catch(e){}
@@ -3250,6 +3270,7 @@ async function joinClubTeams(c, list){
   return joined;
 }
 function showClub(c){
+  if(!S.cfg && !showClub.waited){ showClub.waited = true; return loadConfig().then(() => showClub(c)); } // the fixtures switch decides whether there is a club calendar
   const club = (S.clubs || {})[c] || {name: fixTeams().find(z => z.club === c)?.clubName || 'Club', role: ''}, admin = club.role === 'admin', parent = club.role === 'parent' || !!club.code;
   const onPhone = code => fixTeams().some(z => z.group === code);
   openSheet(`<div class="gcard" style="--gc:var(--accent)"><span class="eyebrow">Club${club.role ? ' · ' + CLUB_ROLES[club.role] : ''}</span><b>${esc(club.name)}</b><small>${admin ? 'Teams, invites and the club calendar' + (club.code ? ', and your children’s teams' : '') : parent ? 'Your children’s teams' : 'Teams in the club'}</small></div>
@@ -3257,7 +3278,7 @@ function showClub(c){
     ${admin ? `<div class="field"><label class="field-label" for="clNew">New team in ${esc(club.name)}</label><div class="add-row"><input id="clNew" type="text" placeholder="e.g. U10, 2nd XV"><button class="btn" id="clMake">Create</button></div>
         <p class="hint">Then tap Invite admin for it and send the link to whoever runs the team.</p></div>
       <div class="field"><div class="field-label">Club parent code</div><div id="clCode"><p class="muted">Loading…</p></div></div>
-      <div class="row-btns"><button class="btn ghost" id="clCal">Club calendar</button><button class="btn ghost" id="clAdmin">Invite a club admin</button></div>` : ''}
+      <div class="row-btns">${S.cfg && S.cfg.fixCoaches ? '<button class="btn ghost" id="clCal">Club calendar</button>' : ''}<button class="btn ghost" id="clAdmin">Invite a club admin</button></div>` : ''}
     <button class="btn ghost wide" data-close>Close</button>`,
     el => {
       const live = () => el.isConnected && !sheetEl.hidden;
@@ -3270,7 +3291,7 @@ function showClub(c){
               ${parent && !onPhone(t.code) ? `<button class="chip on" data-cj="${t.code}">Join as parent</button>` : ''}${onPhone(t.code) ? `<button class="chip" data-co="${t.code}">Open</button>` : ''}${admin ? `<button class="chip" data-ci="${t.code}">Invite admin</button>` : ''}</div>`).join('')
             : '<p class="hint">No teams in the club yet.</p>';
           $$('[data-cj]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
-            try { const t = ts.find(x => x.code === b.dataset.cj); await joinClubTeams(c, [t]); closeSheet(); showTab('fix'); toast(`You are a parent in ${t.name}. Link your children to mark availability.`); linkKids(); }
+            try { const t = ts.find(x => x.code === b.dataset.cj); await joinClubTeams(c, [t]); closeSheet(); if(fixOn()){ showTab('fix'); toast(`You are a parent in ${t.name}. Link your children to mark availability.`); linkKids(); } else { showTab('moves'); toast(`You are a parent in ${t.name}`); } }
             catch(e){ b.disabled = false; toast(niceErr(e)); } }));
           $$('[data-co]', box).forEach(b => b.addEventListener('click', () => { closeSheet(); if(b.dataset.co !== S.sync.group) switchGroup(b.dataset.co); }));
           $$('[data-ci]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
@@ -3315,7 +3336,7 @@ function showClub(c){
           await shareText(`You're invited to help run ${club.name} in Rugby Team Picker as a club admin. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}${IOS_NOTE}`, club.name, 'Club admin invite: ' + fmtCode(code)); }
         catch(e){ toast(niceErr(e)); }
       });
-      $('#clCal', el).addEventListener('click', () => clubCalendar(c));
+      const cc = $('#clCal', el); if(cc) cc.addEventListener('click', () => clubCalendar(c));
     });
 }
 // club admins: every team's fixtures in one list
@@ -3350,7 +3371,7 @@ async function pickClubTeams(c){
         $('#ctGo', el).addEventListener('click', async () => {
           const pick = $$('[data-ct]:checked:not(:disabled)', el).map(x => ts.find(t => t.code === x.dataset.ct)); if(!pick.length) return closeSheet();
           $('#ctGo', el).disabled = true;
-          try { await joinClubTeams(c, pick); closeSheet(); showTab('fix'); linkKids(); }
+          try { await joinClubTeams(c, pick); closeSheet(); if(fixOn()){ showTab('fix'); linkKids(); } else { showTab('moves'); toast(`You are a parent in ${pick.map(t => t.name).join(' and ')}`); } }
           catch(e){ $('#ctGo', el).disabled = false; toast(niceErr(e)); }
         });
       } catch(e){ $('#ctList', el).innerHTML = `<p class="hint">Could not load the teams: ${esc(niceErr(e))}</p>`; }
@@ -3367,6 +3388,7 @@ if('serviceWorker' in navigator && location.protocol==='https:' && !INFRAME){ na
 syncDot();
 function checkJoinLink(){ if(fbOn() && /join=/.test(location.hash)) showGate(syncing()); }
 if(fbOn() && !syncing()) showGate(false); else { checkJoinLink(); if(fbOn()) setTimeout(checkInboxQuietly, 1200); }
+if(fbOn()) setTimeout(loadConfig, 600);
 window.addEventListener('hashchange', checkJoinLink);
 window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup, showClub};
 })();
