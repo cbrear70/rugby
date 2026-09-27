@@ -265,6 +265,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .kid{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--gc);border-radius:14px;padding:12px;margin:10px 0}
 .kidhead{display:flex;align-items:center;gap:8px;justify-content:space-between}.kidhead b{font-size:17px}.kid .tpill{margin:0}
 .kidlinks{margin:4px 0 6px;color:var(--muted)}.pick{font-size:14px;margin:2px 0}.pick b{color:var(--accent)}
+.hint.err{color:#FFB4A6}
 .evnote{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
 .evtimes{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}
 .maprow{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin-bottom:6px}.maprow .field-label{margin:0}
@@ -2661,9 +2662,19 @@ async function chooseUploads(){
 async function getCodes(){ const d = await fb('GET', `/groups/${S.sync.group}/settings/codes`), f = d && d.fields || {}; return {player: f.player ? f.player.stringValue : '', parent: f.parent ? f.parent.stringValue : ''}; }
 const inviteDoc = (code, role, single) => ({update:{name: DOCNAME('invites/'+code), fields:{group:{stringValue: S.sync.group}, role:{stringValue: role}, single:{booleanValue: single}, by:{stringValue: S.sync.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}});
 // a new player or parent code; the old one stops letting new phones in (phones already in stay)
-async function newRoleCode(kind, old){
-  return withNewCode(code => fb('POST', ':commit', {writes: [inviteDoc(code, kind, false), {update:{name: DOCNAME(`groups/${S.sync.group}/settings/codes`), fields:{[kind]:{stringValue: code}}}, updateMask:{fieldPaths:[kind]}},
-    ...(old ? [{delete: DOCNAME('invites/'+old)}] : [])]}));
+// chosen: a code the team admin typed (used as is, or refused if it's taken); otherwise a random one
+async function newRoleCode(kind, old, chosen){
+  const commit = code => fb('POST', ':commit', {writes: [inviteDoc(code, kind, false), {update:{name: DOCNAME(`groups/${S.sync.group}/settings/codes`), fields:{[kind]:{stringValue: code}}}, updateMask:{fieldPaths:[kind]}},
+    ...(old ? [{delete: DOCNAME('invites/'+old)}] : [])]});
+  if(!chosen) return withNewCode(commit);
+  try { await commit(chosen); return chosen; }
+  catch(e){ if(alreadyThere(e)) throw new Error('That code is already in use. Try another.'); throw e; }
+}
+// is a code free to use? Taken if it's any invite (team, club or child codes) or a team's own code
+async function codeFree(code){
+  if(await fb('GET', '/invites/' + code)) return false;
+  if(await fb('GET', '/groups/' + code)) return false;
+  return true;
 }
 async function newInvite(role){ return withNewCode(code => fb('POST', ':commit', {writes:[inviteDoc(code, role, true)]})); }
 async function groupInvites(){
@@ -3258,7 +3269,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 27 Sep 2026, 22:47</p>`,
+    <p class="hint" style="text-align:center">Version 27 Sep 2026, 23:34</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3359,12 +3370,27 @@ async function loadCodesInto(box, admin){
   if(!box) return; const z = S.sync;
   try {
     const c = await getCodes(); if(!box.isConnected) return;
-    const row = (k, label) => c[k] ? `<small class="muted">${label}</small><div class="rcode"><div class="gcode">${fmtCode(c[k])}</div><button class="chip" data-shc="${k}">Share</button>${admin ? `<button class="chip" data-nwc="${k}">New code</button>` : ''}</div>` : '';
-    box.innerHTML = c.player || c.parent ? row('player', 'Players') + row('parent', 'Parents') + `<p class="hint">Players and parents can see the drills you share with them${fixOn() ? ' and the fixtures' : ''}, and nothing else. Any number of phones can use these codes.</p>`
+    // the team admin can also type a code of their own: it's used if nobody has it, otherwise they're told
+    const choose = k => admin ? `<div class="choose" data-chf="${k}" hidden><div class="add-row"><input type="text" data-chi="${k}" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="e.g. OPATS-U13-P"><button class="btn" data-chs="${k}">Use this code</button></div>
+        <p class="hint" data-chm="${k}">10 letters or numbers. Make it hard to guess: anyone with it can join as a ${k} and watch the drills${fixOn() ? ' and fixtures' : ''} (not link a child).</p></div>` : '';
+    const row = (k, label) => (c[k] || admin) ? `<small class="muted">${label}</small><div class="rcode"><div class="gcode">${c[k] ? fmtCode(c[k]) : '—'}</div>${c[k] ? `<button class="chip" data-shc="${k}">Share</button>` : ''}${admin ? `<button class="chip" data-nwc="${k}">${c[k] ? 'New code' : 'Make one'}</button><button class="chip" data-chc="${k}">Choose</button>` : ''}</div>${choose(k)}` : '';
+    box.innerHTML = c.player || c.parent || admin ? row('player', 'Players') + row('parent', 'Parents') + `<p class="hint">Players and parents can see the drills you share with them${fixOn() ? ' and the fixtures' : ''}, and nothing else. Any number of phones can use these codes.</p>`
       : admin ? '<p class="hint">Players and parents join with their own codes and only see the drills you share with them.</p><button class="btn ghost" id="gpMk">Make player and parent codes</button>'
       : `<p class="hint">${isGroupAdmin() ? 'Make them on the Admin tab.' : 'Your team admin hasn’t made them yet.'}</p>`;
     $$('[data-shc]', box).forEach(b => b.addEventListener('click', () => shareText(joinText(c[b.dataset.shc], b.dataset.shc), z.groupName, 'Code: ' + fmtCode(c[b.dataset.shc]))));
+    $$('[data-chc]', box).forEach(b => b.addEventListener('click', () => { const f = $(`[data-chf="${b.dataset.chc}"]`, box); f.hidden = !f.hidden; if(!f.hidden){ const i = $('input', f); tidyCode(i); i.focus(); } }));
+    $$('[data-chs]', box).forEach(b => b.addEventListener('click', async () => {
+      const k = b.dataset.chs, msg = $(`[data-chm="${k}"]`, box), code = normCode($(`[data-chi="${k}"]`, box).value), warn = t => { msg.textContent = t; msg.classList.add('err'); };
+      if(code.length !== 10) return warn('Codes are 10 letters or numbers (dashes and spaces are ignored).');
+      if(code === c[k]) return warn('That is already the ' + k + ' code.');
+      b.disabled = true; msg.classList.remove('err'); msg.textContent = 'Checking…';
+      try {
+        if(!(await codeFree(code))) { b.disabled = false; return warn(`${fmtCode(code)} is already in use, by this or another team or club. Try another.`); }
+        await newRoleCode(k, c[k], code); toast(`${k === 'player' ? 'Player' : 'Parent'} code is now ${fmtCode(code)}${c[k] ? '. The old one no longer lets new phones in.' : ''}`); loadCodesInto(box, admin);
+      } catch(e){ b.disabled = false; warn(niceErr(e)); }
+    }));
     $$('[data-nwc]', box).forEach(b => b.addEventListener('click', () => {
+      if(!c[b.dataset.nwc]){ b.disabled = true; newRoleCode(b.dataset.nwc).then(() => loadCodesInto(box, admin), e => { b.disabled = false; toast(niceErr(e)); }); return; }
       if(b.dataset.sure){ b.disabled = true; newRoleCode(b.dataset.nwc, c[b.dataset.nwc]).then(() => { toast('New code made. The old one no longer lets new phones in.'); loadCodesInto(box, admin); }, e => { b.disabled = false; toast(niceErr(e)); }); }
       else { b.dataset.sure = 1; b.textContent = 'Replace? Tap again'; b.classList.add('on'); }
     }));
