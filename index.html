@@ -3254,7 +3254,7 @@ function showHats(){
       : '<p class="muted">This phone isn’t in a team yet.</p>'}
     <button class="btn ghost wide" id="hatJoin">Join another team or club</button>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 27 Sep 2026, 20:43</p>`,
+    <p class="hint" style="text-align:center">Version 27 Sep 2026, 21:53</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3528,11 +3528,19 @@ function renderClubTab(which){
       } catch(e){ box.innerHTML = `<p class="hint">Could not load the code: ${esc(niceErr(e))}</p>`; }
     };
     loadCode();
-    listDocs(`/clubs/${c}/members`).then(ms => {
-      const box = $('#clAdmins', el); if(!box) return; const f = d => d.fields || {};
+    // club admins: each phone (a browser and a home-screen app count as two), with Remove for the others
+    const loadAdmins = () => Promise.all([listDocs(`/clubs/${c}/members`), fbToken()]).then(([ms, tok]) => {
+      const box = $('#clAdmins', el); if(!box) return; const f = d => d.fields || {}, me = tokenUid(tok), idOf = d => d.name.split('/').pop();
       const admins = ms.filter(d => f(d).role && f(d).role.stringValue === 'admin'), parents = ms.length - admins.length;
-      box.innerHTML = admins.map(d => `<div class="mem"><div><b>${esc(f(d).who ? f(d).who.stringValue : 'No name')}</b><small>${f(d).device ? esc(f(d).device.stringValue) + ' · ' : ''}ID ${d.name.split('/').pop().slice(0, 8)}</small></div></div>`).join('') + `<p class="hint">${parents} parent${parents === 1 ? '' : 's'} joined with the club parent code.</p>`;
+      box.innerHTML = admins.map(d => `<div class="mem"><div><b>${esc(f(d).who ? f(d).who.stringValue : 'No name')}${idOf(d) === me ? ' · this phone' : ''}</b><small>${f(d).device ? esc(f(d).device.stringValue) + ' · ' : ''}ID ${idOf(d).slice(0, 8)}</small></div>${idOf(d) === me ? '' : `<button class="chip" data-crm="${idOf(d)}">Remove</button>`}</div>`).join('')
+        + `<p class="hint">${parents} parent${parents === 1 ? '' : 's'} joined with the club parent code. On an iPhone, Safari and the home-screen app are listed separately; remove the ones no longer used.</p>`;
+      $$('[data-crm]', box).forEach(b => b.addEventListener('click', async () => {
+        if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
+        b.disabled = true;
+        try { await fb('DELETE', `/clubs/${c}/members/${b.dataset.crm}`); toast('Club admin removed'); loadAdmins(); } catch(e){ b.disabled = false; toast(niceErr(e)); }
+      }));
     }).catch(e => { const box = $('#clAdmins', el); if(box) box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; });
+    loadAdmins();
     $('#clAdmin', el).addEventListener('click', async () => {
       const code = newCode();
       try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('invites/' + code), fields:{club:{stringValue: c}, role:{stringValue: 'admin'}, single:{booleanValue: true}, by:{stringValue: club.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]});

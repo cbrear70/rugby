@@ -103,7 +103,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 27 Sep 2026, 20:43</p>
+  <p class="hint" style="text-align:center">Version 27 Sep 2026, 21:53</p>
 </main>
 <script>
 (() => {
@@ -186,9 +186,11 @@ async function loadClubs(){
       el.innerHTML = `<h2>${esc(name(c))}</h2>
         <div class="field"><div class="field-label">Teams · ${teams.length}</div>${teams.length ? `<table class="members"><tbody>${teams.map(g => `<tr><td>${esc(name(g))}<small>${fmt(idOf(g))}</small></td><td><button class="btn ghost sm" data-out="${idOf(g)}">Take out of club</button></td></tr>`).join('')}</tbody></table>` : '<p class="hint">No teams yet.</p>'}</div>
         ${free.length ? `<div class="row"><select data-addsel style="flex:1">${free.map(g => `<option value="${idOf(g)}">${esc(name(g))}</option>`).join('')}</select><button class="btn ghost" data-add>Add a team</button></div>` : ''}
-        <p class="hint">Club admins: ${admins.length ? admins.map(m => esc(m.fields?.who?.stringValue || '(no name)')).join(', ') : 'none yet'}. Parents who joined with the club code: ${members.length - admins.length}.</p>
+        <div class="field"><div class="field-label">Club admins · ${admins.length}</div>${admins.length ? `<table class="members"><tbody>${admins.map(m => `<tr><td>${esc(m.fields?.who?.stringValue || '(no name)')}<small>${m.fields?.device?.stringValue ? esc(m.fields.device.stringValue) + ' · ' : ''}ID ${esc(idOf(m).slice(0, 8))} · joined ${when(m.fields?.at?.integerValue)}</small></td><td><button class="btn ghost sm" data-crm="${idOf(m)}">Remove</button></td></tr>`).join('')}</tbody></table>` : '<p class="hint">None yet.</p>'}
+          <p class="hint">Parents who joined with the club code: ${members.length - admins.length}. On an iPhone, Safari and the home-screen app are listed separately.</p></div>
         <div class="row"><button class="btn" data-cinv>Invite club admin</button><button class="btn ghost" data-cren>Rename</button><button class="btn danger" data-cdel>Delete club</button></div>`;
       const run = async fn => { el.querySelectorAll('button').forEach(b => b.disabled = true); try { await fn(); } catch(e){ status(e.message, 'err'); } await loadClubs(); load(); };
+      el.querySelectorAll('[data-crm]').forEach(b => b.addEventListener('click', () => { if(confirm('Remove this club admin? That phone can no longer manage the club.')) run(async () => { await commit([del(`clubs/${id}/members/${b.dataset.crm}`)]); status('Club admin removed.', 'ok'); }); }));
       el.querySelectorAll('[data-out]').forEach(b => b.addEventListener('click', () => run(async () => {
         await commit([{update:{name: NAME('groups/' + b.dataset.out), fields:{}}, updateMask:{fieldPaths:['club']}, currentDocument:{exists:true}}, del(`clubs/${id}/teams/${b.dataset.out}`)]);
         status('Taken out of the club.', 'ok'); })));
