@@ -3269,7 +3269,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 27 Sep 2026, 23:34</p>`,
+    <p class="hint" style="text-align:center">Version 27 Sep 2026, 23:50</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3318,8 +3318,6 @@ function renderTeamTab(){
     <div class="field"><div class="field-label">You</div>${(z.kids || []).length ? `<p><b>${esc(nameOfPlayer(z.kids[0], z))}</b></p>${pickedLine(z, z.kids[0])}
         <div class="rcode"><div class="gcode" id="gpKidCode">…</div><button class="chip" id="gpKidShare">Share</button></div><p class="hint">Your code for your parents: they enter it to link you, and then see your fixtures and team sheets and say when you’re available.</p>`
       : '<p class="hint">Ask your team admin to set which player this phone is (Admin → People). Then your code for your parents appears here.</p>'}</div>
-    <div class="field"><div class="field-label">Are you a coach?</div>${z.wants ? '<p class="muted">You have asked for coach access. The team admin will see your request next time they open the team.</p>'
-      : '<p class="hint">Coaches can change the squad, selections and drills. Ask the team admin to make this phone a coach.</p><button class="btn ghost" id="gpAsk">Ask for coach access</button>'}</div>
     ${tail}`
   : `${card}
     <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
@@ -3622,7 +3620,7 @@ function renderKidsTab(){
       <div class="row-btns"><button class="chip" data-kshare="${z.group}|${pid}">Code for another parent</button><button class="chip" data-kun="${z.group}|${pid}">Unlink</button></div></div>`).join('')}
     <button class="btn wide" id="kdJoin">Enter a code</button>
     ${clubs.map(c => `<div class="field"><div class="field-label">More teams at ${esc(c.name)}</div><div data-kclub="${c.id}"><p class="muted">Loading…</p></div></div>`).join('')}
-    ${parentTeams.length ? `<div class="field"><div class="field-label">Your teams as a parent</div>${parentTeams.map(z => `<div class="mem"><span class="sdot" style="--sc:${groupColour(z.group)}"></span><div><b>${esc(z.groupName)}</b><small>${esc(kidsOf(z).map(k => nameOfPlayer(k, z)).join(', ') || 'no child linked')}</small></div>${z.wants ? '<small class="muted">coach access asked</small>' : `<button class="chip" data-kask="${z.group}">Ask to coach</button>`}<button class="chip" data-kleave="${z.group}">Leave</button></div>`).join('')}</div>` : ''}`;
+    ${parentTeams.length ? `<div class="field"><div class="field-label">Your teams as a parent</div>${parentTeams.map(z => `<div class="mem"><span class="sdot" style="--sc:${groupColour(z.group)}"></span><div><b>${esc(z.groupName)}</b><small>${esc(kidsOf(z).map(k => nameOfPlayer(k, z)).join(', ') || 'no child linked')}</small></div><button class="chip" data-kleave="${z.group}">Leave</button></div>`).join('')}</div>` : ''}`;
   const zOf = g => teamsOnPhone().find(x => x.group === g);
   $('#kdJoin', el).addEventListener('click', () => showGate(true));
   for(const box of $$('[data-kl]', el)){
