@@ -2481,7 +2481,7 @@ async function runSync(choices, quiet){
     let gone = !!e.gone; if(!gone && e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
     if(gone) askNewCode(); else if(e.removed) showRemoved(); else toast(niceErr(e));
   }
-  finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); }
+  finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); setTimeout(checkLinkRequests, 300); }
 }
 // The admin changed this group's join code (or deleted the group). The new group lists the codes it replaced, so a
 // phone can only be moved to the same group; its teams, moves and unsynced changes carry straight on.
@@ -2553,6 +2553,7 @@ async function redeem(code, who){
   let inv = null; try { inv = await fb('GET', '/invites/'+code); } catch(e){ if(e.status !== 403) throw e; }
   if(inv){
     const f = inv.fields || {}, group = f.group ? f.group.stringValue : '', role = f.role ? f.role.stringValue : '';
+    if(f.parentUid) return linkToParent(inv, code, who);
     if(!group && f.club) return joinClub(inv, code, who);
     const single = !!(f.single && f.single.booleanValue), usedBy = f.usedBy ? f.usedBy.stringValue : '';
     const grp = await fetchGroup(group); if(!grp || !ROLE_NAMES[role]) return {err: 'That code is for a team that no longer exists.'};
@@ -2622,6 +2623,8 @@ function showGate(canClose){
     if(code.length !== 10) return err('Enter the 10-character code you were given.'); if(!who()) return err('Enter your name.');
     busy(true); err('Checking…');
     try { const r = await redeem(code, who()); if(r.err){ err(r.err); busy(false); return; }
+      if(r.sent){ if(/join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); g.hidden = true;
+        toast(`Sent to ${r.sent}. You'll be linked when they next open the app.`); return; }
       if(r.club){ if(/join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search); g.hidden = true;
         toast(`Welcome to ${r.name}`); if(r.invited === 'parent') pickClubTeams(r.club); else showClub(r.club); return; }
       await enter(r.grp, r.role, r.note);
@@ -3269,7 +3272,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 27 Sep 2026, 23:50</p>`,
+    <p class="hint" style="text-align:center">Version 28 Sep 2026, 01:04</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3316,7 +3319,8 @@ function renderTeamTab(){
     <p class="muted">Updated ${ago(z.lastSync)}.</p>
     <button class="btn wide" id="gpSync">Check for new drills${fixOn() ? ' and fixtures' : ''}</button>
     <div class="field"><div class="field-label">You</div>${(z.kids || []).length ? `<p><b>${esc(nameOfPlayer(z.kids[0], z))}</b></p>${pickedLine(z, z.kids[0])}
-        <div class="rcode"><div class="gcode" id="gpKidCode">…</div><button class="chip" id="gpKidShare">Share</button></div><p class="hint">Your code for your parents: they enter it to link you, and then see your fixtures and team sheets and say when you’re available.</p>`
+        <div class="rcode"><div class="gcode" id="gpKidCode">…</div><button class="chip" id="gpKidShare">Share</button></div><p class="hint">Your code for your parents: they enter it to link you, and then see your fixtures and team sheets and say when you’re available. Or link to them: ask for their parent code (their Children tab) and enter it here.</p>
+        <button class="btn ghost" id="gpLinkParent">Enter a parent’s code</button>`
       : '<p class="hint">Ask your team admin to set which player this phone is (Admin → People). Then your code for your parents appears here.</p>'}</div>
     ${tail}`
   : `${card}
@@ -3336,9 +3340,9 @@ function renderTeamTab(){
       viewer ? 'Its drills are removed from this phone. You need the code to join again.'
       : others.length ? `Its selections and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The team keeps everything you've synced. To come back you need a new invite from the team admin.`
       : 'Your selections stay on this phone but stop syncing. To come back you need a new invite from the team admin.', 'Leave team', leaveGroup));
-  on('#gpCode', () => showGate(true));
+  on('#gpCode', () => showGate(true)); on('#gpLinkParent', () => showGate(true));
   if(viewer && (z.kids || []).length){
-    kidCode(z.kids[0], z).then(c => { const g = $('#gpKidCode', el); if(g) g.textContent = c ? fmtCode(c) : 'Ask your team admin'; }).catch(() => {});
+    kidCode(z.kids[0], z).then(c => c || makeKidCode(z.kids[0], '', z)).then(c => { const g = $('#gpKidCode', el); if(g) g.textContent = fmtCode(c); }).catch(() => { const g = $('#gpKidCode', el); if(g) g.textContent = 'Sync first'; });
     on('#gpKidShare', () => shareKidCode(z.kids[0], z).catch(e => toast(niceErr(e))));
     if(!z.sheets && Date.now() - (z.fixTried || 0) > 60e3) loadFixtures(z).then(() => { if(TAB === 'team') renderTeamTab(); }, () => {});
   }
@@ -3557,8 +3561,7 @@ async function withNewCode(fn){
   }
 }
 async function kidCode(pid, z = S.sync){ const d = await fb('GET', `/groups/${z.group}/kidcodes/${pid}`); return d && d.fields && d.fields.code ? d.fields.code.stringValue : ''; }
-async function makeKidCode(pid, old){
-  const z = S.sync;
+async function makeKidCode(pid, old, z = S.sync){
   return withNewCode(code => fb('POST', ':commit', {writes: [
     {update:{name: DOCNAME('invites/' + code), fields:{group:{stringValue: z.group}, role:{stringValue: 'parent'}, child:{stringValue: pid}, single:{booleanValue: false}, by:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}},
     {update:{name: DOCNAME(`groups/${z.group}/kidcodes/${pid}`), fields:{code:{stringValue: code}}}},
@@ -3567,7 +3570,7 @@ async function makeKidCode(pid, old){
 const kidText = (code, child, teamName) => `Link ${child} (${teamName}) in Rugby Team Picker: open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}. It makes you a parent in ${teamName}, linked to ${child}, so you can see their fixtures, team sheets and drills and say when they're available. The other parent can use the same code.${IOS_NOTE}`;
 async function shareKidCode(pid, z = S.sync){
   let code = await kidCode(pid, z);
-  if(!code){ if(!isGroupAdmin()) return toast('Ask the team admin for this child’s code'); code = await makeKidCode(pid); }
+  if(!code){ if(!(z === S.sync && isGroupAdmin()) && !(z.role === 'player' && (z.kids || []).includes(pid))) return toast('Ask the team admin for this child’s code'); code = await makeKidCode(pid, '', z); }
   const name = nameOfPlayer(pid, z);
   await shareText(kidText(code, name, z.groupName), name, `Code for ${name}: ${fmtCode(code)}`);
   return code;
@@ -3608,21 +3611,75 @@ function pickedFor(z, pid){
 }
 const pickedLine = (z, pid) => pickedFor(z, pid).map(p => `<div class="pick"><b>No. ${p.n}</b> ${esc(p.pos)} · ${esc(p.ev ? evTitle(p.ev) + ', ' + evWhen(p.ev).split(' · ')[0] : p.sheet.name)}</div>`).join('');
 
+/* A parent's own code: invites/<code> = {parentUid, who}. A child whose phone is set to their player enters it; the
+   phone leaves a request (linkreqs/<parent uid>/items) carrying the child's code, and the parent's phone links the child
+   with it the next time it opens, just as if the parent had entered the child's code. */
+async function myParentCode(){
+  if(S.parentCode) return S.parentCode;
+  const uid = tokenUid(await fbToken()), who = (teamsOnPhone()[0] || {}).who || '';
+  S.parentCode = await withNewCode(code => fb('POST', ':commit', {writes:[{update:{name: DOCNAME('invites/' + code), fields:{parentUid:{stringValue: uid}, who:{stringValue: who}, at:{integerValue: String(Date.now())}}}, currentDocument:{exists:false}}]}));
+  save(); return S.parentCode;
+}
+async function linkToParent(inv, code, who){
+  const f = inv.fields || {}, puid = f.parentUid.stringValue, pname = f.who && f.who.stringValue || 'your parent', uid = tokenUid(await fbToken());
+  if(puid === uid) return {err: 'That is this phone’s own parent code. Your child enters it on their phone.'};
+  const mine = teamsOnPhone().filter(z => z.role === 'player' && (z.kids || []).length);
+  if(!mine.length) return {err: 'That is a parent’s code. Enter it on your child’s phone, once the team admin has set which player that phone is.'};
+  for(const z of mine){
+    const pid = z.kids[0], kc = await kidCode(pid, z) || await makeKidCode(pid, '', z);
+    await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`linkreqs/${puid}/items/${uid}_${pid}`), fields:{group:{stringValue: z.group}, child:{stringValue: pid}, code:{stringValue: kc}, via:{stringValue: code}, from:{stringValue: nameOfPlayer(pid, z) || who || ''}, at:{integerValue: String(Date.now())}}}}]});
+  }
+  return {sent: pname};
+}
+// the parent's side: children who entered this phone's parent code are linked with their codes
+let linkChecking = false, linkCheckedAt = 0;
+async function checkLinkRequests(){
+  if(linkChecking || !fbOn() || !teamsOnPhone().length || Date.now() - linkCheckedAt < 20e3) return;
+  linkChecking = true; linkCheckedAt = Date.now();
+  try {
+    const uid = tokenUid(await fbToken()), docs = await listDocs(`/linkreqs/${uid}/items`);
+    for(const d of docs){
+      const f = d.fields || {}, from = f.from && f.from.stringValue || 'Your child', who = (teamsOnPhone()[0] || {}).who || '';
+      try {
+        const r = await redeem(f.code.stringValue, who);
+        if(r && !r.err && r.kid){
+          const prev = syncing() ? S.sync.group : null, prevHat = S.ui.hat;
+          let z = teamsOnPhone().find(x => x.group === r.grp.code);
+          if(!z){ addTeamWorkspace(r.grp, r.role, who, r.grp.code + ':' + uid); z = S.sync; }
+          z.kids = r.kids; delete z.linksDone; save();
+          if(prev && S.sync.group !== prev){ switchGroup(prev, true); S.ui.hat = prevHat; }
+          toast(`${from} is now linked to you (${r.grp.name})`);
+        }
+      } catch(e){}
+      await fb('DELETE', `/linkreqs/${uid}/items/${d.name.split('/').pop()}`).catch(() => {});
+    }
+    if(docs.length){ save(); syncDot(); renderAll(); }
+  } catch(e){} finally { linkChecking = false; }
+}
+
 /* Children tab (Parent role): the children this phone is linked to, who else is linked, where they're picked */
 let kidsLoading = false;
 function renderKidsTab(){
   const el = $('#kidsBody'), teams = familyTeams(), mine = teams.flatMap(z => kidsOf(z).map(pid => ({z, pid})));
   const parentTeams = teamsOnPhone().filter(z => z.role === 'parent'), clubs = clubsOnPhone().filter(c => c.code);
   el.innerHTML = `<div class="gcard" style="--gc:${PARENT_COLOUR}"><span class="eyebrow">Parent</span><b>${mine.length ? 'Your children' : 'No children linked yet'}</b><small>${mine.length ? 'Who else is linked, and where they’re picked' : 'Enter your child’s code: the team admin sends it, or it’s on your child’s phone (Team tab)'}</small></div>
+    <div class="field"><div class="field-label">Your parent code</div><div class="rcode"><div class="gcode" id="kdMine">…</div><button class="chip" id="kdMineShare">Share</button></div>
+      <p class="hint">Your child can enter it on their phone (Team tab → Enter a code) to link to you, once the team admin has set which player that phone is.</p></div>
     ${mine.map(({z, pid}) => `<div class="kid" style="--gc:${groupColour(z.group)}"><div class="kidhead"><b>${esc(nameOfPlayer(pid, z))}</b>${teamPill(z)}</div>
       <div class="kidlinks" data-kl="${z.group}|${pid}"><small class="muted">Checking who is linked…</small></div>
       ${pickedLine(z, pid)}
-      <div class="row-btns"><button class="chip" data-kshare="${z.group}|${pid}">Code for another parent</button><button class="chip" data-kun="${z.group}|${pid}">Unlink</button></div></div>`).join('')}
+      <div class="rcode"><div class="gcode" data-kc="${z.group}|${pid}">…</div><button class="chip" data-kshare="${z.group}|${pid}">Share</button><button class="chip" data-kun="${z.group}|${pid}">Unlink</button></div>
+      <small class="muted">${esc(nameOfPlayer(pid, z))}’s code: another parent enters it to link them too</small></div>`).join('')}
     <button class="btn wide" id="kdJoin">Enter a code</button>
     ${clubs.map(c => `<div class="field"><div class="field-label">More teams at ${esc(c.name)}</div><div data-kclub="${c.id}"><p class="muted">Loading…</p></div></div>`).join('')}
     ${parentTeams.length ? `<div class="field"><div class="field-label">Your teams as a parent</div>${parentTeams.map(z => `<div class="mem"><span class="sdot" style="--sc:${groupColour(z.group)}"></span><div><b>${esc(z.groupName)}</b><small>${esc(kidsOf(z).map(k => nameOfPlayer(k, z)).join(', ') || 'no child linked')}</small></div><button class="chip" data-kleave="${z.group}">Leave</button></div>`).join('')}</div>` : ''}`;
   const zOf = g => teamsOnPhone().find(x => x.group === g);
   $('#kdJoin', el).addEventListener('click', () => showGate(true));
+  myParentCode().then(c => { const g = $('#kdMine', el); if(g) g.textContent = fmtCode(c); }).catch(() => { const g = $('#kdMine', el); if(g) g.textContent = 'Sync first'; });
+  $('#kdMineShare', el).addEventListener('click', async () => { try { const c = await myParentCode();
+    shareText(`To link to me in Rugby Team Picker: on your phone tap the heading at the top, then Enter a code, and type ${fmtCode(c)}.`, 'My parent code', 'Parent code: ' + fmtCode(c)); } catch(e){ toast(niceErr(e)); } });
+  $$('[data-kc]', el).forEach(box => { const [g, pid] = box.dataset.kc.split('|'); kidCode(pid, zOf(g)).then(c => { box.textContent = c ? fmtCode(c) : 'not made yet'; }).catch(() => { box.textContent = '—'; }); });
+  checkLinkRequests();
   for(const box of $$('[data-kl]', el)){
     const [g, pid] = box.dataset.kl.split('|'), z = zOf(g);
     Promise.all([linkedTo(pid, z), fbToken()]).then(([ls, tok]) => { if(!box.isConnected) return; const me = tokenUid(tok);
@@ -3687,6 +3744,7 @@ syncDot();
 function checkJoinLink(){ if(fbOn() && /join=/.test(location.hash)) showGate(syncing()); }
 if(fbOn() && !syncing()) showGate(false); else { checkJoinLink(); if(fbOn()) setTimeout(checkInboxQuietly, 1200); }
 if(fbOn()) setTimeout(loadConfig, 600);
+if(fbOn()) setTimeout(checkLinkRequests, 2000);
 window.addEventListener('hashchange', checkJoinLink);
 window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup, showClub, showTab, setHat, showSelections, hatsOnPhone};
 })();
