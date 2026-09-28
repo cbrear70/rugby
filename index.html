@@ -3311,7 +3311,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 00:14</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 00:17</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3783,14 +3783,14 @@ async function loadKidsAdmin(box){
   const z = S.sync;
   try {
     const ms = await groupMembers(); if(!box.isConnected) return;
-    const names = squadNames(), count = pid => ms.filter(m => m.kids.includes(pid)), none = names.filter(p => !count(p.id).length);
+    const names = squadNames(), count = pid => ms.filter(m => m.kids.includes(pid)), hasParent = p => count(p.id).some(m => m.role !== 'player'), none = names.filter(p => !hasParent(p)), linked = names.filter(hasParent);
     const row = p => { const ls = count(p.id), parents = ls.filter(m => m.role !== 'player').length, phone = ls.some(m => m.role === 'player');
       const info = `<b>${esc(p.name)}</b><small>${parents ? parents + ' parent' + (parents > 1 ? 's' : '') + ' linked' : 'no parent linked'}${phone ? ' · own phone' : ''} · <u>${ls.length ? 'see who' : 'link a parent'}</u></small>`;
       return `<div class="mem${parents ? '' : ' req'}"><button class="memlink" data-kwho="${p.id}">${info}</button><button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
     const waiting = ms.filter(m => m.role === 'parent' && !m.kids.length), cnt = $('#adCnt-kids'); if(cnt) cnt.textContent = waiting.length || '';
-    box.innerHTML = names.length ? (waiting.length ? `<small class="muted">Parents not linked to a child · ${waiting.length}</small>` + waiting.map(m => `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · sees no drills yet</small></div><select data-klp="${m.uid}" aria-label="Link ${esc(m.who)} to a child"><option value="">Link to…</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>`).join('') : '')
-      + (none.length ? `<small class="muted">No parent linked · ${none.length}</small>` + none.map(row).join('') : '')
-      + (names.length > none.length ? `<small class="muted">Linked</small>` + names.filter(p => count(p.id).length).map(row).join('') : '')
+    box.innerHTML = names.length ? (waiting.length ? `<div class="section-h"><span>Parents waiting to be linked · ${waiting.length}</span></div>` + waiting.map(m => `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · sees no drills yet</small></div><select data-klp="${m.uid}" aria-label="Link ${esc(m.who)} to a child"><option value="">Link to…</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>`).join('') : '')
+      + `<div class="section-h"><span>Unlinked children · ${none.length}</span></div>` + (none.length ? none.map(row).join('') : '<p class="hint">Every child has a parent linked.</p>')
+      + `<div class="section-h"><span>Linked children · ${linked.length}</span></div>` + (linked.length ? linked.map(row).join('') : '<p class="hint">No child has a parent linked yet.</p>')
       + '<p class="hint">Invite parent sends the child’s code: whoever enters it becomes a parent in the team, linked to that child. New code stops the old one linking anyone new. Tap a child to see who is linked, link a parent who joined with the parent code, or remove a wrong link.</p>'
       : '<p class="hint">Add the squad first (Squad tab), then sync.</p>';
     $$('[data-klp]', box).forEach(sel => sel.addEventListener('change', async () => { if(!sel.value) return; const m = ms.find(x => x.uid === sel.dataset.klp); sel.disabled = true;
