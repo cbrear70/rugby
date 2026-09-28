@@ -268,6 +268,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .hint.err{color:#FFB4A6}
 .scorerow{display:flex;align-items:center;gap:10px;margin:4px 0}.scorerow span{flex:1}.scorerow b{min-width:28px;text-align:center;font-size:18px}
 .result{font-weight:700;color:var(--accent)}.closed{font-size:12px;color:var(--muted)}
+.testas{display:inline-block;background:var(--danger);color:#fff;font:700 10px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;padding:3px 7px;border-radius:999px;margin-left:6px;vertical-align:2px}
 .evnote{background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:12px}
 .evtimes{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:8px}
 .maprow{display:grid;grid-template-columns:110px 1fr;gap:8px;align-items:center;margin-bottom:6px}.maprow .field-label{margin:0}
@@ -363,7 +364,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 <div id="app">
   <header class="topbar">
     <button class="team-btn" id="teamBtn" aria-label="Switch or rename selection">
-      <span class="tn-wrap"><small class="gn" id="groupName" hidden></small><span class="tn" id="teamName">Team</span></span>
+      <span class="tn-wrap"><small class="gn" id="groupName" hidden></small><small class="testas" id="testAs" hidden></small><span class="tn" id="teamName">Team</span></span>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
     <button class="icon-btn sync-btn" id="syncBtn" aria-label="Sync with your team" title="Sync" hidden>
@@ -561,7 +562,16 @@ function toast(msg){ const t=$('#toast'); t.textContent=msg; t.hidden=false; cle
 function surname(name){ const p=String(name||'').trim().split(/\s+/); return p.length>1 ? p[p.length-1] : (p[0]||''); }
 
 /* ---------- state ---------- */
-const KEY = 'rugbyTeamPicker.v1';
+// Testing: #as=<name> (or ?as=<name>) gives this browser tab a separate test person, with its own data and its own
+// identity, so several people (a coach, a parent, a child) can be tried side by side in one browser. It's remembered
+// for the tab (so it survives the app tidying the address); #as=off goes back to the normal person.
+const TEST_AS = (() => {
+  const m = (location.hash + '&' + location.search).match(/[#&?]as=([\w-]{1,20})/i); let v = m ? m[1].toLowerCase() : '';
+  try { if(v === 'off'){ sessionStorage.removeItem('rtpAs'); v = ''; } else if(v) sessionStorage.setItem('rtpAs', v); else v = sessionStorage.getItem('rtpAs') || ''; } catch(e){}
+  if(/as=/i.test(location.hash)){ const h = location.hash.replace(/as=[\w-]+&?/i, '').replace(/[#&]+$/, ''); history.replaceState(null, '', location.pathname + location.search + (h.length > 1 ? h : '')); }
+  return v;
+})();
+const KEY = 'rugbyTeamPicker.v1' + (TEST_AS ? '.as.' + TEST_AS : '');
 let S = load();
 function load(){
   try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; pooledMoves(d); pooledSquad(d); for(const w of Object.values(d.parked || {})) pooledSquad(w); return d; } } } catch(e){}
@@ -2314,7 +2324,7 @@ const alreadyThere = e => /FAILED_PRECONDITION|ALREADY_EXISTS|exists/i.test(e.me
 function deviceLabel(){
   const u = navigator.userAgent, home = navigator.standalone || (window.matchMedia && matchMedia('(display-mode: standalone)').matches);
   const kind = /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1) ? 'iPad' : /Android/.test(u) ? 'Android' : /Windows/.test(u) ? 'Windows' : /Mac/.test(u) ? 'Mac' : 'Device';
-  return kind + (home ? ' · home screen app' : ' · browser');
+  return kind + (home ? ' · home screen app' : ' · browser') + (TEST_AS ? ' · test ' + TEST_AS : '');
 }
 // This phone's entry in a group: {role, wants}, null if it has none, undefined if the security rules predate roles
 async function myMember(group){
@@ -3299,7 +3309,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 28 Sep 2026, 19:24</p>`,
+    <p class="hint" style="text-align:center">Version 28 Sep 2026, 20:25</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3860,6 +3870,9 @@ function showScore(e){
 }
 
 /* ---------- boot ---------- */
+// a different test person typed into the address of an open tab: start again as them
+window.addEventListener('hashchange', () => { if(/[#&]as=/i.test(location.hash)) location.reload(); });
+if(TEST_AS){ const t = $('#testAs'); t.hidden = false; t.textContent = 'Test · ' + TEST_AS; document.title += ' · ' + TEST_AS; }
 document.addEventListener('gesturestart', e => e.preventDefault());
 if(ME.moveId === null && S.ui.tab === 'moves') {}
 showTab(TAB);
