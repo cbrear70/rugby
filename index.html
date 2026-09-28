@@ -2811,8 +2811,11 @@ const teamPill = z => `<span class="tpill" style="--gc:${groupColour(z.group)}">
 function kidRow(e, z, pid){
   const st = statusOf(e.id, pid, z), sh = (z.sheets || []).find(x => x.eventId === e.id), n = sh && Object.keys(sh.picks || {}).find(k => sh.picks[k] === pid);
   const pick = n ? ` <span class="pick"><b>No. ${n}</b> ${esc(posName(+n, {size: sh.size, bench: sh.bench}))}</span>` : '';
-  const here = hereOf(e.id, pid, z), there = here === true ? '<span class="st-yes">✓ There</span>' : here === false ? '<span class="st-no">Away</span>' : '';
-  const mark = here == null && canMarkHere(e) && hatKind() === 'parent' ? `<button class="chip" data-here="${z.group}|${e.id}|${pid}">Mark as there</button>` : '';
+  const here = hereOf(e.id, pid, z); let there = here === true ? '<span class="st-yes">✓ There</span>' : here === false ? '<span class="st-no">Away</span>' : '';
+  // a parent marks their child as there, and can tap again to undo it (not after a coach marks them away)
+  const toggle = here !== false && canMarkHere(e) && hatKind() === 'parent';
+  const mark = toggle ? `<button class="chip${here ? ' on' : ''}" data-here="${z.group}|${e.id}|${pid}|${here ? 0 : 1}" aria-pressed="${!!here}">${here ? '✓ There' : 'Mark as there'}</button>` : '';
+  if(toggle) there = '';
   if(hatKind() === 'player' || !repliesOpen(e)) return `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}${pick}</span><span class="${st ? 'st-' + st : 'muted'}">${st ? AV.find(a => a[0] === st)[1] : 'No reply'}</span>${hatKind() !== 'player' && !evPast(e) ? '<span class="closed">replies closed</span>' : ''}${there}${mark}</div>`;
   return `<div class="avrow"><span>${esc(nameOfPlayer(pid, z))}${pick}</span>${AV.map(([k, l, s]) => `<button class="avb ${k}${st === k ? ' on' : ''}" data-av="${z.group}|${e.id}|${pid}|${k}" aria-label="${esc(nameOfPlayer(pid, z))}: ${l}">${s} ${k === 'no' ? 'No' : k === 'yes' ? 'Yes' : 'Maybe'}</button>`).join('')}${there}${mark}</div>`;
 }
@@ -2847,8 +2850,9 @@ function renderFixtures(){
   $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
   $$('[data-ft]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixTeam = b.dataset.ft; save(); renderFixtures(); }));
   $$('[data-here]', el).forEach(b => b.addEventListener('click', async () => {
-    const [g, ev, pid] = b.dataset.here.split('|'), z = fixTeam(g); b.disabled = true;
-    try { await setHere(ev, pid, true, z); toast(`${nameOfPlayer(pid, z)} marked as there`); } catch(e){ toast(niceErr(e)); }
+    const [g, ev, pid, v] = b.dataset.here.split('|'), z = fixTeam(g); b.disabled = true;
+    try { if(v === '1'){ await setHere(ev, pid, true, z); toast(`${nameOfPlayer(pid, z)} marked as there`); }
+      else { await clearHere(ev, pid, z); toast(`${nameOfPlayer(pid, z)} no longer marked as there`); } } catch(e){ toast(niceErr(e)); }
     renderFixtures();
   }));
   $$('[data-av]', el).forEach(b => b.addEventListener('click', async () => {
@@ -3311,7 +3315,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 00:17</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 00:33</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3840,7 +3844,7 @@ async function linkParent(m, pid){
    at the end of Wednesday. After that parents can't change availability; coaches can until the end of the event's
    day. The times are saved with the event (closeAt, startAt, endAt) so the security rules enforce them too.
    The register: groups/<id>/attend/<event id>_<player id> = {here}; coaches take it any time, parents can mark their
-   own child as there until the event starts.
+   own child as there on the event's day, until it starts (all day if it has no time).
    Scores: e.score = {mode: tries|full, us: {t, c, p, d}, them: {...}}; the team admin picks the mode for the team
    (settings/scoring). Full: try 5, conversion 2, penalty 3, drop goal 3. */
 const addDays = (d, n) => { const x = new Date(d + 'T12:00'); x.setDate(x.getDate() + n); return ymd(x); };
@@ -3851,12 +3855,18 @@ const closeDay = e => closeDaysOf(e) ? addDays(e.date, -(closeDaysOf(e) - 1)) : 
 const evTimes = e => ({startAt: evDate(e).getTime(), endAt: endOfDay(e.date), closeAt: closeDaysOf(e) ? endOfDay(closeDay(e)) : 0});
 const repliesOpen = e => !evTimes(e).closeAt || Date.now() <= evTimes(e).closeAt;
 const coachCanReply = e => Date.now() <= evTimes(e).endAt;
-const canMarkHere = e => Date.now() <= evTimes(e).startAt;
+// parents: on the event's day only, until it starts (all that day if it has no time)
+const canMarkHere = e => { const now = Date.now(), t = evTimes(e); return now >= new Date(e.date + 'T00:00').getTime() && (now <= t.startAt || (!e.time && now <= t.endAt)); };
 const hereOf = (evId, pid, z = S.sync) => { const a = (z.attend || {})[avKey(evId, pid)]; return a ? a.here : null; };
 async function setHere(evId, pid, here, z = S.sync){
   const uid = tokenUid(await fbToken()), k = avKey(evId, pid), now = Date.now();
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/attend/${k}`), fields:{event:{stringValue: evId}, player:{stringValue: pid}, here:{booleanValue: here}, by:{stringValue: uid}, who:{stringValue: z.who || ''}, at:{integerValue: String(now)}}}}]});
   z.attend = z.attend || {}; z.attend[k] = {here, who: z.who || '', at: now}; save();
+}
+async function clearHere(evId, pid, z = S.sync){
+  const k = avKey(evId, pid);
+  await fb('DELETE', `/groups/${z.group}/attend/${k}`);
+  if(z.attend) delete z.attend[k]; save();
 }
 // the register for an event (coaches)
 function showRegister(e){
