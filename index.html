@@ -62,7 +62,7 @@ main{flex:1;min-height:0;position:relative}
 
 /* pitch */
 .toolrow{display:flex;gap:6px;padding:8px 16px;flex-wrap:wrap;align-items:center}
-#v-pitch .toolrow{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}#v-pitch .toolrow>*{flex:none}
+#v-pitch .toolrow,#adminTabs{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none}#v-pitch .toolrow>*,#adminTabs>*{flex:none}#adminTabs:empty{display:none}.chip .cnt{display:inline-block;min-width:16px;margin-left:5px;padding:1px 4px;border-radius:999px;background:var(--accent);color:var(--accent-ink);font-size:11px;text-align:center}.chip.on .cnt{background:var(--accent-ink);color:var(--accent)}.chip .cnt:empty{display:none}
 .chip{border:1px solid var(--line);background:var(--panel);color:var(--ink);border-radius:999px;padding:5px 11px;font:600 13px/1.1 var(--body)}
 .chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .chip:active{filter:brightness(1.2)}
@@ -445,7 +445,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
     <section class="view" id="v-fix" hidden><div class="scroll" id="fixBody"></div></section>
     <!-- ROLE SCREENS: Team (coaches, players), Admin (team admins), Children (parents), Club (club admins) -->
     <section class="view" id="v-team" hidden><div class="scroll" id="teamBody"></div></section>
-    <section class="view" id="v-admin" hidden><div class="scroll" id="adminBody"></div></section>
+    <section class="view" id="v-admin" hidden><div class="toolrow" id="adminTabs"></div><div class="scroll" id="adminBody"></div></section>
     <section class="view" id="v-kids" hidden><div class="scroll" id="kidsBody"></div></section>
     <section class="view" id="v-club" hidden><div class="scroll" id="clubBody"></div></section>
   </main>
@@ -3311,7 +3311,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 28 Sep 2026, 23:56</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 00:14</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3361,7 +3361,7 @@ function renderTeamTab(){
         <div class="rcode"><div class="gcode" id="gpKidCode">…</div><button class="chip" id="gpKidShare">Share</button></div><p class="hint">Your code for your parents: they enter it to link you, and then see your fixtures and team sheets and say when you’re available. Or link to them: ask for their parent code (their Children tab) and enter it here.</p>
         <button class="btn ghost" id="gpLinkParent">Enter a parent’s code</button>
         <div class="field"><div class="field-label">Linked to you</div><div id="gpLinked"><small class="muted">Checking…</small></div>
-          <p class="hint">If someone is linked to you who shouldn’t be, tell your team admin: they can remove the link (Admin → Children and their parents).</p></div>`
+          <p class="hint">If someone is linked to you who shouldn’t be, tell your team admin: they can remove the link (Admin → Children).</p></div>`
       : '<p class="hint">Ask your team admin to set which player this phone is (Admin → People). Then your code for your parents appears here.</p>'}</div>
     ${tail}`
   : `${card}
@@ -3416,7 +3416,7 @@ async function loadCodesInto(box, admin){
     const c = await getCodes(); if(!box.isConnected) return;
     // the team admin can also type a code of their own: it's used if nobody has it, otherwise they're told
     const choose = k => admin ? `<div class="choose" data-chf="${k}" hidden><div class="add-row"><input type="text" data-chi="${k}" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="e.g. OPATS-U13-P"><button class="btn" data-chs="${k}">Use this code</button></div>
-        <p class="hint" data-chm="${k}">10 letters or numbers. Make it hard to guess: ${k === 'parent' ? 'anyone with it can join as a parent; you then link them to their child (Admin → Children and their parents) before they see the drills.' : `anyone with it can join as a ${k} and watch the drills${fixOn() ? ' and fixtures' : ''} (not link a child).`}</p></div>` : '';
+        <p class="hint" data-chm="${k}">10 letters or numbers. Make it hard to guess: ${k === 'parent' ? 'anyone with it can join as a parent; you then link them to their child (Admin → Children) before they see the drills.' : `anyone with it can join as a ${k} and watch the drills${fixOn() ? ' and fixtures' : ''} (not link a child).`}</p></div>` : '';
     const row = (k, label) => (c[k] || admin) ? `<small class="muted">${label}</small><div class="rcode"><div class="gcode">${c[k] ? fmtCode(c[k]) : '—'}</div>${c[k] ? `<button class="chip" data-shc="${k}">Share</button>` : ''}${admin ? `<button class="chip" data-nwc="${k}">${c[k] ? 'New code' : 'Make one'}</button><button class="chip" data-chc="${k}">Choose</button>` : ''}</div>${choose(k)}` : '';
     box.innerHTML = c.player || c.parent || admin ? row('player', 'Players') + row('parent', 'Parents') + `<p class="hint">Players and parents can see the drills you share with them${fixOn() ? ' and the fixtures' : ''}, and nothing else. Any number of phones can use these codes.</p>`
       : admin ? '<p class="hint">Players and parents join with their own codes and only see the drills you share with them.</p><button class="btn ghost" id="gpMk">Make player and parent codes</button>'
@@ -3444,15 +3444,20 @@ async function loadCodesInto(box, admin){
 
 /* Admin tab (team admins only): codes, invites and the people in the team */
 function renderAdminTab(){
-  const el = $('#adminBody'), z = S.sync; if(!isGroupAdmin()){ el.innerHTML = ''; return; }
-  el.innerHTML = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Team admin</span><b>${esc(z.groupName)}</b><small>Codes, invites and people</small></div>
-    <div class="field"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
-    <div class="field"><div class="field-label">Invite coaches</div><p class="hint">Each invite works once, on one phone.</p>
+  const el = $('#adminBody'), bar = $('#adminTabs'), z = S.sync; if(!isGroupAdmin()){ el.innerHTML = bar.innerHTML = ''; return; }
+  const secs = [['kids', 'Children'], ['people', 'People'], ['codes', 'Codes'], ['invites', 'Invites'], ['scores', 'Scores']];
+  if(!secs.some(x => x[0] === S.ui.adminSec)) S.ui.adminSec = 'kids';
+  bar.innerHTML = secs.map(([k, l]) => `<button class="chip" data-asec="${k}">${l}<span class="cnt" id="adCnt-${k}"></span></button>`).join('');
+  el.innerHTML = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Team admin</span><b>${esc(z.groupName)}</b><small>Children, people, codes and invites</small></div>
+    <div class="field" data-sec="codes"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
+    <div class="field" data-sec="invites"><div class="field-label">Invite coaches</div><p class="hint">Each invite works once, on one phone.</p>
       <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a team admin</button></div><div id="gpInvites"></div></div>
-    <div class="field"><div class="field-label">Scores</div><div class="cats" id="gpScoring"><button type="button" class="chip" data-scm="tries">Tries only</button><button type="button" class="chip" data-scm="full">Full score</button></div>
+    <div class="field" data-sec="scores"><div class="field-label">Scores</div><div class="cats" id="gpScoring"><button type="button" class="chip" data-scm="tries">Tries only</button><button type="button" class="chip" data-scm="full">Full score</button></div>
       <p class="hint">Full score records tries, conversions, penalties and drop goals (usually from U14); tries only records tries.</p></div>
-    <div class="field"><div class="field-label">Children and their parents</div><div id="gpKidsAdm"><p class="muted">Loading…</p></div></div>
-    <div class="field"><div class="field-label">People</div><div id="gpPeople"><p class="muted">Loading…</p></div></div>`;
+    <div class="field" data-sec="kids"><div class="field-label">Children and their parents</div><div id="gpKidsAdm"><p class="muted">Loading…</p></div></div>
+    <div class="field" data-sec="people"><div class="field-label">People</div><div id="gpPeople"><p class="muted">Loading…</p></div></div>`;
+  const pick = k => { S.ui.adminSec = k; save(); $$('[data-asec]', bar).forEach(b => b.classList.toggle('on', b.dataset.asec === k)); $$('[data-sec]', el).forEach(f => { f.hidden = f.dataset.sec !== k; }); el.scrollTop = 0; };
+  $$('[data-asec]', bar).forEach(b => b.addEventListener('click', () => pick(b.dataset.asec))); pick(S.ui.adminSec);
   loadCodesInto($('#gpCodes', el), true); loadKidsAdmin($('#gpKidsAdm', el));
   const scm = () => $$('[data-scm]', el).forEach(b => b.classList.toggle('on', b.dataset.scm === (z.scoring || 'tries'))); scm();
   $$('[data-scm]', el).forEach(b => b.addEventListener('click', async () => {
@@ -3472,7 +3477,7 @@ function renderAdminTab(){
     const box = $('#gpPeople', el); if(!box) return;
     try {
       const me = tokenUid(await fbToken()), ms = await groupMembers(), order = {admin:0, coach:1, player:2, parent:3}; if(!box.isConnected) return;
-      const asks = m => m.wants && viewerRole(m.role);
+      const asks = m => m.wants && viewerRole(m.role), cnt = $('#adCnt-people'); if(cnt) cnt.textContent = ms.filter(asks).length || '';
       ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
       box.innerHTML = ms.map(m => asks(m)
         ? `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
@@ -3597,7 +3602,7 @@ function renderClubTab(which){
 
 /* ---------- CHILDREN: codes, links and team sheets ----------
    Each child has a code (groups/<id>/kidcodes/<player id> = {code}; invites/<code> = {group, role: parent, child}),
-   made by the team admin (Admin → Children and their parents → Invite parent) and seen by those already linked to the
+   made by the team admin (Admin → Children → Invite parent) and seen by those already linked to the
    child, including the child's own phone. Entering it makes you a parent in the team, linked to that child; a coach
    who enters it keeps coaching and gains the child. Who is linked to a child is groups/<id>/links/<player id>/who/<uid>.
    A player's phone is set to its player by the team admin (People). Team sheets coaches choose to show are
@@ -3685,7 +3690,7 @@ async function linkToParent(inv, code, who){
   for(const z of mine){
     const pid = z.kids[0], step = (what, e) => { if(e.status === 403) throw new Error(what); throw e; };
     const kc = await kidCode(pid, z).catch(e => step('Could not read your code. Sync, then try again; if it keeps happening, ask your team admin to check which player this phone is set to.', e))
-      || await makeKidCode(pid, '', z).catch(e => step('Your code hasn’t been made yet and this phone couldn’t make it. Ask your team admin to make it (Admin → Children and their parents).', e));
+      || await makeKidCode(pid, '', z).catch(e => step('Your code hasn’t been made yet and this phone couldn’t make it. Ask your team admin to make it (Admin → Children).', e));
     await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`linkreqs/${puid}/items/${uid}_${pid}`), fields:{group:{stringValue: z.group}, child:{stringValue: pid}, code:{stringValue: kc}, via:{stringValue: code}, from:{stringValue: nameOfPlayer(pid, z) || who || ''}, at:{integerValue: String(Date.now())}}}}]})
       .catch(e => step('Couldn’t send it to that parent. Check the code with them and try again.', e));
   }
@@ -3782,7 +3787,7 @@ async function loadKidsAdmin(box){
     const row = p => { const ls = count(p.id), parents = ls.filter(m => m.role !== 'player').length, phone = ls.some(m => m.role === 'player');
       const info = `<b>${esc(p.name)}</b><small>${parents ? parents + ' parent' + (parents > 1 ? 's' : '') + ' linked' : 'no parent linked'}${phone ? ' · own phone' : ''} · <u>${ls.length ? 'see who' : 'link a parent'}</u></small>`;
       return `<div class="mem${parents ? '' : ' req'}"><button class="memlink" data-kwho="${p.id}">${info}</button><button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
-    const waiting = ms.filter(m => m.role === 'parent' && !m.kids.length);
+    const waiting = ms.filter(m => m.role === 'parent' && !m.kids.length), cnt = $('#adCnt-kids'); if(cnt) cnt.textContent = waiting.length || '';
     box.innerHTML = names.length ? (waiting.length ? `<small class="muted">Parents not linked to a child · ${waiting.length}</small>` + waiting.map(m => `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · sees no drills yet</small></div><select data-klp="${m.uid}" aria-label="Link ${esc(m.who)} to a child"><option value="">Link to…</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>`).join('') : '')
       + (none.length ? `<small class="muted">No parent linked · ${none.length}</small>` + none.map(row).join('') : '')
       + (names.length > none.length ? `<small class="muted">Linked</small>` + names.filter(p => count(p.id).length).map(row).join('') : '')
@@ -3807,7 +3812,7 @@ function showKidLinks(pid, ms, onChange){
       || '<p class="hint">No one is linked now.</p>'}
     ${(() => { const add = ms.filter(m => m.role === 'parent' && !m.kids.includes(pid)).sort((a, b) => a.kids.length - b.kids.length || a.who.localeCompare(b.who));
       return add.length ? `<div class="field"><div class="field-label">Link a parent</div>${add.map(m => `<div class="mem"><div><b>${esc(m.who || 'No name')}</b><small>${m.kids.length ? 'parent of ' + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) : 'no child linked'}${m.device ? ' · ' + esc(m.device) : ''}</small></div><button class="chip" data-kadd="${m.uid}">Link</button></div>`).join('')}</div>` : ''; })()}
-    <p class="hint">Link adds ${esc(name)} to a parent already in the team: they then see the team’s drills and ${esc(name.split(' ')[0])}’s fixtures and team sheets. Remove link unlinks ${esc(name)} from that person only: they stay in the team and keep any other children. To take someone out of the team altogether, use People below.</p>
+    <p class="hint">Link adds ${esc(name)} to a parent already in the team: they then see the team’s drills and ${esc(name.split(' ')[0])}’s fixtures and team sheets. Remove link unlinks ${esc(name)} from that person only: they stay in the team and keep any other children. To take someone out of the team altogether, use the People tab.</p>
     <button class="btn ghost wide" data-close>Done</button>`,
     el => { $$('[data-kadd]', el).forEach(b => b.addEventListener('click', async () => { const m = ms.find(x => x.uid === b.dataset.kadd); b.disabled = true;
       try { await linkParent(m, pid); toast(`${m.who || 'They'} ${m.who ? 'is' : 'are'} now linked to ${name}`); onChange && onChange(); showKidLinks(pid, ms, onChange); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
