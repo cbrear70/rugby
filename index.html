@@ -239,7 +239,7 @@ textarea{resize:vertical;min-height:84px}
 body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
 body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!important}
 .mem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
-.mem>div{flex:1;min-width:0}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
+.mem>div,.mem>.memlink{flex:1;min-width:0}.memlink{text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}.memlink small u{text-decoration-color:var(--muted)}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
 .mem select{width:auto;min-width:0;padding:6px 8px}.mem.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
 .rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
 /* fixtures */
@@ -3309,7 +3309,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 28 Sep 2026, 20:25</p>`,
+    <p class="hint" style="text-align:center">Version 28 Sep 2026, 20:55</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3359,7 +3359,7 @@ function renderTeamTab(){
         <div class="rcode"><div class="gcode" id="gpKidCode">…</div><button class="chip" id="gpKidShare">Share</button></div><p class="hint">Your code for your parents: they enter it to link you, and then see your fixtures and team sheets and say when you’re available. Or link to them: ask for their parent code (their Children tab) and enter it here.</p>
         <button class="btn ghost" id="gpLinkParent">Enter a parent’s code</button>
         <div class="field"><div class="field-label">Linked to you</div><div id="gpLinked"><small class="muted">Checking…</small></div>
-          <p class="hint">If someone is linked to you who shouldn’t be, tell your team admin: they can remove them (Admin → People).</p></div>`
+          <p class="hint">If someone is linked to you who shouldn’t be, tell your team admin: they can remove the link (Admin → Children and their parents).</p></div>`
       : '<p class="hint">Ask your team admin to set which player this phone is (Admin → People). Then your code for your parents appears here.</p>'}</div>
     ${tail}`
   : `${card}
@@ -3778,17 +3778,39 @@ async function loadKidsAdmin(box){
     const ms = await groupMembers(); if(!box.isConnected) return;
     const names = squadNames(), count = pid => ms.filter(m => m.kids.includes(pid)), none = names.filter(p => !count(p.id).length);
     const row = p => { const ls = count(p.id), parents = ls.filter(m => m.role !== 'player').length, phone = ls.some(m => m.role === 'player');
-      return `<div class="mem${parents ? '' : ' req'}"><div><b>${esc(p.name)}</b><small>${parents ? parents + ' parent' + (parents > 1 ? 's' : '') + ' linked' : 'no parent linked'}${phone ? ' · own phone' : ''}</small></div><button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
+      const info = `<b>${esc(p.name)}</b><small>${parents ? parents + ' parent' + (parents > 1 ? 's' : '') + ' linked' : 'no parent linked'}${phone ? ' · own phone' : ''}${ls.length ? ' · <u>see who</u>' : ''}</small>`;
+      return `<div class="mem${parents ? '' : ' req'}">${ls.length ? `<button class="memlink" data-kwho="${p.id}">${info}</button>` : `<div>${info}</div>`}<button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
     box.innerHTML = names.length ? (none.length ? `<small class="muted">No parent linked · ${none.length}</small>` + none.map(row).join('') : '')
       + (names.length > none.length ? `<small class="muted">Linked</small>` + names.filter(p => count(p.id).length).map(row).join('') : '')
-      + '<p class="hint">Invite parent sends the child’s code: whoever enters it becomes a parent in the team, linked to that child. New code stops the old one linking anyone new.</p>'
+      + '<p class="hint">Invite parent sends the child’s code: whoever enters it becomes a parent in the team, linked to that child. New code stops the old one linking anyone new. Tap a linked child to see who is linked and remove a wrong link.</p>'
       : '<p class="hint">Add the squad first (Squad tab), then sync.</p>';
+    $$('[data-kwho]', box).forEach(b => b.addEventListener('click', () => showKidLinks(b.dataset.kwho, ms, () => loadKidsAdmin(box))));
     $$('[data-kinv]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await shareKidCode(b.dataset.kinv); } catch(e){ toast(niceErr(e)); } b.disabled = false; }));
     $$('[data-knew]', box).forEach(b => b.addEventListener('click', async () => {
       if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Replace? Tap again'; b.classList.add('on'); return; }
       b.disabled = true; try { await makeKidCode(b.dataset.knew, await kidCode(b.dataset.knew)); toast('New code made. The old one no longer links anyone new.'); loadKidsAdmin(box); } catch(e){ b.disabled = false; toast(niceErr(e)); }
     }));
   } catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; }
+}
+
+// team admin: who is linked to one child, each with Remove link (unlinks just that child; the person stays in the team)
+function showKidLinks(pid, ms, onChange){
+  const z = S.sync, name = nameOfPlayer(pid), ls = ms.filter(m => m.kids.includes(pid)).sort((a, b) => (a.role === 'player') - (b.role === 'player') || a.who.localeCompare(b.who));
+  openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>Linked to ${esc(name)}</h2>
+    ${ls.map(m => `<div class="mem"><div><b>${esc(m.who || 'No name')}</b><small>${m.role === 'player' ? name.split(' ')[0] + '’s own phone' : ROLE_NAMES[m.role]}${m.kids.length > 1 ? ' · also linked to ' + esc(m.kids.filter(k => k !== pid).map(k => nameOfPlayer(k)).join(', ')) : ''}${m.device ? ' · ' + esc(m.device) : ''} · active ${ago(m.seen)}</small></div><button class="chip" data-kul="${m.uid}">Remove link</button></div>`).join('')
+      || '<p class="hint">No one is linked now.</p>'}
+    <p class="hint">Remove link unlinks ${esc(name)} from that person only: they stay in the team and keep any other children. To take someone out of the team altogether, use People below.</p>
+    <button class="btn ghost wide" data-close>Done</button>`,
+    el => $$('[data-kul]', el).forEach(b => b.addEventListener('click', async () => {
+      if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
+      const m = ms.find(x => x.uid === b.dataset.kul), kids = m.kids.filter(k => k !== pid); b.disabled = true;
+      try {
+        await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
+          {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${m.uid}`)}]});
+        m.kids = kids; toast(`${m.who || 'They'} ${m.role === 'player' ? 'is no longer set as' : 'is no longer linked to'} ${name}`);
+        onChange && onChange(); showKidLinks(pid, ms, onChange);
+      } catch(e){ b.disabled = false; toast(niceErr(e)); }
+    })));
 }
 
 /* ---------- DEADLINES, REGISTER AND SCORES ----------
