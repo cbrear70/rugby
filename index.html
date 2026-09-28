@@ -2468,7 +2468,7 @@ async function runSync(choices, quiet){
   try {
     await refreshRole(); refreshClub().catch(() => {}); loadConfig();
     if(isViewer()){
-      const r = await pullShared(); try { await loadFixtures(); } catch(e){} if(!curMove()) stopPlay(); renderAll();
+      const r = await pullShared(); try { await loadFixtures(); } catch(e){} checkNewLinks(S.sync).catch(() => {}); if(!curMove()) stopPlay(); renderAll();
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
       return;
     }
@@ -3299,7 +3299,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 28 Sep 2026, 11:41</p>`,
+    <p class="hint" style="text-align:center">Version 28 Sep 2026, 19:24</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3347,7 +3347,9 @@ function renderTeamTab(){
     <button class="btn wide" id="gpSync">Check for new drills${fixOn() ? ' and fixtures' : ''}</button>
     <div class="field"><div class="field-label">You</div>${(z.kids || []).length ? `<p><b>${esc(nameOfPlayer(z.kids[0], z))}</b></p>${pickedLine(z, z.kids[0])}
         <div class="rcode"><div class="gcode" id="gpKidCode">…</div><button class="chip" id="gpKidShare">Share</button></div><p class="hint">Your code for your parents: they enter it to link you, and then see your fixtures and team sheets and say when you’re available. Or link to them: ask for their parent code (their Children tab) and enter it here.</p>
-        <button class="btn ghost" id="gpLinkParent">Enter a parent’s code</button>`
+        <button class="btn ghost" id="gpLinkParent">Enter a parent’s code</button>
+        <div class="field"><div class="field-label">Linked to you</div><div id="gpLinked"><small class="muted">Checking…</small></div>
+          <p class="hint">If someone is linked to you who shouldn’t be, tell your team admin: they can remove them (Admin → People).</p></div>`
       : '<p class="hint">Ask your team admin to set which player this phone is (Admin → People). Then your code for your parents appears here.</p>'}</div>
     ${tail}`
   : `${card}
@@ -3371,6 +3373,7 @@ function renderTeamTab(){
   if(viewer && (z.kids || []).length){
     kidCode(z.kids[0], z).then(c => c || makeKidCode(z.kids[0], '', z)).then(c => { const g = $('#gpKidCode', el); if(g) g.textContent = fmtCode(c); }).catch(() => { const g = $('#gpKidCode', el); if(g) g.textContent = 'Sync first'; });
     on('#gpKidShare', () => shareKidCode(z.kids[0], z).catch(e => toast(niceErr(e))));
+    myLinks(z).then(ls => { const box = $('#gpLinked', el); if(box) box.innerHTML = ls.length ? ls.map(l => `<div class="mem"><div><b>${esc(l.who || 'Someone')}</b><small>parent · linked ${l.at ? ago(l.at) : ''}</small></div></div>`).join('') : '<small class="muted">No one yet. Give your parents your code, or enter theirs.</small>'; }).catch(() => {});
     if(!z.sheets && Date.now() - (z.fixTried || 0) > 60e3) loadFixtures(z).then(() => { if(TAB === 'team') renderTeamTab(); }, () => {});
   }
   on('#gpAsk', async () => {
@@ -3609,9 +3612,17 @@ async function shareKidCode(pid, z = S.sync){
   await shareText(kidText(code, name, z.groupName), name, `Code for ${name}: ${fmtCode(code)}`);
   return code;
 }
+// a child's phone: the parents linked to them
+async function myLinks(z){ return (await linkedTo(z.kids[0], z)).filter(l => l.role !== 'player'); }
+async function checkNewLinks(z){
+  if(z.role !== 'player' || !(z.kids || []).length) return;
+  const ls = await myLinks(z), seen = new Set(z.seenLinks || []), fresh = ls.filter(l => !seen.has(l.uid));
+  if(fresh.length) toast(`${fresh.map(l => l.who || 'Someone').join(' and ')} ${fresh.length > 1 ? 'are' : 'is'} now linked to you. Not right? Tell your team admin.`);
+  z.seenLinks = ls.map(l => l.uid); save();
+}
 // who is linked to a child: parents, and the child's own phone
 async function linkedTo(pid, z){
-  return (await listDocs(`/groups/${z.group}/links/${pid}/who`)).map(d => { const f = d.fields || {}; return {uid: d.name.split('/').pop(), who: f.who ? f.who.stringValue : '', role: f.role ? f.role.stringValue : 'parent'}; });
+  return (await listDocs(`/groups/${z.group}/links/${pid}/who`)).map(d => { const f = d.fields || {}; return {uid: d.name.split('/').pop(), who: f.who ? f.who.stringValue : '', role: f.role ? f.role.stringValue : 'parent', at: +(f.at && f.at.integerValue || 0)}; });
 }
 const linkWrite = (z, pid, uid, who, role) => ({update:{name: DOCNAME(`groups/${z.group}/links/${pid}/who/${uid}`), fields:{who:{stringValue: who || ''}, role:{stringValue: role}, at:{integerValue: String(Date.now())}}}});
 // this phone's own entries, for children linked before who-is-linked existed
@@ -3660,8 +3671,11 @@ async function linkToParent(inv, code, who){
   const mine = teamsOnPhone().filter(z => z.role === 'player' && (z.kids || []).length);
   if(!mine.length) return {err: 'That is a parent’s code. Enter it on your child’s phone, once the team admin has set which player that phone is.'};
   for(const z of mine){
-    const pid = z.kids[0], kc = await kidCode(pid, z) || await makeKidCode(pid, '', z);
-    await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`linkreqs/${puid}/items/${uid}_${pid}`), fields:{group:{stringValue: z.group}, child:{stringValue: pid}, code:{stringValue: kc}, via:{stringValue: code}, from:{stringValue: nameOfPlayer(pid, z) || who || ''}, at:{integerValue: String(Date.now())}}}}]});
+    const pid = z.kids[0], step = (what, e) => { if(e.status === 403) throw new Error(what); throw e; };
+    const kc = await kidCode(pid, z).catch(e => step('Could not read your code. Sync, then try again; if it keeps happening, ask your team admin to check which player this phone is set to.', e))
+      || await makeKidCode(pid, '', z).catch(e => step('Your code hasn’t been made yet and this phone couldn’t make it. Ask your team admin to make it (Admin → Children and their parents).', e));
+    await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`linkreqs/${puid}/items/${uid}_${pid}`), fields:{group:{stringValue: z.group}, child:{stringValue: pid}, code:{stringValue: kc}, via:{stringValue: code}, from:{stringValue: nameOfPlayer(pid, z) || who || ''}, at:{integerValue: String(Date.now())}}}}]})
+      .catch(e => step('Couldn’t send it to that parent. Check the code with them and try again.', e));
   }
   return {sent: pname};
 }
