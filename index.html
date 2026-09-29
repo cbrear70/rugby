@@ -2117,13 +2117,15 @@ const isGroupAdmin = () => syncing() && S.sync.role === 'admin';
 // Fixtures can be switched off while the rest of the app is tried out: config/app = {fixCoaches, fixViewers}, set on
 // the admin page. Off unless switched on (and off if it can't be read).
 const fixOn = () => syncing() && !!(S.cfg && (['parent', 'player'].includes(hatKind()) ? S.cfg.fixViewers : S.cfg.fixCoaches));
+// The Pitch tab is hidden for everyone unless config/app.pitchTab is switched on (admin page → Development switches)
+const pitchOn = () => !!(S.cfg && S.cfg.pitchTab);
 async function loadConfig(){
-  const before = fixOn();
+  const before = fixOn(), pitchBefore = pitchOn();
   try { const d = await fb('GET', '/config/app'), f = d && d.fields || {};
-    S.cfg = {fixCoaches: !!(f.fixCoaches && f.fixCoaches.booleanValue), fixViewers: !!(f.fixViewers && f.fixViewers.booleanValue)}; }
-  catch(e){ if(e.status === 403) S.cfg = {fixCoaches: false, fixViewers: false}; else return; }
+    S.cfg = {fixCoaches: !!(f.fixCoaches && f.fixCoaches.booleanValue), fixViewers: !!(f.fixViewers && f.fixViewers.booleanValue), pitchTab: !!(f.pitchTab && f.pitchTab.booleanValue)}; }
+  catch(e){ if(e.status === 403) S.cfg = {fixCoaches: false, fixViewers: false, pitchTab: false}; else return; }
   save();
-  if(!before && fixOn() && hatKind() === 'parent' && TAB !== 'fix' && !curMove()) showTab('fix'); else renderAll();
+  if(!before && fixOn() && hatKind() === 'parent' && TAB !== 'fix' && !curMove()) showTab('fix'); else if(pitchBefore !== pitchOn()) showTab(TAB); else renderAll();
 }
 
 async function fbErr(r){ try { const j = await r.json(); return (j.error && (j.error.message || j.error.status)) || 'HTTP '+r.status; } catch(e){ return 'HTTP '+r.status; } }
@@ -3289,9 +3291,9 @@ function hat(){
 }
 const hatKind = () => (hat() || {}).kind || '';
 function hatTabs(h = hat()){
-  if(!h) return ['pitch', 'squad', 'select', 'moves'];
+  if(!h) return [pitchOn() && 'pitch', 'squad', 'select', 'moves'].filter(Boolean);
   const viewers = h.kind === 'parent' || h.kind === 'player', f = !!(S.cfg && (viewers ? S.cfg.fixViewers : S.cfg.fixCoaches));
-  if(h.kind === 'coach') return ['pitch', 'squad', 'select', 'moves', f && 'fix', 'team', isGroupAdmin() && 'admin'].filter(Boolean);
+  if(h.kind === 'coach') return [pitchOn() && 'pitch', 'squad', 'select', 'moves', f && 'fix', 'team', isGroupAdmin() && 'admin'].filter(Boolean);
   if(h.kind === 'player') return ['moves', f && 'fix', 'team'].filter(Boolean);
   if(h.kind === 'parent') return [f && 'fix', isViewer() && (S.sync.kids || []).length && 'moves', 'kids'].filter(Boolean);
   return ['cteams', f && 'ccal', 'cpeople'].filter(Boolean);
@@ -3315,7 +3317,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 09:27</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 09:33</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });

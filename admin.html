@@ -96,14 +96,15 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
       <h2>Development switches</h2>
       <label class="sw"><input type="checkbox" id="swFixC"> Fixtures and availability for coaches and team admins</label>
       <label class="sw"><input type="checkbox" id="swFixV"> Fixtures and availability for players and parents</label>
-      <p class="hint" id="swNote">Off hides the Fixtures tab, fixture choices on the Selection tab and the club calendar; nothing already entered is lost. Phones pick up a change when they next open or sync.</p>
+      <label class="sw"><input type="checkbox" id="swPitch"> Pitch tab for coaches</label>
+      <p class="hint" id="swNote">Off hides the Pitch tab (selections and drills still work). Fixtures off hides the Fixtures tab, fixture choices on the Selection tab and the club calendar; nothing already entered is lost. Phones pick up a change when they next open or sync.</p>
     </div>
     <div class="top"><h2 id="gCount">Teams</h2><button class="btn ghost" id="reload">Refresh</button></div>
     <div id="groups" class="panel"></div>
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 29 Sep 2026, 09:27</p>
+  <p class="hint" style="text-align:center">Version 29 Sep 2026, 09:33</p>
 </main>
 <script>
 (() => {
@@ -228,12 +229,12 @@ $('#cCreate').addEventListener('click', async () => {
 
 // development switches: config/app
 async function loadSwitches(){
-  try { const d = await fb('GET', '/config/app'), f = d?.fields || {}; $('#swFixC').checked = !!f.fixCoaches?.booleanValue; $('#swFixV').checked = !!f.fixViewers?.booleanValue; }
+  try { const d = await fb('GET', '/config/app'), f = d?.fields || {}; $('#swFixC').checked = !!f.fixCoaches?.booleanValue; $('#swFixV').checked = !!f.fixViewers?.booleanValue; $('#swPitch').checked = !!f.pitchTab?.booleanValue; }
   catch(e){ $('#swNote').textContent = 'Could not read the switches: ' + e.message; }
 }
-for(const [id, key] of [['#swFixC', 'fixCoaches'], ['#swFixV', 'fixViewers']]) $(id).addEventListener('change', async () => {
+for(const [id, key] of [['#swFixC', 'fixCoaches'], ['#swFixV', 'fixViewers'], ['#swPitch', 'pitchTab']]) $(id).addEventListener('change', async () => {
   const el = $(id); el.disabled = true;
-  try { await fb('PATCH', `/config/app?updateMask.fieldPaths=${key}`, {fields:{[key]: {booleanValue: el.checked}}}); status(`Fixtures ${el.checked ? 'on' : 'off'} for ${key === 'fixCoaches' ? 'coaches' : 'players and parents'}.`, 'ok'); }
+  try { await fb('PATCH', `/config/app?updateMask.fieldPaths=${key}`, {fields:{[key]: {booleanValue: el.checked}}}); status(key === 'pitchTab' ? `Pitch tab ${el.checked ? 'on' : 'off'}.` : `Fixtures ${el.checked ? 'on' : 'off'} for ${key === 'fixCoaches' ? 'coaches' : 'players and parents'}.`, 'ok'); }
   catch(e){ el.checked = !el.checked; status(e.message, 'err'); } finally { el.disabled = false; }
 });
 
