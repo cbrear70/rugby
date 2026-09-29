@@ -3573,7 +3573,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 22:33</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 23:34</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3608,6 +3608,68 @@ function showClub(c){
   toast('Only club admins, and parents who joined with the club parent code, can see the club’s other teams');
 }
 
+/* ---------- TEAM ADMIN ACTIONS ----------
+   What the Team and Admin tabs change, kept apart from the screens like the other actions. Most talk to Firestore (a
+   team's members, codes, invites and settings live there, not on the phone); none touch the page. */
+// your name in the open team (blank keeps the old one)
+function setMyName(who){ const z = S.sync; z.who = (who || '').trim() || z.who; save(); }
+// a player or parent asks the team admin for coach access
+async function askForCoach(){
+  const z = S.sync, uid = tokenUid(await fbToken());
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{wants:{stringValue:'coach'}}}, updateMask:{fieldPaths:['wants']}, currentDocument:{exists:true}}]});
+  z.wants = 'coach'; save();
+}
+// how the team records scores: 'tries' (tries only) or 'full'
+async function setScoring(mode){
+  const z = S.sync;
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/settings/scoring`), fields:{mode:{stringValue: mode}}}}]});
+  z.scoring = mode; save();
+}
+// coach and team admin invites not used yet, newest first; cancelling one stops it working
+const unusedInvites = async () => (await groupInvites()).filter(i => i.single && !i.usedBy).sort((a, b) => b.at - a.at);
+const cancelInvite = code => fb('DELETE', '/invites/' + code);
+// A player or parent code the team admin types: why it can't be used ('' if it can), then chooseRoleCode makes it the
+// code (the old one stops letting new phones in), or says it's taken. makeRoleCodes makes both, at random.
+const roleCodeProblem = (kind, code, old) => code.length !== 10 ? 'Codes are 10 letters or numbers (dashes and spaces are ignored).' : code === old ? 'That is already the ' + kind + ' code.' : '';
+async function chooseRoleCode(kind, code, old){
+  if(!(await codeFree(code))) return `${fmtCode(code)} is already in use, by this or another team or club. Try another.`;
+  await newRoleCode(kind, old, code); return '';
+}
+async function makeRoleCodes(){ await newRoleCode('player'); await newRoleCode('parent'); }
+// People: a player or parent asking for coach access; the list's order (requests, then team admins, coaches, players,
+// parents, each by name)
+const asksForCoach = m => !!m.wants && viewerRole(m.role);
+const PEOPLE_ORDER = {admin:0, coach:1, player:2, parent:3};
+const sortPeople = ms => ms.sort((a, b) => asksForCoach(b) - asksForCoach(a) || (PEOPLE_ORDER[a.role] ?? 9) - (PEOPLE_ORDER[b.role] ?? 9) || a.who.localeCompare(b.who));
+const approveCoach = uid => setMember(uid, {role:'coach', wants:null});
+const declineCoach = uid => setMember(uid, {wants:null});
+// a phone's role; becoming a coach or team admin also clears any request for coach access
+const setMemberRole = (uid, role) => setMember(uid, viewerRole(role) ? {role} : {role, wants: null});
+const removeMember = uid => fb('DELETE', `/groups/${S.sync.group}/members/${uid}`);
+// the other phones already set as player pid (their names)
+const phonesSetAs = (ms, m, pid) => ms.filter(x => x.role === 'player' && x.uid !== m.uid && x.kids.includes(pid)).map(x => x.who || 'another phone');
+// which player a player's phone (member m) is: its link moves from the player it was before
+async function setPhonePlayer(m, pid){
+  const z = S.sync;
+  await fb('POST', ':commit', {writes: [{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: [{stringValue: pid}]}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
+    ...(m.kids[0] ? [{delete: DOCNAME(`groups/${z.group}/links/${m.kids[0]}/who/${m.uid}`)}] : []), linkWrite(z, pid, m.uid, m.who, 'player')]});
+}
+// The admin's Unlinked and Linked lists: who is linked to each child, the children with and without a parent, and
+// parents who joined with the parent code but aren't linked to a child yet
+function kidsOverview(ms, names){
+  const linkedTo = pid => ms.filter(m => m.kids.includes(pid)), hasParent = p => linkedTo(p.id).some(m => m.role !== 'player');
+  return {linkedTo, none: names.filter(p => !hasParent(p)), linked: names.filter(hasParent), waiting: ms.filter(m => m.role === 'parent' && !m.kids.length)};
+}
+// unlink child pid from member m (a parent, or the child's own phone); they stay in the team
+async function unlinkChild(m, pid){
+  const z = S.sync, kids = m.kids.filter(k => k !== pid);
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
+    {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${m.uid}`)}]});
+  m.kids = kids;
+}
+// a new code for child pid: the old one stops linking anyone new
+async function replaceKidCode(pid){ return makeKidCode(pid, await kidCode(pid)); }
+
 /* Team tab (coaches and players): the team, syncing, codes to hand out, the send code, your name, leaving */
 function renderTeamTab(){
   const el = $('#teamBody'), z = S.sync; if(!syncing()){ el.innerHTML = ''; return; }
@@ -3638,7 +3700,7 @@ function renderTeamTab(){
     ${tail}`;
   const on = (id, fn) => { const b = $(id, el); if(b) b.addEventListener('click', fn); };
   on('#gpSync', () => runSync());
-  on('#gpWhoSave', () => { z.who = $('#gpWho', el).value.trim() || z.who; save(); toast('Name saved'); });
+  on('#gpWhoSave', () => { setMyName($('#gpWho', el).value); toast('Name saved'); });
   on('#gpLeave', () => askConfirm('Leave '+z.groupName+'?',
       viewer ? 'Its drills are removed from this phone. You need the code to join again.'
       : others.length ? `Its selections and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The team keeps everything you've synced. To come back you need a new invite from the team admin.`
@@ -3652,9 +3714,7 @@ function renderTeamTab(){
   }
   on('#gpAsk', async () => {
     const ask = $('#gpAsk', el); ask.disabled = true;
-    try { const uid = tokenUid(await fbToken());
-      await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{wants:{stringValue:'coach'}}}, updateMask:{fieldPaths:['wants']}, currentDocument:{exists:true}}]});
-      z.wants = 'coach'; save(); toast('Request sent to the team admin'); renderAll(); }
+    try { await askForCoach(); toast('Request sent to the team admin'); renderAll(); }
     catch(e){ ask.disabled = false; toast(niceErr(e)); }
   });
   if(viewer) return;
@@ -3687,12 +3747,11 @@ async function loadCodesInto(box, admin){
     $$('[data-chc]', box).forEach(b => b.addEventListener('click', () => { const f = $(`[data-chf="${b.dataset.chc}"]`, box); f.hidden = !f.hidden; if(!f.hidden){ const i = $('input', f); tidyCode(i); i.focus(); } }));
     $$('[data-chs]', box).forEach(b => b.addEventListener('click', async () => {
       const k = b.dataset.chs, msg = $(`[data-chm="${k}"]`, box), code = normCode($(`[data-chi="${k}"]`, box).value), warn = t => { msg.textContent = t; msg.classList.add('err'); };
-      if(code.length !== 10) return warn('Codes are 10 letters or numbers (dashes and spaces are ignored).');
-      if(code === c[k]) return warn('That is already the ' + k + ' code.');
+      const problem = roleCodeProblem(k, code, c[k]); if(problem) return warn(problem);
       b.disabled = true; msg.classList.remove('err'); msg.textContent = 'Checking…';
       try {
-        if(!(await codeFree(code))) { b.disabled = false; return warn(`${fmtCode(code)} is already in use, by this or another team or club. Try another.`); }
-        await newRoleCode(k, c[k], code); toast(`${k === 'player' ? 'Player' : 'Parent'} code is now ${fmtCode(code)}${c[k] ? '. The old one no longer lets new phones in.' : ''}`); loadCodesInto(box, admin);
+        const taken = await chooseRoleCode(k, code, c[k]); if(taken){ b.disabled = false; return warn(taken); }
+        toast(`${k === 'player' ? 'Player' : 'Parent'} code is now ${fmtCode(code)}${c[k] ? '. The old one no longer lets new phones in.' : ''}`); loadCodesInto(box, admin);
       } catch(e){ b.disabled = false; warn(niceErr(e)); }
     }));
     $$('[data-nwc]', box).forEach(b => b.addEventListener('click', () => {
@@ -3700,7 +3759,7 @@ async function loadCodesInto(box, admin){
       if(b.dataset.sure){ b.disabled = true; newRoleCode(b.dataset.nwc, c[b.dataset.nwc]).then(() => { toast('New code made. The old one no longer lets new phones in.'); loadCodesInto(box, admin); }, e => { b.disabled = false; toast(niceErr(e)); }); }
       else { b.dataset.sure = 1; b.textContent = 'Replace? Tap again'; b.classList.add('on'); }
     }));
-    const mk = $('#gpMk', box); if(mk) mk.addEventListener('click', async () => { mk.disabled = true; try { await newRoleCode('player'); await newRoleCode('parent'); loadCodesInto(box, admin); } catch(e){ mk.disabled = false; toast(niceErr(e)); } });
+    const mk = $('#gpMk', box); if(mk) mk.addEventListener('click', async () => { mk.disabled = true; try { await makeRoleCodes(); loadCodesInto(box, admin); } catch(e){ mk.disabled = false; toast(niceErr(e)); } });
   } catch(e){ box.innerHTML = `<p class="hint">Could not load the codes: ${esc(niceErr(e))}</p>`; }
 }
 
@@ -3723,25 +3782,25 @@ function renderAdminTab(){
   loadCodesInto($('#gpCodes', el), true); loadKidsAdmin($('#gpKidsAdm', el));
   const scm = () => $$('[data-scm]', el).forEach(b => b.classList.toggle('on', b.dataset.scm === (z.scoring || 'tries'))); scm();
   $$('[data-scm]', el).forEach(b => b.addEventListener('click', async () => {
-    try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/settings/scoring`), fields:{mode:{stringValue: b.dataset.scm}}}}]}); z.scoring = b.dataset.scm; save(); scm(); toast(b.dataset.scm === 'full' ? 'Scores record tries, conversions, penalties and drop goals' : 'Scores record tries only'); }
+    try { await setScoring(b.dataset.scm); scm(); toast(b.dataset.scm === 'full' ? 'Scores record tries, conversions, penalties and drop goals' : 'Scores record tries only'); }
     catch(e){ toast(niceErr(e)); }
   }));
   const loadInvites = async () => {
     const box = $('#gpInvites', el); if(!box) return;
     try {
-      const list = (await groupInvites()).filter(i => i.single && !i.usedBy).sort((a, b) => b.at - a.at); if(!box.isConnected) return;
+      const list = await unusedInvites(); if(!box.isConnected) return;
       box.innerHTML = list.length ? `<small class="muted">Not used yet</small>` + list.map(i => `<div class="mem"><div><b>${fmtCode(i.code)}</b><small>${ROLE_NAMES[i.role] || i.role} invite · made ${ago(i.at)}</small></div><button class="chip" data-shi="${i.code}" data-r="${i.role}">Share</button><button class="chip" data-cxi="${i.code}">Cancel</button></div>`).join('') : '';
       $$('[data-shi]', box).forEach(b => b.addEventListener('click', () => shareText(joinText(b.dataset.shi, b.dataset.r), z.groupName, 'Invite code: ' + fmtCode(b.dataset.shi))));
-      $$('[data-cxi]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await fb('DELETE', '/invites/' + b.dataset.cxi); toast('Invite cancelled'); loadInvites(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+      $$('[data-cxi]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await cancelInvite(b.dataset.cxi); toast('Invite cancelled'); loadInvites(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
     } catch(e){ box.innerHTML = `<p class="hint">Could not list invites: ${esc(niceErr(e))}</p>`; }
   };
   const loadPeople = async () => {
     const box = $('#gpPeople', el); if(!box) return;
     try {
-      const me = tokenUid(await fbToken()), ms = await groupMembers(), order = {admin:0, coach:1, player:2, parent:3}; if(!box.isConnected) return;
-      const asks = m => m.wants && viewerRole(m.role), cnt = $('#adCnt-people'); if(cnt) cnt.textContent = ms.filter(asks).length || '';
-      ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
-      box.innerHTML = ms.map(m => asks(m)
+      const me = tokenUid(await fbToken()), ms = await groupMembers(); if(!box.isConnected) return;
+      const cnt = $('#adCnt-people'); if(cnt) cnt.textContent = ms.filter(asksForCoach).length || '';
+      sortPeople(ms);
+      box.innerHTML = ms.map(m => asksForCoach(m)
         ? `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
         : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length && m.role !== 'player' ? 'parent of ' + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
           // a player's phone: no role to change (remove it if it joined wrongly); the player they are, as text to tap
@@ -3750,19 +3809,18 @@ function renderAdminTab(){
         + '<p class="hint">Changes reach each phone the next time it opens or syncs. A removed phone needs a new invite or code to come back.</p>';
       const act = async (b, fn, msg) => { b.disabled = true; try { await fn(); toast(msg); loadPeople(); } catch(e){ b.disabled = false; toast(niceErr(e)); } };
       const nm = uid => (ms.find(m => m.uid === uid) || {}).who || 'They';
-      $$('[data-ok]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.ok, {role:'coach', wants:null}), `${nm(b.dataset.ok)} is now a coach`)));
-      $$('[data-no]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.no, {wants:null}), 'Request declined')));
-      $$('[data-rl]', box).forEach(s => s.addEventListener('change', () => act(s, () => setMember(s.dataset.rl, viewerRole(s.value) ? {role: s.value} : {role: s.value, wants: null}), `${nm(s.dataset.rl)} is now ${s.value === 'admin' ? 'a team admin' : 'a ' + s.value}`)));
+      $$('[data-ok]', box).forEach(b => b.addEventListener('click', () => act(b, () => approveCoach(b.dataset.ok), `${nm(b.dataset.ok)} is now a coach`)));
+      $$('[data-no]', box).forEach(b => b.addEventListener('click', () => act(b, () => declineCoach(b.dataset.no), 'Request declined')));
+      $$('[data-rl]', box).forEach(s => s.addEventListener('change', () => act(s, () => setMemberRole(s.dataset.rl, s.value), `${nm(s.dataset.rl)} is now ${s.value === 'admin' ? 'a team admin' : 'a ' + s.value}`)));
       // which player a player's phone is: a list to pick from; changing one already set asks first
       const pickPlayer = m => {
-        const taken = pid => ms.filter(x => x.role === 'player' && x.uid !== m.uid && x.kids.includes(pid)).map(x => x.who || 'another phone');
+        const taken = pid => phonesSetAs(ms, m, pid);
         openSheet(`<div class="eyebrow">${esc(m.who || 'This phone')}</div><h2>Which player?</h2>
           ${squadNames().length ? `<div class="hats">${squadNames().map(p => `<button class="hatrow${m.kids[0] === p.id ? ' cur' : ''}" style="--gc:var(--accent)" data-pp="${p.id}"><b>${esc(p.name)}</b>${taken(p.id).length ? `<small>already set on ${esc(taken(p.id).join(', '))}</small>` : ''}</button>`).join('')}</div>` : '<p class="hint">Add the squad first (Squad tab), then sync.</p>'}
           <button class="btn ghost wide" data-close>Cancel</button>`,
           el => $$('[data-pp]', el).forEach(b => b.addEventListener('click', async () => { const pid = b.dataset.pp;
             if(pid === m.kids[0]) return closeSheet(); b.disabled = true;
-            try { await fb('POST', ':commit', {writes: [{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: [{stringValue: pid}]}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
-                ...(m.kids[0] ? [{delete: DOCNAME(`groups/${z.group}/links/${m.kids[0]}/who/${m.uid}`)}] : []), linkWrite(z, pid, m.uid, m.who, 'player')]});
+            try { await setPhonePlayer(m, pid);
               closeSheet(); toast(`${m.who || 'That phone'} is ${nameOfPlayer(pid)}`); loadPeople(); }
             catch(e){ b.disabled = false; toast(niceErr(e)); } })));
       };
@@ -3770,7 +3828,7 @@ function renderAdminTab(){
         if(!m.kids[0]) return pickPlayer(m);
         askConfirm(`Change ${m.who || 'this phone'}’s player?`, `This phone is set as ${nameOfPlayer(m.kids[0])}. Only change it if that’s wrong.`, 'Yes, change it', () => pickPlayer(m)); }));
       $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
-        if(b.dataset.sure) act(b, () => fb('DELETE', `/groups/${z.group}/members/${b.dataset.rm}`), `${nm(b.dataset.rm)} removed`);
+        if(b.dataset.sure) act(b, () => removeMember(b.dataset.rm), `${nm(b.dataset.rm)} removed`);
         else { b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); }
       }));
     } catch(e){ box.innerHTML = `<p class="hint">Could not load people: ${esc(niceErr(e))}</p>`; }
@@ -4059,11 +4117,11 @@ async function loadKidsAdmin(box){
   const z = S.sync;
   try {
     const ms = await groupMembers(); if(!box.isConnected) return;
-    const names = squadNames(), count = pid => ms.filter(m => m.kids.includes(pid)), hasParent = p => count(p.id).some(m => m.role !== 'player'), none = names.filter(p => !hasParent(p)), linked = names.filter(hasParent);
+    const names = squadNames(), {linkedTo: count, none, linked, waiting} = kidsOverview(ms, names);
     const row = p => { const ls = count(p.id), parents = ls.filter(m => m.role !== 'player').length, phone = ls.some(m => m.role === 'player');
       const info = `<b>${esc(p.name)}</b><small>${parents ? parents + ' parent' + (parents > 1 ? 's' : '') + ' linked' : 'no parent linked'}${phone ? ' · own phone' : ''} · <u>${ls.length ? 'see who' : 'link a parent'}</u></small>`;
       return `<div class="mem${parents ? '' : ' req'}"><button class="memlink" data-kwho="${p.id}">${info}</button><button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
-    const waiting = ms.filter(m => m.role === 'parent' && !m.kids.length), cnt = $('#adCnt-unlinked'); if(cnt) cnt.textContent = waiting.length + none.length || '';
+    const cnt = $('#adCnt-unlinked'); if(cnt) cnt.textContent = waiting.length + none.length || '';
     // two admin tabs: Unlinked (parents waiting, and children with no parent) and Linked
     box.innerHTML = !names.length ? '<p class="hint" data-sec="unlinked">Add the squad first (Squad tab), then sync.</p><p class="hint" data-sec="linked">Add the squad first (Squad tab), then sync.</p>'
       : `<div class="field" data-sec="unlinked">` + (waiting.length ? `<div class="section-h"><span>Parents waiting to be linked · ${waiting.length}</span></div>` + waiting.map(m => `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · sees no drills yet</small></div><select data-klp="${m.uid}" aria-label="Link ${esc(m.who)} to a child"><option value="">Link to…</option>${names.map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('')}</select></div>`).join('') : '')
@@ -4078,7 +4136,7 @@ async function loadKidsAdmin(box){
     $$('[data-kinv]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await shareKidCode(b.dataset.kinv); } catch(e){ toast(niceErr(e)); } b.disabled = false; }));
     $$('[data-knew]', box).forEach(b => b.addEventListener('click', async () => {
       if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Replace? Tap again'; b.classList.add('on'); return; }
-      b.disabled = true; try { await makeKidCode(b.dataset.knew, await kidCode(b.dataset.knew)); toast('New code made. The old one no longer links anyone new.'); loadKidsAdmin(box); } catch(e){ b.disabled = false; toast(niceErr(e)); }
+      b.disabled = true; try { await replaceKidCode(b.dataset.knew); toast('New code made. The old one no longer links anyone new.'); loadKidsAdmin(box); } catch(e){ b.disabled = false; toast(niceErr(e)); }
     }));
   } catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; }
 }
@@ -4097,11 +4155,9 @@ function showKidLinks(pid, ms, onChange){
       try { await linkParent(m, pid); toast(`${m.who || 'They'} ${m.who ? 'is' : 'are'} now linked to ${name}`); onChange && onChange(); showKidLinks(pid, ms, onChange); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
     $$('[data-kul]', el).forEach(b => b.addEventListener('click', async () => {
       if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
-      const m = ms.find(x => x.uid === b.dataset.kul), kids = m.kids.filter(k => k !== pid); b.disabled = true;
+      const m = ms.find(x => x.uid === b.dataset.kul); b.disabled = true;
       try {
-        await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
-          {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${m.uid}`)}]});
-        m.kids = kids; toast(`${m.who || 'They'} ${m.role === 'player' ? 'is no longer set as' : 'is no longer linked to'} ${name}`);
+        await unlinkChild(m, pid); toast(`${m.who || 'They'} ${m.role === 'player' ? 'is no longer set as' : 'is no longer linked to'} ${name}`);
         onChange && onChange(); showKidLinks(pid, ms, onChange);
       } catch(e){ b.disabled = false; toast(niceErr(e)); }
     })); });
