@@ -239,7 +239,7 @@ textarea{resize:vertical;min-height:84px}
 body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
 body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!important}
 .mem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
-.mem>div,.mem>.memlink{flex:1;min-width:0}.mem>.selstack{flex:none;display:flex;flex-direction:column;gap:4px;width:42%;max-width:190px}.selstack select{width:100%}.memlink{text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}.memlink small u{text-decoration-color:var(--muted)}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
+.mem>div,.mem>.memlink{flex:1;min-width:0}.mem>.selstack{flex:none;display:flex;flex-direction:column;gap:4px;width:42%;max-width:190px}.selstack select{width:100%}.plpick{background:none;border:0;padding:6px 0;color:var(--ink);font:600 15px/1.2 var(--body);text-align:left;cursor:pointer;text-decoration:underline dotted var(--muted);text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.memlink{text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}.memlink small u{text-decoration-color:var(--muted)}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
 .mem select{width:auto;min-width:0;padding:6px 8px}.mem.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
 .rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
 /* fixtures */
@@ -3317,7 +3317,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 09:33</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 09:44</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3487,18 +3487,32 @@ function renderAdminTab(){
       ms.sort((a, b) => asks(b) - asks(a) || (order[a.role] ?? 9) - (order[b.role] ?? 9) || a.who.localeCompare(b.who));
       box.innerHTML = ms.map(m => asks(m)
         ? `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${ROLE_NAMES[m.role]} · asks for coach access</small></div><button class="chip on" data-ok="${m.uid}">Approve</button><button class="chip" data-no="${m.uid}">Decline</button></div>`
-        : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length ? (m.role === 'player' ? 'is ' : 'parent of ') + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
-          : `<div class="selstack">${m.role === 'player' ? `<select data-pl="${m.uid}" aria-label="Which player ${esc(m.who)} is"><option value="">Which player?</option>${squadNames().map(p => `<option value="${p.id}"${m.kids[0] === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select>` : ''}<select data-rl="${m.uid}" aria-label="Role for ${esc(m.who)}">${Object.entries(ROLE_NAMES).map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select></div><button class="chip" data-rm="${m.uid}">Remove</button>`}</div>`).join('')
+        : `<div class="mem"><div><b>${esc(m.who || 'No name')}${m.uid === me ? ' · this phone' : ''}</b><small>${m.kids.length && m.role !== 'player' ? 'parent of ' + esc(m.kids.map(k => nameOfPlayer(k)).join(', ')) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}active ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>${m.uid === me ? `<span class="muted">${ROLE_NAMES[m.role]}</span>`
+          // a player's phone: no role to change (remove it if it joined wrongly); the player they are, as text to tap
+          : m.role === 'player' ? `<div class="selstack">${m.kids[0] ? `<button class="plpick" data-pl="${m.uid}" aria-label="${esc(m.who)} is ${esc(nameOfPlayer(m.kids[0]))}: change">${esc(nameOfPlayer(m.kids[0]))}</button>` : `<button class="chip on" data-pl="${m.uid}">Which player?</button>`}</div><button class="chip" data-rm="${m.uid}">Remove</button>`
+          : `<div class="selstack"><select data-rl="${m.uid}" aria-label="Role for ${esc(m.who)}">${Object.entries(ROLE_NAMES).map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select></div><button class="chip" data-rm="${m.uid}">Remove</button>`}</div>`).join('')
         + '<p class="hint">Changes reach each phone the next time it opens or syncs. A removed phone needs a new invite or code to come back.</p>';
       const act = async (b, fn, msg) => { b.disabled = true; try { await fn(); toast(msg); loadPeople(); } catch(e){ b.disabled = false; toast(niceErr(e)); } };
       const nm = uid => (ms.find(m => m.uid === uid) || {}).who || 'They';
       $$('[data-ok]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.ok, {role:'coach', wants:null}), `${nm(b.dataset.ok)} is now a coach`)));
       $$('[data-no]', box).forEach(b => b.addEventListener('click', () => act(b, () => setMember(b.dataset.no, {wants:null}), 'Request declined')));
       $$('[data-rl]', box).forEach(s => s.addEventListener('change', () => act(s, () => setMember(s.dataset.rl, viewerRole(s.value) ? {role: s.value} : {role: s.value, wants: null}), `${nm(s.dataset.rl)} is now ${s.value === 'admin' ? 'a team admin' : 'a ' + s.value}`)));
-      $$('[data-pl]', box).forEach(sel => sel.addEventListener('change', () => { const m = ms.find(x => x.uid === sel.dataset.pl), pid = sel.value;
-        act(sel, () => fb('POST', ':commit', {writes: [{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: pid ? [{stringValue: pid}] : []}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
-          ...(m.kids[0] && m.kids[0] !== pid ? [{delete: DOCNAME(`groups/${z.group}/links/${m.kids[0]}/who/${m.uid}`)}] : []),
-          ...(pid ? [linkWrite(z, pid, m.uid, m.who, 'player')] : [])]}), pid ? `${m.who || 'That phone'} is ${nameOfPlayer(pid)}` : 'Player cleared'); }));
+      // which player a player's phone is: a list to pick from; changing one already set asks first
+      const pickPlayer = m => {
+        const taken = pid => ms.filter(x => x.role === 'player' && x.uid !== m.uid && x.kids.includes(pid)).map(x => x.who || 'another phone');
+        openSheet(`<div class="eyebrow">${esc(m.who || 'This phone')}</div><h2>Which player?</h2>
+          ${squadNames().length ? `<div class="hats">${squadNames().map(p => `<button class="hatrow${m.kids[0] === p.id ? ' cur' : ''}" style="--gc:var(--accent)" data-pp="${p.id}"><b>${esc(p.name)}</b>${taken(p.id).length ? `<small>already set on ${esc(taken(p.id).join(', '))}</small>` : ''}</button>`).join('')}</div>` : '<p class="hint">Add the squad first (Squad tab), then sync.</p>'}
+          <button class="btn ghost wide" data-close>Cancel</button>`,
+          el => $$('[data-pp]', el).forEach(b => b.addEventListener('click', async () => { const pid = b.dataset.pp;
+            if(pid === m.kids[0]) return closeSheet(); b.disabled = true;
+            try { await fb('POST', ':commit', {writes: [{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: [{stringValue: pid}]}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
+                ...(m.kids[0] ? [{delete: DOCNAME(`groups/${z.group}/links/${m.kids[0]}/who/${m.uid}`)}] : []), linkWrite(z, pid, m.uid, m.who, 'player')]});
+              closeSheet(); toast(`${m.who || 'That phone'} is ${nameOfPlayer(pid)}`); loadPeople(); }
+            catch(e){ b.disabled = false; toast(niceErr(e)); } })));
+      };
+      $$('[data-pl]', box).forEach(b => b.addEventListener('click', () => { const m = ms.find(x => x.uid === b.dataset.pl);
+        if(!m.kids[0]) return pickPlayer(m);
+        askConfirm(`Change ${m.who || 'this phone'}’s player?`, `This phone is set as ${nameOfPlayer(m.kids[0])}. Only change it if that’s wrong.`, 'Yes, change it', () => pickPlayer(m)); }));
       $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
         if(b.dataset.sure) act(b, () => fb('DELETE', `/groups/${z.group}/members/${b.dataset.rm}`), `${nm(b.dataset.rm)} removed`);
         else { b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); }
