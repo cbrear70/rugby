@@ -2168,53 +2168,96 @@ $('#importBtn').addEventListener('click', () => {
     });
 });
 const baseName = n => String(n||'').replace(/(\s*\(shared\))+$/i, '').trim().toLowerCase();
+
+/* ---------- SHARING ACTIONS ----------
+   Taking in what another coach shared (a code, link or file) and drills sent between teams, kept apart from the
+   screens like the squad actions: each changes S and saves, and never touches the page. */
+// The selection a shared one updates: imports keep the sender's id, so the next share of the same team lines up with
+// this copy; copies made before that (new id, maybe "(shared)" on the name) are matched by name instead.
+const importedSelectionOf = d => S.teams.find(x=>x.id===d.id) || S.teams.find(x=>baseName(x.name)===baseName(d.name));
+// Take in a shared selection, as a new one or replacing `existing`, and open it. Its drills come too (same id =
+// replaced); its players join the squad (same id or same name = same player, updated) and its team sheet follows them.
+function importSelection(d, existing){
+  for(const m of d.moves || []){ const i = S.moves.findIndex(x => x.id===m.id); if(i>=0) S.moves[i] = clone(m); else S.moves.push(clone(m)); }
+  const i = existing ? S.teams.indexOf(existing) : -1, nt = clone(d), remap = {};
+  for(const pl of d.players || []){ let q = S.players.find(x => x.id === pl.id) || S.players.find(x => x.name.trim().toLowerCase() === String(pl.name).trim().toLowerCase());
+    if(q) Object.assign(q, clone(pl), {id: q.id}); else { q = clone(pl); S.players.push(q); } remap[pl.id] = q.id; }
+  for(const n in nt.selection || {}){ const sl = nt.selection[n]; if(sl && sl.playerId) sl.playerId = remap[sl.playerId] || sl.playerId; }
+  delete nt.players; delete nt.moves;
+  if(existing){ S.teams[i] = nt; S.currentTeamId = d.id; }
+  else { if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; }
+  save(); return nt;
+}
+// Put a shared team sheet on selection t: its size and bench, and each shirt's player (matched by name; new names join
+// the squad), colour and spot on the pitch.
+function applyLineup(d, t){
+  if(d.size) t.size = d.size; if(d.bench != null) t.bench = d.bench;
+  for(const n in d.selection){ const s = d.selection[n]; let pid = null;
+    if(s.name){ let p = S.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:'', available:true}; S.players.push(p); } pid = p.id; }
+    t.selection[n] = {playerId:pid, color:s.color||null}; if(s.x!=null){ t.selection[n].x = s.x; t.selection[n].y = s.y; } }
+  save();
+}
+// a shared team sheet onto selection t (its sheet emptied first), or as a new selection, opened
+function importLineup(d, t){ for(const n in t.selection) t.selection[n].playerId = null; applyLineup(d, t); }
+function importLineupAsNew(d){ const nt = newTeam(d.team + ' (shared)'); applyLineup(d, nt); S.teams.push(nt); S.currentTeamId = nt.id; save(); return nt; }
+// the drill a shared one would replace: same id, else the same name
+const importedDrillOf = d => S.moves.find(x=>x.id===d.id) || S.moves.find(x=>baseName(x.name)===baseName(d.name));
+// Take in a shared drill: replacing `old`, or as a new one first in the list (a new id or " (shared)" if either
+// clashes; a draft when the phone is in a team). Returns it.
+function importDrill(d, old){
+  const m = clone(d); delete m.fromTeam; delete m.names;
+  if(old) S.moves[S.moves.indexOf(old)] = m;
+  else { if(S.moves.some(x=>x.id===m.id)) m.id = uid(); if(S.moves.some(x=>x.name===m.name)) m.name += ' (shared)'; if(syncing()) m.draft = true; S.moves.unshift(m); }
+  save(); return m;
+}
+// a drill another team sent (from the inbox), accepted: first in the list, with a new id if it clashes and where it
+// came from on its name if that clashes
+function acceptSentDrill(it){
+  const m = JSON.parse(it.json); if(S.moves.some(x => x.id === m.id)) m.id = uid();
+  if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another team'})`;
+  S.moves.unshift(m); save(); return m;
+}
+// why a send code can't be used to send a drill ('' if it can)
+const sendCodeProblem = code => code.length !== 10 ? 'Enter the 10-character send code.'
+  : syncing() && code === S.sync.mailbox ? 'That is your own team’s send code.'
+  : syncing() && code === S.sync.group ? 'That is your team’s join code. Ask the other team for their send code.' : '';
+// drop drill m into the inbox of the team with this send code, and remember the code (most recent first)
+async function sendDrill(m, code){
+  const z = S.sync || {}, fields = {json:{stringValue: JSON.stringify(Object.assign({}, m, {localOnly: undefined, draft: undefined}))}, fromGroup:{stringValue: z.groupName || ''}, fromWho:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}};
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`mailboxes/${code}/items/${uid()}`), fields}, currentDocument:{exists:false}}]});
+  S.ui.sendTo = [code].concat((S.ui.sendTo || []).filter(c => c !== code)).slice(0, 6); save();
+}
+
 function handleImport(pl){
   if(!pl || pl.app!==APP_ID || !pl.data) throw new Error('That is not a Rugby Team Picker code.');
   const d = pl.data, t = team();
   if(pl.kind==='team'){
-    // imports keep the sender's id so the next share of the same team lines up with this copy.
-    // Copies made before that (new id, maybe "(shared)" on the name) are matched by name instead.
-    const existing = S.teams.find(x=>x.id===d.id) || S.teams.find(x=>baseName(x.name)===baseName(d.name));
-    // the team's players join the squad: same id or same name = same player; its team sheet follows them
-    const takePlayers = nt => { const remap = {};
-      for(const pl of d.players || []){ let q = S.players.find(x => x.id === pl.id) || S.players.find(x => x.name.trim().toLowerCase() === String(pl.name).trim().toLowerCase());
-        if(q) Object.assign(q, clone(pl), {id: q.id}); else { q = clone(pl); S.players.push(q); } remap[pl.id] = q.id; }
-      for(const n in nt.selection || {}){ const sl = nt.selection[n]; if(sl && sl.playerId) sl.playerId = remap[sl.playerId] || sl.playerId; }
-      delete nt.players; return nt; };
-    const takeMoves = () => { for(const m of d.moves || []){ const i = S.moves.findIndex(x => x.id===m.id); if(i>=0) S.moves[i] = clone(m); else S.moves.push(clone(m)); } };
-    const addNew = () => { takeMoves(); const nt = takePlayers(clone(d)); delete nt.moves; if(S.teams.some(x=>x.id===nt.id)) nt.id = uid(); if(S.teams.some(x=>x.name===nt.name)) nt.name += ' (shared)'; S.teams.push(nt); S.currentTeamId = nt.id; done('Selection added'); };
-    const replace = () => { takeMoves(); const i = S.teams.indexOf(existing), nt = takePlayers(clone(d)); delete nt.moves; S.teams[i] = nt; S.currentTeamId = d.id; done('Selection updated'); };
+    const existing = importedSelectionOf(d);
+    const addNew = () => { importSelection(d, null); done('Selection added'); };
+    const replace = () => { importSelection(d, existing); done('Selection updated'); };
     openSheet(`<div class="eyebrow">Import selection</div><h2>${esc(d.name)}</h2><p class="muted">${d.players.length} players, ${Object.values(d.selection||{}).filter(s=>s&&s.playerId).length} shirts picked, ${(d.moves||[]).length} moves.</p>
       ${existing?`<p class="hint">Replacing swaps your copy of ${esc(existing.name)} (squad, team sheet and moves) for this one.</p>`:''}
       <div class="row-btns">${existing?`<button class="btn" id="ipRep">Replace ${existing.id===d.id?'my copy':esc(existing.name)}</button>`:''}<button class="btn ${existing?'ghost':''}" id="ipNew">Add as new selection</button></div><button class="btn ghost" data-close>Cancel</button>`,
       el => { $('#ipNew', el).addEventListener('click', addNew); const r = $('#ipRep', el); if(r) r.addEventListener('click', replace); });
   } else if(pl.kind==='lineup'){
-    const apply = target => {
-      if(d.size) target.size = d.size; if(d.bench != null) target.bench = d.bench;
-      for(const n in d.selection){ const s = d.selection[n]; let pid = null;
-        if(s.name){ let p = S.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:'', available:true}; S.players.push(p); } pid = p.id; }
-        target.selection[n] = {playerId:pid, color:s.color||null}; if(s.x!=null){ target.selection[n].x = s.x; target.selection[n].y = s.y; } }
-    };
     openSheet(`<div class="eyebrow">Import team sheet</div><h2>${esc(d.team)}</h2><p class="muted">${d.players.length} named players. Players not already in your squad will be added.</p>
       <div class="row-btns"><button class="btn" id="ipCur">Apply to ${esc(t.name)}</button><button class="btn ghost" id="ipNew">Add as new selection</button></div><button class="btn ghost" data-close>Cancel</button>`,
       el => {
-        $('#ipCur', el).addEventListener('click', () => { for(const n in t.selection) t.selection[n].playerId = null; apply(t); done('Team sheet applied'); });
-        $('#ipNew', el).addEventListener('click', () => { const nt = newTeam(d.team + ' (shared)'); apply(nt); S.teams.push(nt); S.currentTeamId = nt.id; done('Selection added'); });
+        $('#ipCur', el).addEventListener('click', () => { importLineup(d, t); done('Team sheet applied'); });
+        $('#ipNew', el).addEventListener('click', () => { importLineupAsNew(d); done('Selection added'); });
       });
   } else if(pl.kind==='move'){
-    const mv = S.moves, old = mv.find(x=>x.id===d.id) || mv.find(x=>baseName(x.name)===baseName(d.name));
+    const old = importedDrillOf(d);
     openSheet(`<div class="eyebrow">Import drill${d.fromTeam?' from '+esc(d.fromTeam):''}</div><h2>${esc(d.name)}</h2>${d.desc?`<p class="muted">${esc(d.desc)}</p>`:''}
       <p class="hint">Shirts follow the numbers in your own team, so #10 will show your fly-half.</p>
       ${old?`<p class="hint">You already have ${esc(old.name)}. Replace it with this version, or keep both.</p>`:''}
       <div class="row-btns">${old?`<button class="btn" id="ipRep">Replace ${esc(old.name)}</button>`:''}<button class="btn${old?' ghost':''}" id="ipAdd">${old?'Keep both':'Add move'}</button><button class="btn ghost" data-close>Cancel</button></div>`,
       el => {
-        const fresh = () => { const m = clone(d); delete m.fromTeam; delete m.names; return m; };
         $('#ipAdd', el).addEventListener('click', () => {
-          const m = fresh(); if(mv.some(x=>x.id===m.id)) m.id = uid(); if(mv.some(x=>x.name===m.name)) m.name += ' (shared)';
-          if(syncing()) m.draft = true; mv.unshift(m); save(); closeSheet(); showTab('moves'); openMove(m.id); toast(syncing() ? 'Drill added to your drafts' : 'Drill added');
+          const m = importDrill(d, null); closeSheet(); showTab('moves'); openMove(m.id); toast(syncing() ? 'Drill added to your drafts' : 'Drill added');
         });
         const r = $('#ipRep', el); if(r) r.addEventListener('click', () => {
-          const m = fresh(); mv[mv.indexOf(old)] = m; save(); closeSheet(); showTab('moves'); openMove(m.id); toast('Drill updated');
+          const m = importDrill(d, old); closeSheet(); showTab('moves'); openMove(m.id); toast('Drill updated');
         });
       });
   } else throw new Error('Unknown share type.');
@@ -2339,15 +2382,11 @@ function pendingChanges(){
   return n;
 }
 
-// choices: {teamId: 'mine'|'theirs'} for teams changed on both sides. Returns {needs:[...]} when a choice is required.
-async function syncNow(choices = {}, retry = true){
-  const z = S.sync, code = z.group, remote = await listItems(code);
-  if(S.teams.some(t => t.placeholder)){
-    const hasTeams = Object.values(remote).some(r => r.kind==='team' && !r.deleted);
-    S.teams = S.teams.filter(t => !(t.placeholder && hasTeams && !pickedCount(t)));
-    S.teams.forEach(t => { delete t.placeholder; });
-  }
-  const local = localItems(), base = z.base || {};
+// What a sync does with each item, worked out from this phone's items (local), the group's (remote) and the hashes at
+// the last sync (base), without sending or changing anything. choices: {teamId: 'mine'|'theirs'} for teams changed on
+// both sides. Returns {push, pull, copies (drills changed on both sides: ours is kept as "(my version)"), legacy
+// (old-format drills to take in), same (unchanged), needs (teams changed on both sides with no choice yet)}.
+function planSync(local, remote, base, choices){
   const localOnly = keptOnPhone(base);
   const ids = [...new Set([...Object.keys(local), ...Object.keys(remote), ...Object.keys(base)])].filter(id => !localOnly.has(id));
   const live = id => remote[id] && !remote[id].deleted ? remote[id] : null;
@@ -2361,8 +2400,7 @@ async function syncNow(choices = {}, retry = true){
     if(!L) return 'pull'; if(!R) return 'push'; // edited on one side, deleted on the other: keep the edit
     return 'both';
   };
-  const push = [], pull = [], copies = [], needs = [], newBase = {}, legacy = [];
-  const keep = id => { if(local[id]) newBase[id] = hashStr(local[id].json); };
+  const push = [], pull = [], copies = [], needs = [], legacy = [], same = [];
   for(const id of ids){
     // old per-team format: take in any move not seen before (it goes back up as mv_), then retire it on a later sync
     if(id.startsWith('m_')){ if(base[id] && live(id)) push.push(id); else if(live(id)) legacy.push(id); continue; }
@@ -2370,29 +2408,19 @@ async function syncNow(choices = {}, retry = true){
     if(d==='both' && id.startsWith('t_')){ const tid = itemTeam(id), c = choices[tid];
       if(!c){ needs.push({teamId:tid, name: JSON.parse(local[id].json).name, by: remote[id].by}); continue; }
       d = c==='mine' ? 'push' : 'pull'; }
-    if(d==='same'){ keep(id); continue; }
+    if(d==='same'){ same.push(id); continue; }
     if(d==='both'){ pull.push(id); if(id.startsWith('mv_')) copies.push(id); continue; } // a player edited on two phones: the group's version wins
     (d==='push' ? push : pull).push(id);
   }
-  if(needs.length) return {needs};
-  // each write carries a precondition, so if someone syncs in between this run starts again instead of overwriting them
-  const who = z.who || '', now = String(Date.now()), writes = [];
-  const write = (id, item) => {
-    const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : id.startsWith('p_') ? 'player' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
-      deleted:{booleanValue: !item}, by:{stringValue: who}, at:{integerValue: now}};
-    writes.push({update:{name: DOCNAME(`groups/${code}/items/${id}`), fields}, currentDocument: Rd ? {updateTime: Rd.updateTime} : {exists:false}});
-  };
-  for(const id of push){ write(id, local[id]); keep(id); }
-  // a move changed on both sides: theirs keeps the name, ours is saved alongside as "(my version)" so nothing is lost
-  const copyMoves = [];
-  for(const id of copies){ const m = JSON.parse(local[id].json); m.id = uid(); m.name += ' (my version)';
-    const nid = 'mv_'+m.id, item = {kind:'move', teamId:'', json: JSON.stringify(m)};
-    write(nid, item); newBase[nid] = hashStr(item.json); copyMoves.push(m); }
-  try { for(let i=0;i<writes.length;i+=400) await fb('POST', ':commit', {writes: writes.slice(i, i+400)}); }
-  catch(e){ if(retry && (e.status===409 || e.status===400 || /FAILED_PRECONDITION|ABORTED/.test(e.message))) return syncNow(choices, false); throw e; }
-  // apply what came from the group
+  return {push, pull, copies, legacy, same, needs};
+}
+// Take in what came from the group: each pulled item replaces (or, if deleted there, removes) this phone's copy; an
+// old-format drill not seen before is added; our "(my version)" copies go first. Records each one taken in in newBase.
+// Returns how many changed.
+function applyPulled(plan, remote, copyMoves, newBase){
+  const live = id => remote[id] && !remote[id].deleted ? remote[id] : null;
   let got = 0;
-  for(const id of pull){
+  for(const id of plan.pull){
     const R = live(id);
     if(id.startsWith('t_')){
       const tid = itemTeam(id), i = S.teams.findIndex(t => t.id===tid);
@@ -2412,11 +2440,42 @@ async function syncNow(choices = {}, retry = true){
     }
     newBase[id] = hashStr(R.json); got++;
   }
-  for(const id of legacy){ const m = JSON.parse(live(id).json); if(!S.moves.some(x => x.id===m.id)){ S.moves.push(m); got++; } newBase[id] = hashStr(live(id).json); }
+  for(const id of plan.legacy){ const m = JSON.parse(live(id).json); if(!S.moves.some(x => x.id===m.id)){ S.moves.push(m); got++; } newBase[id] = hashStr(live(id).json); }
   S.moves.unshift(...copyMoves);
   if(!S.teams.length) S.teams.push(Object.assign(newTeam('Main selection'), {localOnly:true}));
   if(!S.teams.some(t => t.id===S.currentTeamId)) S.currentTeamId = S.teams[0].id;
-  if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; }
+  return got;
+}
+// Sync with the group: fetch its items, plan, send ours, then take in theirs. choices: see planSync. Returns
+// {needs:[...]} when a choice is required, otherwise {sent, got, copies}.
+async function syncNow(choices = {}, retry = true){
+  const z = S.sync, code = z.group, remote = await listItems(code);
+  if(S.teams.some(t => t.placeholder)){
+    const hasTeams = Object.values(remote).some(r => r.kind==='team' && !r.deleted);
+    S.teams = S.teams.filter(t => !(t.placeholder && hasTeams && !pickedCount(t)));
+    S.teams.forEach(t => { delete t.placeholder; });
+  }
+  const local = localItems(), plan = planSync(local, remote, z.base || {}, choices);
+  if(plan.needs.length) return {needs: plan.needs};
+  const newBase = {}, keep = id => { if(local[id]) newBase[id] = hashStr(local[id].json); };
+  plan.same.forEach(keep);
+  const {push, copies} = plan;
+  // each write carries a precondition, so if someone syncs in between this run starts again instead of overwriting them
+  const who = z.who || '', now = String(Date.now()), writes = [];
+  const write = (id, item) => {
+    const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : id.startsWith('p_') ? 'player' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
+      deleted:{booleanValue: !item}, by:{stringValue: who}, at:{integerValue: now}};
+    writes.push({update:{name: DOCNAME(`groups/${code}/items/${id}`), fields}, currentDocument: Rd ? {updateTime: Rd.updateTime} : {exists:false}});
+  };
+  for(const id of push){ write(id, local[id]); keep(id); }
+  // a move changed on both sides: theirs keeps the name, ours is saved alongside as "(my version)" so nothing is lost
+  const copyMoves = [];
+  for(const id of copies){ const m = JSON.parse(local[id].json); m.id = uid(); m.name += ' (my version)';
+    const nid = 'mv_'+m.id, item = {kind:'move', teamId:'', json: JSON.stringify(m)};
+    write(nid, item); newBase[nid] = hashStr(item.json); copyMoves.push(m); }
+  try { for(let i=0;i<writes.length;i+=400) await fb('POST', ':commit', {writes: writes.slice(i, i+400)}); }
+  catch(e){ if(retry && (e.status===409 || e.status===400 || /FAILED_PRECONDITION|ABORTED/.test(e.message))) return syncNow(choices, false); throw e; }
+  const got = applyPulled(plan, remote, copyMoves, newBase);
   z.base = newBase; z.lastSync = Date.now(); save();
   return {sent: push.length + copyMoves.length, got, copies: copyMoves.length};
 }
@@ -2445,7 +2504,6 @@ async function pullShared(){
     .sort((a, b) => a.name.localeCompare(b.name));
   const got = moves.filter(m => !was.has(hashStr(JSON.stringify(m)))).length, gone = Math.max(0, was.size - (moves.length - got));
   S.moves = moves; S.sync.lastSync = Date.now();
-  if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; }
   save(); return {got, gone, total: moves.length};
 }
 
@@ -2486,10 +2544,8 @@ async function refreshRole(){
 // Coaches keep the group's teams, squad and drills on the phone; players and parents only the shared drills
 function roleChanged(was){
   const z = S.sync;
-  if(viewerRole(was) !== viewerRole(z.role)){
-    stopPlay(); S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id;
-    z.base = {}; z.lastSync = 0; ME.moveId = null; ME.editing = null;
-  }
+  if(viewerRole(was) !== viewerRole(z.role)) stopPlay();
+  if(resetForRole(was)){ ME.moveId = null; ME.editing = null; }
   save(); syncDot(); renderAll();
   toast(`You are now ${z.role === 'admin' ? 'the team admin' : 'a ' + z.role} in ${z.groupName}`);
   if(!SYNCING) setTimeout(() => runSync(null, true), 0);
@@ -2572,11 +2628,7 @@ function showInbox(items){
         $$('button', row).forEach(b => b.disabled = true);
         try { await fb('DELETE', `/mailboxes/${S.sync.mailbox}/items/${id}`); }
         catch(e){ if(e.status !== 404){ toast(niceErr(e)); $$('button', row).forEach(b => b.disabled = false); return; } }
-        if(accept){
-          const m = JSON.parse(it.json); if(S.moves.some(x => x.id === m.id)) m.id = uid();
-          if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another team'})`;
-          S.moves.unshift(m); save(); accepted++;
-        }
+        if(accept){ acceptSentDrill(it); accepted++; }
         row.remove(); toast(accept ? 'Drill added' : 'Drill declined');
         if(!$('#inList', el).children.length) closeSheet();
       };
@@ -2596,15 +2648,11 @@ function sendToGroup(m){
       tidyCode($('#sgCode', el));
       $$('[data-rc]', el).forEach(b => b.addEventListener('click', () => { $('#sgCode', el).value = fmtCode(b.dataset.rc); }));
       $('#sgGo', el).addEventListener('click', async () => {
-        const code = normCode($('#sgCode', el).value), err = t => { $('#sgErr', el).textContent = t; };
-        if(code.length !== 10) return err('Enter the 10-character send code.');
-        if(syncing() && code === S.sync.mailbox) return err('That is your own team’s send code.');
-        if(syncing() && code === S.sync.group) return err('That is your team’s join code. Ask the other team for their send code.');
+        const code = normCode($('#sgCode', el).value), err = t => { $('#sgErr', el).textContent = t; }, problem = sendCodeProblem(code);
+        if(problem) return err(problem);
         $('#sgGo', el).disabled = true; err('Sending…');
-        const z = S.sync || {}, fields = {json:{stringValue: JSON.stringify(Object.assign({}, m, {localOnly: undefined, draft: undefined}))}, fromGroup:{stringValue: z.groupName || ''}, fromWho:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}};
         try {
-          await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`mailboxes/${code}/items/${uid()}`), fields}, currentDocument:{exists:false}}]});
-          S.ui.sendTo = [code].concat((S.ui.sendTo || []).filter(c => c !== code)).slice(0, 6); save();
+          await sendDrill(m, code);
           closeSheet(); toast('Drill sent. They will be asked to accept it.');
         } catch(e){ $('#sgGo', el).disabled = false; err(e.status===403 ? 'No team has that send code. Check it with the other team.' : niceErr(e)); }
       });
@@ -2612,17 +2660,20 @@ function sendToGroup(m){
 }
 
 let SYNCING = false;
+// after a sync: if the drill open in the editor has gone, close it
+const dropMissingMove = () => { if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; } };
 async function runSync(choices, quiet){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
     await refreshRole(); refreshClub().catch(() => {}); loadConfig();
     if(isViewer()){
-      const r = await pullShared(); try { await loadFixtures(); } catch(e){} checkNewLinks(S.sync).catch(() => {}); if(!curMove()) stopPlay(); renderAll();
+      const r = await pullShared(); dropMissingMove(); try { await loadFixtures(); } catch(e){} checkNewLinks(S.sync).catch(() => {}); if(!curMove()) stopPlay(); renderAll();
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
       return;
     }
     const r = await syncNow(choices);
     if(r.needs){ SYNCING = false; askTeamConflicts(r.needs, choices || {}); return; }
+    dropMissingMove();
     try { await publishShared(); await publishRoster(); await publishSheets().catch(e => { if(e.status !== 403) throw e; }); } catch(e){ if(e.status !== 403) throw e; } // 403: security rules from older versions
     try { await loadFixtures(); } catch(e){}
     stopPlay(); renderAll();
@@ -2638,7 +2689,7 @@ async function runSync(choices, quiet){
 // The admin changed this group's join code (or deleted the group). The new group lists the codes it replaced, so a
 // phone can only be moved to the same group; its teams, moves and unsynced changes carry straight on.
 function askNewCode(){
-  const z = S.sync, old = z.group;
+  const z = S.sync;
   openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>This team has a new code</h2>
     <p class="muted">The code this phone joined with no longer works. Your team admin has changed it, or removed the team. Enter the new join code to carry on; your selections, drills and any changes you haven't synced are kept.</p>
     <div class="field"><label class="field-label" for="ncCode">New join code</label><input id="ncCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
@@ -2652,10 +2703,7 @@ function askNewCode(){
         const code = normCode($('#ncCode', el).value); if(code.length !== 10) return err('Enter the 10-character code.');
         err('Checking…');
         try {
-          const grp = await fetchGroup(code);
-          if(!grp) return err('No team has that code. Check it with your team admin.');
-          if(!grp.formerly.includes(old)) return err('That code is for a different team. To join it as well, tap the header, then Join another team or club.');
-          z.group = grp.code; z.groupName = grp.name; delete z.memberOf; delete z.mailbox; save();
+          const problem = await moveToNewCode(code); if(problem) return err(problem);
           closeSheet(); renderAll(); runSync();
         } catch(e){ err(niceErr(e)); }
       });
@@ -2688,13 +2736,62 @@ const groupColour = code => { let h = 7; for(const c of String(code||'')) h = (h
 const groupsOnPhone = () => (syncing() ? [{code: S.sync.group, name: S.sync.groupName, active: true, teams: S.teams.length}] : [])
   .concat(Object.entries(S.parked || {}).map(([code, w]) => ({code, name: w.sync.groupName, lastSync: w.sync.lastSync, teams: w.teams.length})));
 function parkGroup(){ S.parked = S.parked || {}; const w = {}; for(const k of WORKSPACE) w[k] = S[k]; S.parked[S.sync.group] = w; }
+
+/* ---------- TEAM MEMBERSHIP ACTIONS ----------
+   Joining, switching, leaving and re-coding teams on this phone, kept apart from the screens like the other actions:
+   they change S and save, and never touch the page or the drill editor (ME); the screens close the editor when the
+   drills it had open are gone. */
+// an empty workspace: one placeholder selection, no squad or drills (the next sync fills it)
+function clearWorkspace(){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; }
+// Coaches keep the group's teams, squad and drills on the phone; players and parents only the shared drills. When a
+// role change (from `was`) crosses that line the workspace starts again. Returns whether it did.
+function resetForRole(was){
+  const z = S.sync; if(viewerRole(was) === viewerRole(z.role)) return false;
+  clearWorkspace(); z.base = {}; z.lastSync = 0; save(); return true;
+}
+// open a parked team: the open one is parked in its place
+function swapWorkspace(code){ const w = S.parked[code]; if(syncing()) parkGroup(); for(const k of WORKSPACE) S[k] = w[k]; delete S.parked[code]; save(); }
+// Leave the open team: its data goes from this phone. Returns the parked team to open next, or null when there's none
+// (the phone keeps only your name, ready to join again).
+function leaveWorkspace(){
+  const z = S.sync, others = Object.keys(S.parked || {});
+  if(others.length){ S.sync = null; return others[0]; }
+  S.sync = {who: z.who}; save(); return null;
+}
+// back into the open team with a code: take the role it gave, keep everything. Returns the role it had.
+function rejoinGroup(role, memberOf){ const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = memberOf; z.joinedAt = Date.now(); delete z.removed; save(); return was; }
+// Open a team just joined, parking the open one. The workspace starts empty when joining as a player or parent, beside
+// another team, or on a phone with only the built-in samples. Returns whether it was emptied.
+function startGroup(grp, role, who, memberOf){
+  phoneAuth(); let cleared = false;
+  if(syncing()) parkGroup(); else if(onlySamples()){ clearWorkspace(); cleared = true; }
+  if(syncing() || viewerRole(role)){ clearWorkspace(); cleared = true; }
+  S.sync = {group: grp.code, groupName: grp.name, who, role, memberOf, club: grp.club || '', base: {}, lastSync: 0, joinedAt: Date.now()}; S.ui.hat = null; save();
+  return cleared;
+}
+// On joining: which of this phone's selections go to the team (the rest stay on the phone) and which drills (the rest
+// become drafts); squad: the players the team doesn't have yet, sent or kept on the phone together.
+// ticks: {'t:<team id>': bool, 'm:<drill id>': bool, 's:all': bool}
+function setUploads(ticks, squad){
+  for(const key in ticks){ const [k, id] = key.split(':'), on = ticks[key];
+    if(k==='s'){ squad.forEach(pl => { if(on) delete pl.localOnly; else pl.localOnly = true; }); continue; }
+    const x = (k==='t' ? S.teams : S.moves).find(y => y.id===id); if(!x) continue; if(k==='t') x.localOnly = !on; else if(on) delete x.draft; else x.draft = true; }
+  save();
+}
+// The team's join code has changed: carry on under the new code, if it's the same team (it lists the codes it
+// replaced). Returns what's wrong, or '' once moved.
+async function moveToNewCode(code){
+  const z = S.sync, grp = await fetchGroup(code);
+  if(!grp) return 'No team has that code. Check it with your team admin.';
+  if(!grp.formerly.includes(z.group)) return 'That code is for a different team. To join it as well, tap the header, then Join another team or club.';
+  z.group = grp.code; z.groupName = grp.name; delete z.memberOf; delete z.mailbox; save(); return '';
+}
 function switchGroup(code, quiet){
   const w = S.parked && S.parked[code]; if(!w) return;
   S.ui.hat = null;
-  stopPlay(); closeSheet(); if(syncing()) parkGroup();
-  for(const k of WORKSPACE) S[k] = w[k];
-  delete S.parked[code]; ME.moveId = null; ME.editing = null; teamZoomed = false;
-  save(); syncDot(); renderAll(); if(!quiet) toast(`Now in ${S.sync.groupName} · last synced ${ago(S.sync.lastSync)}`);
+  stopPlay(); closeSheet(); swapWorkspace(code);
+  ME.moveId = null; ME.editing = null; teamZoomed = false;
+  syncDot(); renderAll(); if(!quiet) toast(`Now in ${S.sync.groupName} · last synced ${ago(S.sync.lastSync)}`);
   checkInboxQuietly();
 }
 // Join a group with a code. Shown on first open (a code is needed to use the app) and after leaving a group.
@@ -2756,16 +2853,12 @@ function showGate(canClose){
     g.hidden = true; closeSheet(); // e.g. "no longer in the team", from before joining
     const me = grp.code + ':' + tokenUid(await fbToken());
     // back into a group this phone already has: pick up the role, keep everything
-    const back = () => { const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = me; z.joinedAt = Date.now(); delete z.removed; save();
+    const back = () => { const was = rejoinGroup(role, me);
       if(was !== role) roleChanged(was); else { toast(note || 'You are in ' + grp.name); runSync(null, true); } };
     if(syncing() && S.sync.group === grp.code) return back();
     if(S.parked && S.parked[grp.code]){ switchGroup(grp.code); return back(); }
-    phoneAuth();
     const viewer = viewerRole(role);
-    if(syncing()) parkGroup();
-    else if(onlySamples()){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; }
-    if(syncing() || viewer){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.moves = []; S.currentTeamId = S.teams[0].id; ME.moveId = null; ME.editing = null; }
-    S.sync = {group: grp.code, groupName: grp.name, who: who(), role, memberOf: me, club: grp.club || '', base: {}, lastSync: 0, joinedAt: Date.now()}; S.ui.hat = null; save();
+    if(startGroup(grp, role, who(), me)){ ME.moveId = null; ME.editing = null; }
     syncDot(); renderAll();
     if(note) toast(note); else if(role !== 'coach') toast(`Welcome to ${grp.name}. You joined as ${ROLE_NAMES[role].toLowerCase()}.`);
     if(viewer) runSync(null, true); else await chooseUploads();
@@ -2807,10 +2900,8 @@ async function chooseUploads(){
     ${moves.length ? `<div class="field-label">Drills</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
     <button class="btn wide" id="upGo">Sync now</button>`,
     el => $('#upGo', el).addEventListener('click', () => {
-      $$('[data-up]', el).forEach(c => { const [k, id] = c.dataset.up.split(':');
-        if(k==='s'){ squad.forEach(pl => { if(c.checked) delete pl.localOnly; else pl.localOnly = true; }); return; }
-        const x = (k==='t' ? S.teams : S.moves).find(y => y.id===id); if(!x) return; if(k==='t') x.localOnly = !c.checked; else if(c.checked) delete x.draft; else x.draft = true; });
-      save(); closeSheet(); runSync(); }));
+      const ticks = {}; $$('[data-up]', el).forEach(c => { ticks[c.dataset.up] = c.checked; });
+      setUploads(ticks, squad); closeSheet(); runSync(); }));
 }
 /* Group admin tools. invites/<code> = {group, role, single}: the player and parent codes are reusable (their codes are
    kept in groups/<id>/settings/codes so coaches can hand them out); coach and group admin invites work once. */
@@ -2857,9 +2948,9 @@ function joinText(code, role){
     : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a team admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}${IOS_NOTE}`;
 }
 function leaveGroup(){
-  const z = S.sync, others = Object.keys(S.parked || {}); S.ui.hat = null;
-  if(others.length){ S.sync = null; const next = others[0]; S.parked[next] && switchGroup(next); }
-  else { S.sync = {who: z.who}; save(); syncDot(); renderAll(); showGate(false); }
+  S.ui.hat = null; const next = leaveWorkspace();
+  if(next) switchGroup(next);
+  else { syncDot(); renderAll(); showGate(false); }
 }
 /* ---------- FIXTURES TAB ----------
    Fixtures, training and other events live in groups/<id>/events/<event id> ({json}); coaches change them straight
@@ -3482,7 +3573,7 @@ function showHats(){
     <button class="btn wide" id="hatJoin">Enter a code</button>
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 22:23</p>`,
+    <p class="hint" style="text-align:center">Version 29 Sep 2026, 22:33</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
