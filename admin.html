@@ -35,7 +35,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
 .codes span{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-weight:700}
 .status{font-size:14px;min-height:1.4em;margin:0}
 .status.err{color:#FFB4A6} .status.ok{color:var(--ok)}
-.hint.err{color:#FFB4A6}
+.hint.err, .hint b.err{color:#FFB4A6}
 .members summary{cursor:pointer;font:700 12px/1.4 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .members[open] summary{margin-bottom:6px}
 .members table{width:100%;border-collapse:collapse;font-size:14px}
@@ -104,7 +104,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 29 Sep 2026, 23:52</p>
+  <p class="hint" style="text-align:center">Version 1 Oct 2026, 09:45</p>
 </main>
 <script>
 (() => {
@@ -168,6 +168,38 @@ async function signIn(){
   finally { $('#go').disabled = false; }
 }
 
+/* ---------- billing ----------
+   paidUntil (milliseconds) on clubs/<id>, or on groups/<code> for a team outside a club. None = not billed, always on.
+   After it the app warns coaches for 30 days, then the security rules make the team read only (reading still works). */
+const GRACE = 30 * 864e5;
+const isoDay = ms => { const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
+const dayName = ms => new Date(ms).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric'});
+function billState(pu){
+  if(!pu) return 'Not billed: always on.';
+  const now = Date.now();
+  return now <= pu ? `Paid up to ${dayName(pu)}.`
+    : now <= pu + GRACE ? `<b class="err">Ended ${dayName(pu)}.</b> Coaches are warned; read only from ${dayName(pu + GRACE)}.`
+    : `<b class="err">Read only since ${dayName(pu + GRACE)}</b> (ended ${dayName(pu)}). Nothing can be changed until it's renewed.`;
+}
+const billHtml = pu => `<div class="field"><div class="field-label">Subscription</div>
+  <div class="row"><input type="date" data-bdate value="${pu ? isoDay(pu) : ''}" aria-label="Paid until"><button class="btn ghost sm" data-bsave>Save paid-until date</button>${pu ? '<button class="btn ghost sm" data-bclear>Not billed</button>' : ''}</div>
+  <p class="hint">${billState(pu)}</p></div>`;
+// wires up billHtml in el: doc is clubs/<id> or groups/<code>; done() reloads the page
+function billWire(el, doc, label, done){
+  const save = async (pu, msg) => {
+    el.querySelectorAll('button').forEach(b => b.disabled = true);
+    try { await fb('PATCH', `/${doc}?updateMask.fieldPaths=paidUntil&currentDocument.exists=true`, {fields: pu ? {paidUntil: {integerValue: String(pu)}} : {}}); status(msg, 'ok'); }
+    catch(e){ status(e.message, 'err'); }
+    await done();
+  };
+  el.querySelector('[data-bsave]')?.addEventListener('click', () => {
+    const v = el.querySelector('[data-bdate]').value; if(!v) return status('Pick the date it is paid up to.', 'err');
+    const pu = new Date(v + 'T23:59:59').getTime(); // to the end of that day
+    save(pu, `${label}: paid up to ${dayName(pu)}.`);
+  });
+  el.querySelector('[data-bclear]')?.addEventListener('click', () => { if(confirm(`Stop billing ${label}? It will be always on, with no date.`)) save(0, `${label}: not billed.`); });
+}
+
 /* ---------- clubs ----------
    clubs/<id> = {name}; a team joins a club with groups/<code>.club and a clubs/<id>/teams/<code> = {name} entry (which
    is what the club's parents and admins can list). Club admins are invited with a single-use invite {club, role: admin}. */
@@ -189,8 +221,10 @@ async function loadClubs(){
         ${free.length ? `<div class="row"><select data-addsel style="flex:1">${free.map(g => `<option value="${idOf(g)}">${esc(name(g))}</option>`).join('')}</select><button class="btn ghost" data-add>Add a team</button></div>` : ''}
         <div class="field"><div class="field-label">Club admins · ${admins.length}</div>${admins.length ? `<table class="members"><tbody>${admins.map(m => `<tr><td>${esc(m.fields?.who?.stringValue || '(no name)')}<small>${m.fields?.device?.stringValue ? esc(m.fields.device.stringValue) + ' · ' : ''}ID ${esc(idOf(m).slice(0, 8))} · joined ${when(m.fields?.at?.integerValue)}</small></td><td><button class="btn ghost sm" data-crm="${idOf(m)}">Remove</button></td></tr>`).join('')}</tbody></table>` : '<p class="hint">None yet.</p>'}
           <p class="hint">Parents who joined with the club code: ${members.length - admins.length}. On an iPhone, Safari and the home-screen app are listed separately.</p></div>
+        ${billHtml(+(c.fields?.paidUntil?.integerValue || 0))}
         <div class="row"><button class="btn" data-cinv>Invite club admin</button><button class="btn ghost" data-cren>Rename</button><button class="btn danger" data-cdel>Delete club</button></div>`;
       const run = async fn => { el.querySelectorAll('button').forEach(b => b.disabled = true); try { await fn(); } catch(e){ status(e.message, 'err'); } await loadClubs(); load(); };
+      billWire(el, 'clubs/' + id, name(c), loadClubs);
       el.querySelectorAll('[data-crm]').forEach(b => b.addEventListener('click', () => { if(confirm('Remove this club admin? That phone can no longer manage the club.')) run(async () => { await commit([del(`clubs/${id}/members/${b.dataset.crm}`)]); status('Club admin removed.', 'ok'); }); }));
       el.querySelectorAll('[data-out]').forEach(b => b.addEventListener('click', () => run(async () => {
         await commit([{update:{name: NAME('groups/' + b.dataset.out), fields:{}}, updateMask:{fieldPaths:['club']}, currentDocument:{exists:true}}, del(`clubs/${id}/teams/${b.dataset.out}`)]);
@@ -254,13 +288,14 @@ async function load(){
       el.innerHTML = `<h2>${esc(name)}</h2>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
-        ${f.club?.stringValue ? `<p class="hint">Club: ${esc(clubs[f.club.stringValue] || 'missing club')}</p>` : ''}
+        ${f.club?.stringValue ? `<p class="hint">Club: ${esc(clubs[f.club.stringValue] || 'missing club')} (billed through the club, on the Clubs tab)</p>` : billHtml(+(f.paidUntil?.integerValue || 0))}
         <details class="members" data-members><summary>People · checking…</summary><div class="mlist"></div></details>
         ${mail ? `<p class="hint" data-inbox>Inbox: checking…</p><div class="row" data-fix hidden><button class="btn" data-a="repair">Repair inbox</button></div>` : ''}
         ${(boxesByGroup[code] || []).filter(b => b !== mail).map(b => `<p class="hint err" data-stray="${esc(b)}">Send code ${fmt(b)} also leads to this team, but its coaches look in ${mail ? fmt(mail) : 'no inbox'}, so moves sent to ${fmt(b)} never reach them. Checking…</p>
           <div class="row"><button class="btn" data-a="adopt" data-box="${esc(b)}">Make ${fmt(b)} the send code</button></div>`).join('')}
         <div class="row"><button class="btn" data-a="invite">Invite team admin</button><button class="btn ghost" data-a="rename">Rename</button><button class="btn ghost" data-a="join">Change join code</button><button class="btn ghost" data-a="send"${mail ? '' : ' disabled'}>Change send code</button><button class="btn danger" data-a="delete">Delete</button></div>`;
       el.querySelectorAll('[data-a]').forEach(b => b.addEventListener('click', () => act(b.dataset.a, {code, name, mail, raw, was, box: b.dataset.box, club: f.club?.stringValue || ''}, el)));
+      if(!f.club?.stringValue) billWire(el, 'groups/' + code, name, load);
       showMembers(code, el);
       el.querySelectorAll('[data-stray]').forEach(p => list(`/mailboxes/${p.dataset.stray}/items`).then(w => {
         p.textContent = p.textContent.replace('Checking…', w.length ? `${w.length} move${w.length>1?'s':''} waiting there.` : 'Nothing waiting there.'); }).catch(() => {}));

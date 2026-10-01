@@ -236,9 +236,20 @@ textarea{resize:vertical;min-height:84px}
 .hatrow.cur{outline:2px solid var(--gc)}.hatrow b{font-size:17px}.hatrow small{color:var(--muted);font-size:12.5px}
 .hatrole{font:700 11px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--gc)}
 .selchip{max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-body.viewer #importBtn, body.viewer #shareBtn, body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
+body.viewer #edPlayers, body.viewer #edBanner, body.viewer #edPasses,
 body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!important}
 .mem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
+/* Help (coaches and admins only) */
+.help details{border-bottom:1px solid var(--line)}
+.help summary{padding:12px 0;font-weight:700;cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline}
+.help summary::-webkit-details-marker{display:none}
+.help summary::before{content:'+';flex:none;width:14px;color:var(--muted)}
+.help details[open] summary::before{content:'\2212'}
+.help summary small{margin-left:auto;font-weight:600;color:var(--muted);font-size:11px;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap}
+.help .hbody{padding:0 0 12px 22px;font-size:14px;line-height:1.45}
+.help .hbody ol,.help .hbody ul{margin:6px 0;padding-left:20px}
+.help .hbody p{margin:6px 0}
+#hlpQ{width:100%;margin:4px 0 6px}
 .mem>div,.mem>.memlink{flex:1;min-width:0}.mem>.selstack{flex:none;display:flex;flex-direction:column;gap:4px;width:42%;max-width:190px}.selstack select{width:100%}.plpick{background:none;border:0;padding:6px 0;color:var(--ink);font:600 15px/1.2 var(--body);text-align:left;cursor:pointer;text-decoration:underline dotted var(--muted);text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.memlink{text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}.memlink small u{text-decoration-color:var(--muted)}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
 .mem select{width:auto;min-width:0;padding:6px 8px}.mem.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
 .rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
@@ -291,6 +302,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .banner{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--accent);color:var(--accent-ink);font-size:13.5px;font-weight:600;line-height:1.25}
 .banner span{flex:1}
 .banner .chip{background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.25);color:var(--accent-ink)}
+.banner.lapsed{background:var(--danger);color:#fff}
 .transport{display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--line);background:var(--panel)}
 .transport .icon-btn{width:38px;height:38px;flex:none}
 .transport .play{background:var(--accent);color:var(--accent-ink)}
@@ -371,13 +383,8 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 00.6-7.95A5.5 5.5 0 007.4 9.1 4.7 4.7 0 007 18.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path class="arr" d="M9.6 13.6a2.6 2.6 0 014.5-1.5M14.4 14.4a2.6 2.6 0 01-4.5 1.5M14.3 10.9v1.4h-1.4M9.7 17.1v-1.4h1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <i class="dot-badge"></i>
     </button>
-    <button class="icon-btn" id="importBtn" aria-label="Import from another coach" title="Import">
-      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0l-4.5-4.5M12 15l4.5-4.5M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
-    <button class="icon-btn" id="shareBtn" aria-label="Share with another coach" title="Share">
-      <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5M7 10H6a2 2 0 00-2 2v7a2 2 0 002 2h12a2 2 0 002-2v-7a2 2 0 00-2-2h-1" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-    </button>
   </header>
+  <div class="banner" id="billBanner" role="status" hidden><span id="billText"></span></div>
 
   <main>
     <!-- PITCH -->
@@ -967,6 +974,7 @@ function renderAll(){
   if(h){ gn.textContent = h.role; gn.style.setProperty('--gc', h.colour); }
   const sp = $('#selPickP'); if(sp) sp.textContent = team().name + ' ▾';
   $('#syncBtn').hidden = !fbOn() || (h && h.kind === 'club');
+  renderBilling();
   if(TAB==='team') renderTeamTab();
   if(TAB==='admin') renderAdminTab();
   if(TAB==='kids') renderKidsTab();
@@ -2153,20 +2161,6 @@ function openShare(pre){
       });
     });
 }
-$('#shareBtn').addEventListener('click', () => openShare(TAB==='moves' && curMove() ? {kind:'move', moveId:ME.moveId} : {kind:'team'}));
-
-$('#importBtn').addEventListener('click', () => {
-  openSheet(`<div class="eyebrow">From another coach</div><h2>Import</h2>
-    <div class="field"><label class="field-label" for="imCode">Paste a share code or link</label><textarea id="imCode" class="code" placeholder="RTP1.…"></textarea></div>
-    <button class="btn" id="imGo">Import</button>
-    <div class="field"><label class="field-label" for="imFile">Or open a shared file</label><input id="imFile" type="file" accept=".json,application/json,text/plain"></div>
-    <p class="hint" id="imErr"></p>`,
-    el => {
-      const fail = e => { $('#imErr', el).textContent = e.message || 'That could not be read. Check the whole code was copied.'; };
-      $('#imGo', el).addEventListener('click', async () => { try { handleImport(await decodeCode($('#imCode', el).value)); } catch(e){ fail(e); } });
-      $('#imFile', el).addEventListener('change', async e => { const f = e.target.files[0]; if(!f) return; try { handleImport(await decodeCode(await f.text())); } catch(err){ fail(err); } });
-    });
-});
 const baseName = n => String(n||'').replace(/(\s*\(shared\))+$/i, '').trim().toLowerCase();
 
 /* ---------- SHARING ACTIONS ----------
@@ -2665,7 +2659,7 @@ const dropMissingMove = () => { if(ME.moveId && !curMove()){ ME.moveId = null; M
 async function runSync(choices, quiet){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
-    await refreshRole(); refreshClub().catch(() => {}); loadConfig();
+    await refreshRole(); await refreshClub().catch(() => {}); loadConfig();
     if(isViewer()){
       const r = await pullShared(); dropMissingMove(); try { await loadFixtures(); } catch(e){} checkNewLinks(S.sync).catch(() => {}); if(!curMove()) stopPlay(); renderAll();
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
@@ -2682,7 +2676,9 @@ async function runSync(choices, quiet){
   } catch(e){
     // the admin removed the group or this phone: say so rather than showing a permissions error
     let gone = !!e.gone; if(!gone && e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
-    if(gone) askNewCode(); else if(e.removed) showRemoved(); else toast(niceErr(e));
+    if(gone) askNewCode(); else if(e.removed) showRemoved();
+    else if(e.status===403 && billState()==='lapsed'){ renderBilling(); toast('Read only: the subscription has ended, so changes can’t be saved.'); }
+    else toast(niceErr(e));
   }
   finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); setTimeout(checkLinkRequests, 300); }
 }
@@ -3441,8 +3437,35 @@ async function refreshClub(z = S.sync){
   const g = await fb('GET', '/groups/' + z.group); if(!g) return;
   const c = g.fields && g.fields.club ? g.fields.club.stringValue : '';
   if(c !== (z.club || '')){ z.club = c; delete z.clubName; }
-  if(c && !z.clubName){ const d = await fb('GET', '/clubs/' + c); z.clubName = d && d.fields && d.fields.name ? d.fields.name.stringValue : ''; }
+  const cd = c ? await fb('GET', '/clubs/' + c) : null;
+  if(c && !z.clubName) z.clubName = cd && cd.fields && cd.fields.name ? cd.fields.name.stringValue : '';
+  // who pays: the club for a team in a club, otherwise the team itself (see BILLING)
+  const pu = ((c ? cd : g) || {}).fields || {};
+  z.paidUntil = pu.paidUntil ? +(pu.paidUntil.integerValue || pu.paidUntil.doubleValue || 0) : 0;
   save();
+}
+/* ---------- BILLING ----------
+   A club (clubs/<id>.paidUntil), or a team outside a club (groups/<id>.paidUntil), is paid up to a time in
+   milliseconds, set on the admin page. None set = not billed, always on. After it, 30 days' grace with a warning to
+   coaches; then the security rules make the team read-only and everyone sees why. */
+const BILL_GRACE = 30 * 86400000;
+function billState(z = S.sync){
+  if(!z || !z.group || !z.paidUntil) return 'ok';
+  const now = Date.now();
+  return now <= z.paidUntil ? 'ok' : now <= z.paidUntil + BILL_GRACE ? 'grace' : 'lapsed';
+}
+const billWho = z => z.club ? (z.clubName || 'Your club') + '’s' : 'This team’s';
+const billDay = ms => new Date(ms).toLocaleDateString('en-GB', {day: 'numeric', month: 'short'});
+function renderBilling(){
+  const z = S.sync, st = billState(), h = hat(), b = $('#billBanner');
+  // not on the club admin's view, which covers all the club's teams
+  const show = st === 'lapsed' ? true : st === 'grace' && !isViewer();
+  b.hidden = !show || (h && !['coach', 'player', 'parent'].includes(h.kind));
+  if(b.hidden) return;
+  b.classList.toggle('lapsed', st === 'lapsed');
+  $('#billText').textContent = st === 'lapsed'
+    ? `Read only: ${billWho(z)} subscription has ended. You can still see everything, but nothing can be changed until it’s renewed.`
+    : `${billWho(z)} subscription ended on ${billDay(z.paidUntil)}. Changes stop on ${billDay(z.paidUntil + BILL_GRACE)} unless it’s renewed — ask your ${z.club ? 'club' : 'team'} admin.`;
 }
 async function clubTeams(c){
   return (await listDocs(`/clubs/${c}/teams`)).map(d => ({code: d.name.split('/').pop(), name: d.fields && d.fields.name ? d.fields.name.stringValue : ''})).sort((a, b) => a.name.localeCompare(b.name, 'en', {numeric: true}));
@@ -3608,12 +3631,14 @@ function showHats(){
     ${hs.length ? `<div class="hats">${hs.map(x => `<button class="hatrow${cur && x.kind === cur.kind && x.id === cur.id ? ' cur' : ''}" data-hat="${x.kind}|${x.id}" style="--gc:${x.colour}"><span class="hatrole">${x.role}</span><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</button>`).join('')}</div>`
       : '<p class="muted">This phone isn’t in a team yet.</p>'}
     <button class="btn wide" id="hatJoin">Enter a code</button>
+    ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 29 Sep 2026, 23:52</p>`,
+    <p class="hint" style="text-align:center">Version 1 Oct 2026, 09:45</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
+      const hh = $('#hatHelp', el); if(hh) hh.addEventListener('click', showHelp);
     });
 }
 // the chip at the top of the Pitch and Selection tabs: which selection is open, tap to switch or make one
@@ -3723,6 +3748,7 @@ function renderTeamTab(){
   : `${card}
     <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
     <button class="btn wide" id="gpSync">Sync now</button>
+    <button class="btn ghost wide" id="gpHelp">Help: how do I…?</button>
     <div class="field"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
     ${isGroupAdmin() ? '' : '<p class="hint">To add another coach, ask your team admin for an invite.</p>'}
     <div class="field"><div class="field-label">Send code · give this to other teams</div><div class="rcode"><div class="gcode" id="gpBox">${z.mailbox ? fmtCode(z.mailbox) : '…'}</div><button class="chip" id="gpSend">Share</button></div>
@@ -3732,6 +3758,7 @@ function renderTeamTab(){
     ${tail}`;
   const on = (id, fn) => { const b = $(id, el); if(b) b.addEventListener('click', fn); };
   on('#gpSync', () => runSync());
+  on('#gpHelp', showHelp);
   on('#gpWhoSave', () => { setMyName($('#gpWho', el).value); toast('Name saved'); });
   on('#gpLeave', () => askConfirm('Leave '+z.groupName+'?',
       viewer ? 'Its drills are removed from this phone. You need the code to join again.'
@@ -3866,6 +3893,59 @@ function renderAdminTab(){
     catch(e){ toast(niceErr(e)); } finally { b.disabled = false; } };
   $('#gpInvC', el).addEventListener('click', () => invite($('#gpInvC', el), 'coach'));
   $('#gpInvA', el).addEventListener('click', () => invite($('#gpInvA', el), 'admin'));
+}
+
+/* Help: how-to answers for coaches and admins. Static text in the app, so nothing is sent anywhere, and players and
+   parents never see it (they have no way to ask questions or message anyone) */
+const canHelp = () => hatsOnPhone().some(x => x.kind === 'coach' || x.kind === 'club');
+const HELP = [
+  ['Create a drill (a move)', '', `<ol><li>Open the <b>Drills</b> tab and pick <b>Forwards, Backs, Penalty or Skills</b>.</li>
+    <li>Tap <b>New … drill</b> and tick the shirts involved (and the ball).</li>
+    <li>Drag each shirt to where it starts. Tap a shirt to see its path, and drag the ring or dot at the end of the path to where it finishes.</li>
+    <li>Double-tap a shirt for its Movement view: when it starts, how long the run takes, extra runs and speeds.</li>
+    <li>Tap <b>Passes</b> to set who has the ball and when it’s passed. <b>Cones</b> adds cones.</li>
+    <li>Tap the drill’s name to rename it, add a description or change its length. Press play to watch it.</li></ol>
+    <p>New drills are <b>drafts</b>: only you can see them until you share them (see the next question).</p>`],
+  ['Share a drill with the coaches or players', '', `<ul><li><b>Share with coaches</b> (on the drill’s card) sends it to the other coaches when you sync. <b>Move to drafts</b> takes it back off their phones.</li>
+    <li><b>Share with players</b> lets players and parents watch it (they can’t change it). They get it after you sync.</li>
+    <li><b>Send to another team</b> needs that team’s send code (on their Team tab).</li></ul>`],
+  ['Add a player to the squad', '', `<p>On the <b>Squad</b> tab, type the name and tap Add, then <b>Sync now</b> (Team tab). A child has to be in the squad before a parent can be linked to them.</p>`],
+  ['Link a parent to a child', 'Team admin', `<p><b>Admin → Unlinked</b>, then <b>Invite parent</b> next to the child. That sends the child’s code. When the parent enters it (tap the heading at the top → <b>Enter a code</b>), they join the team already linked to that child.</p>
+    <p>If the parent has already joined with the team’s parent code, they show under <b>Parents waiting to be linked</b>: pick their child from <b>Link to…</b>.</p>
+    <p>A parent can also link themselves by entering the code shown on their child’s phone (Team tab).</p>`],
+  ['Remove a parent', 'Team admin', `<ul><li><b>Linked to the wrong child, but should stay in the team:</b> Admin → <b>Linked</b> → tap the child → <b>Remove link</b> next to that person. Their other children are left alone.</li>
+    <li><b>Out of the team altogether:</b> Admin → <b>People</b> → <b>Remove</b> (tap twice). They need a new code to come back.</li>
+    <li>If they still have the child’s code, also tap <b>New code</b> next to the child so the old code can’t link them again. Parents already linked stay linked.</li></ul>`],
+  ['A child has a new phone', 'Team admin', `<ol><li>On the new phone, open the app. On an iPhone, add it to the home screen first and open it from there, not from a link in Messages.</li>
+    <li>Tap <b>Enter a code</b> and type the team’s <b>player code</b> (Admin → Codes, or the coach’s Team tab).</li>
+    <li>On your phone: Admin → <b>People</b>, find the new phone and tap <b>Which player?</b> to pick the child.</li>
+    <li>Remove the old phone from <b>People</b> (tap Remove twice), especially if it has been passed on to someone else.</li></ol>
+    <p>The child’s links to their parents belong to the child, not the phone, so the parents don’t need to do anything.</p>`],
+  ['A parent wants it on a phone and a laptop', '', `<p>Yes. Each device counts as its own person in the team, so link each one:</p>
+    <ol><li>On the laptop, open <b>${esc(location.origin + location.pathname)}</b> in a web browser.</li>
+    <li>Tap <b>Enter a code</b> and type the child’s code (from you, or on the parent’s phone: Children tab, under the child). Use a name like “Sam (laptop)” so you can tell them apart.</li></ol>
+    <p>Both devices then show the same child and can answer availability. Each one appears separately in Admin → People.</p>
+    <p>On an iPhone, the home-screen app and Safari count as two different devices too. Parents should use the home-screen app.</p>`],
+  ['A parent has a second child', '', `<ul><li><b>Same team:</b> make sure the second child is in the squad, then send the parent that child’s code (Admin → Unlinked → <b>Invite parent</b>). They enter it from their Children tab → <b>Enter a code</b>. Or, as team admin: Admin → tap the child → <b>Link</b> next to the parent.</li>
+    <li><b>Another team:</b> the parent needs that child’s code from the other team’s admin. If they joined with a club parent code, they can also join from their Children tab → <b>More teams at …</b> → <b>Join as parent</b>, then enter the child’s code.</li></ul>
+    <p>Both children then appear together on the parent’s Children tab.</p>`],
+  ['Change teams', '', `<ul><li>Tap the heading at the top (it shows your role and team) to open <b>Your roles</b>, then tap the team you want. Each team keeps its own squad, selections and drills.</li>
+    <li>To join another team, tap <b>Enter a code</b> on the same screen and type the invite you were given.</li>
+    <li>To switch between selections in the same team (e.g. Saxons and Vikings), use the chip at the top of the Pitch or Selection tab.</li></ul>`],
+  ['Add another coach or team admin', 'Team admin', `<p>Admin → <b>Invites</b> → <b>Invite a coach</b> or <b>Invite a team admin</b>, and send it. Each invite works once, on one phone. To make someone already in the team a coach, change their role in Admin → <b>People</b>.</p>`],
+  ['Someone says the app shows they were removed', '', `<p>Usually this is an iPhone that joined from a link: the link opened in Safari, but they’re using the home-screen app, which counts as another device. Ask them to open the home-screen app, tap <b>Enter a code</b> and type the code there. Then remove the extra Safari entry from Admin → People.</p>`],
+];
+function showHelp(){
+  const items = HELP.map(([q, who, a], i) => `<details data-h="${i}"><summary>${esc(q)}${who ? `<small>${who}</small>` : ''}</summary><div class="hbody">${a}</div></details>`).join('');
+  openSheet(`<div class="eyebrow">Coaches and admins</div><h2>Help</h2>
+    <input type="search" id="hlpQ" placeholder="Search, e.g. new phone" aria-label="Search help">
+    <div class="help">${items}</div><p class="hint" id="hlpNone" hidden>Nothing matches. Try another word.</p>
+    <p class="hint">Steps marked Team admin are on the Admin tab, which only team admins have. Ask yours if you don’t see it.</p>
+    <button class="btn ghost wide" data-close>Done</button>`,
+    el => { const q = $('#hlpQ', el); q.addEventListener('input', () => {
+      const w = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean); let n = 0;
+      $$('[data-h]', el).forEach(d => { const hit = w.every(x => d.textContent.toLowerCase().includes(x)); d.hidden = !hit; n += hit; d.open = !!w.length && hit && n === 1; });
+      $('#hlpNone', el).hidden = n > 0; }); });
 }
 
 /* Club admin tabs: Teams, Calendar, Parents */
