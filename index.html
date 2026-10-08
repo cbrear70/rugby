@@ -60,6 +60,8 @@ main{flex:1;min-height:0;position:relative}
 .tabbar button{background:none;border:0;padding:7px 0 6px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font:600 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase}
 .tabbar button[aria-selected="true"]{color:var(--accent)}
 .kstate{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0}.kstate small::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}.kstate.on small::before{background:var(--ok,#5BC77A)}.kstate.wait small::before{background:var(--accent)}.kstate.off small::before{background:var(--danger,#E4573F)}
+.evcard.cancelled .evtitle{text-decoration:line-through;opacity:.7}
+.mem.upd b{white-space:normal;overflow:visible;text-overflow:clip}
 .tabbar button{position:relative}.tabbar button.tabdot::after{content:'';position:absolute;top:5px;left:calc(50% + 9px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
 
 /* pitch */
@@ -2827,6 +2829,8 @@ function syncDot(){
   b.setAttribute('aria-label', !syncing() ? 'Join a team' : n ? `Sync (${n} change${n>1?'s':''} not sent)` : 'Sync with your team');
   // the team admin: a dot on the Admin tab while players or parents are waiting
   const a = $('[data-tab="admin"]'); if(a) a.classList.toggle('tabdot', isGroupAdmin() && (S.sync.waiting || 0) > 0);
+  // a player or parent: a dot on Fixtures while there are updates they haven't opened
+  const f = $('[data-tab="fix"]'); if(f) f.classList.toggle('tabdot', ['parent', 'player'].includes(hatKind()) && unseenUpdates() > 0);
 }
 const ago = t => { if(!t) return 'never'; const s = (Date.now()-t)/1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s/60)+' min ago' : s < 86400 ? Math.round(s/3600)+' h ago' : new Date(t).toLocaleDateString('en-GB'); };
 $('#syncBtn').addEventListener('click', () => syncing() ? runSync() : showGate(true));
@@ -2970,7 +2974,8 @@ function showGate(canClose){
   const g = $('#gate'), pre = normCode((location.hash.match(/join=([\w-]+)/)||[])[1]);
   g.innerHTML = `<div class="gate-in">
     <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Enter a code' : 'Join your team'}</h1>
-    <p class="muted">Enter the code you were given: an invite from a team or club admin, your team’s player or parent code, the club parent code, or your child’s code (from the team admin, or on your child’s phone). Coaches share the squad, selections and drills, and tap Sync to swap changes; players and parents watch the drills their coaches share.</p>
+    <p class="muted">Enter the code you were given: an invite from a team or club admin, your team’s player or parent code, the club parent code, or your child’s code. Coaches share the squad, selections and drills; players and parents see their fixtures, team sheets and the drills their coaches share.</p>
+    <p class="hint"><b>No messaging, by design.</b> There’s no chat and no private messages: the app only gives updates about fixtures and team sheets. Under-18s join through a parent or carer, and the team admin approves everyone.</p>
     <div class="field"><label class="field-label" for="gtCode">Code</label><input id="gtCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK" value="${pre ? fmtCode(pre) : ''}"></div>
     <div class="field"><label class="field-label" for="gtWho">Your name</label><input id="gtWho" type="text" placeholder="Shown to your team, e.g. Chris" value="${esc((S.sync||{}).who||'')}"></div>
     <div class="field"><label class="field-label" for="gtDob">Your date of birth</label><input id="gtDob" type="date" max="${ymd(new Date())}" value="${esc(S.dob || '')}">
@@ -3181,6 +3186,82 @@ async function loadFixtures(z = S.sync){
     z.avail[d.name.split('/').pop()] = {status: s('status'), who: s('who'), by: s('by'), at: +(f.at && f.at.integerValue || 0)}; }
   if(ro) try { z.roster = JSON.parse(ro.fields.json.stringValue); } catch(e){}
   z.fixAt = Date.now(); save();
+  const fresh = noteUpdates(z); if(fresh.length) updatesArrived(z, fresh);
+  phoneReminders();
+}
+/* Updates: the only notices the app gives (there's no messaging of any kind). A player's or parent's phone works them
+   out itself from the team's fixtures and team sheets, comparing with what it saw last time (z.snap): a new event, one
+   moved or cancelled, being picked, and replies about to close. Each names the children it's about. The newest are
+   kept with the team (z.updates); S.updatesSeen is when the list was last opened. In the iPhone/Android app they also
+   come up as notifications, and the app reminds you before replies close (window.rtpNative, from the app's bridge). */
+function snapOf(z){
+  const ev = {}, picks = {};
+  for(const e of z.events || []) ev[e.id] = [e.date, e.time || '', e.location || '', e.cancelled ? e.cancelled.reason : ''].join('|');
+  for(const sh of z.sheets || []) if(sh.eventId) for(const [n, pid] of Object.entries(sh.picks || {})) picks[sh.eventId + '|' + pid] = n;
+  return {ev, picks};
+}
+// whose an event is on this phone: the player themselves, or the parent's children it's for
+const mineIn = (z, e) => z.role === 'player' ? (z.kids || []).slice(0, 1).filter(pid => inSub((z.roster || []).find(p => p.id === pid) || {}, e.sub)) : kidsFor(e, z);
+const firstName = (pid, z) => nameOfPlayer(pid, z).split(' ')[0];
+function noteUpdates(z){
+  if(!viewerRole(z.role) || !mayView(z)) return [];
+  const now = snapOf(z), was = z.snap; z.snap = now;
+  if(!was){ save(); return []; } // the first look: nothing is new yet
+  const out = [], tag = (pids, text) => out.push({text, kids: pids.map(pid => z.role === 'player' ? 'You' : firstName(pid, z)), group: z.group, at: Date.now()});
+  for(const e of z.events || []){
+    const mine = mineIn(z, e); if(evPast(e) || !mine.length) continue;
+    const w = was.ev[e.id], day = evWhen(e).split(' · ')[0];
+    if(!w) tag(mine, `New: ${evTitle(e)}, ${evWhen(e)}${e.cancelled ? ' (cancelled)' : ''}`);
+    else if(w !== now.ev[e.id]){
+      const wasOff = w.split('|')[3];
+      if(e.cancelled && !wasOff) tag(mine, `${evTitle(e)} on ${day} is cancelled: ${cancelReason(e).toLowerCase()}`);
+      else if(!e.cancelled && wasOff) tag(mine, `${evTitle(e)} on ${day} is back on`);
+      else if(!e.cancelled) tag(mine, `${evTitle(e)} has changed: now ${evWhen(e)}${e.location ? ', ' + e.location : ''}`);
+    }
+  }
+  for(const k in now.picks) if(!(k in was.picks) || was.picks[k] !== now.picks[k]){
+    const [evId, pid] = k.split('|'), e = (z.events || []).find(x => x.id === evId), n = now.picks[k], sh = (z.sheets || []).find(x => x.eventId === evId);
+    if(!e || evPast(e) || e.cancelled || !mineIn(z, e).includes(pid)) continue;
+    tag([pid], `Picked at ${n}${sh ? ' (' + posName(+n, {size: sh.size, bench: sh.bench}) + ')' : ''} for ${evTitle(e)}, ${evWhen(e).split(' · ')[0]}`);
+  }
+  z.dueSaid = z.dueSaid || {};
+  if(z.role === 'parent') for(const e of z.events || []){
+    const c = evTimes(e).closeAt; if(e.cancelled || evPast(e) || !c || !repliesOpen(e) || c - Date.now() > 30 * 36e5) continue;
+    const none = kidsFor(e, z).filter(pid => !statusOf(e.id, pid, z) && !z.dueSaid[e.id + '|' + pid]); if(!none.length) continue;
+    none.forEach(pid => { z.dueSaid[e.id + '|' + pid] = 1; });
+    tag(none, `Replies for ${evTitle(e)} close ${new Date(c).toDateString() === new Date().toDateString() ? 'tonight' : 'tomorrow night'}: say if you can come`);
+  }
+  z.updates = out.concat(z.updates || []).slice(0, 40); save();
+  return out;
+}
+const updateLine = u => (u.kids && u.kids.length ? u.kids.join(' & ') + ' — ' : '') + u.text;
+// every update on the phone, newest first, and how many haven't been seen
+const allUpdates = () => teamsOnPhone().flatMap(z => (z.updates || []).map(u => Object.assign({z}, u))).sort((a, b) => b.at - a.at);
+const unseenUpdates = () => allUpdates().filter(u => u.at > (S.updatesSeen || 0)).length;
+function updatesArrived(z, fresh){
+  syncDot(); if(TAB === 'fix') renderFixtures();
+  toast(fresh.length > 1 ? `${fresh.length} updates for ${z.groupName}: tap Updates on Fixtures` : updateLine(fresh[0]));
+  if(window.rtpNative) try { window.rtpNative.notify(fresh.map(u => ({title: z.groupName, body: updateLine(u)}))); } catch(e){}
+}
+// the app on a phone: reminders a few hours before replies close, for each child who hasn't said yet
+function phoneReminders(){
+  if(!window.rtpNative) return;
+  const list = [];
+  for(const z of teamsOnPhone().filter(x => x.role === 'parent' && mayView(x))) for(const e of z.events || []){
+    const c = evTimes(e).closeAt; if(e.cancelled || evPast(e) || !c || c - 3 * 36e5 < Date.now()) continue;
+    const none = kidsFor(e, z).filter(pid => !statusOf(e.id, pid, z)); if(!none.length) continue;
+    list.push({key: z.group + '|' + e.id, at: c - 3 * 36e5, title: z.groupName, body: `${none.map(pid => firstName(pid, z)).join(' & ')} — replies for ${evTitle(e)} close tonight: say if you can come`});
+  }
+  try { window.rtpNative.reminders(list.sort((a, b) => a.at - b.at).slice(0, 40)); } catch(e){}
+}
+function showUpdates(){
+  const us = allUpdates(), seen = S.updatesSeen || 0; S.updatesSeen = Date.now(); save(); syncDot();
+  openSheet(`<div class="eyebrow">${teamsOnPhone().length > 1 ? 'All your teams' : esc(S.sync.groupName)}</div><h2>Updates</h2>
+    ${us.length ? us.map(u => `<div class="mem upd${u.at > seen ? ' req' : ''}"><div><b>${esc(updateLine(u))}</b><small>${esc(u.z.groupName)} · ${ago(u.at)}</small></div></div>`).join('')
+      : '<p class="hint">Nothing yet. New fixtures, changes, cancellations and team picks show up here.</p>'}
+    <p class="hint">The app has no messaging: these are the only notices it gives. For anything else, talk to your coaches.</p>
+    <button class="btn ghost wide" data-close>Close</button>`);
+  if(TAB === 'fix') renderFixtures();
 }
 // coaches: keep the published squad names in step with the squad (only when they change)
 async function publishRoster(){
@@ -3189,12 +3270,36 @@ async function publishRoster(){
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/roster/all`), fields:{json:{stringValue: json}, at:{integerValue: String(Date.now())}}}}]});
   z.rosterHash = hashStr(json); save();
 }
+/* What players and parents read is kept to set wording where it can be (a cancelled event's reason comes from a list),
+   and the free text that's left is short (LIMITS) and logged for the team admin: groups/<id>/log/<id> =
+   {kind: 'event', event, by, who, at, title, location, notes}, written with each change and never edited. */
+const LIMITS = {location: 80, notes: 300};
+const CANCEL_REASONS = [['weather', 'Weather'], ['pitch', 'Pitch unplayable'], ['opposition', 'Opposition cancelled'], ['other', 'Other']];
+const cancelReason = e => e.cancelled ? (CANCEL_REASONS.find(r => r[0] === e.cancelled.reason) || CANCEL_REASONS[3])[1] : '';
+const cancelText = e => e.cancelled ? 'Cancelled · ' + cancelReason(e) : '';
+const tidyEvent = e => Object.assign({}, e, {location: (e.location || '').slice(0, LIMITS.location), notes: (e.notes || '').slice(0, LIMITS.notes)});
+const freeText = e => [e.title || '', e.location || '', e.notes || ''].join('|');
+const logWrite = (e, by) => ({update:{name: DOCNAME(`groups/${S.sync.group}/log/${uid()}`), fields:{kind:{stringValue: 'event'}, event:{stringValue: e.id}, by:{stringValue: by}, who:{stringValue: S.sync.who || ''},
+  at:{integerValue: String(Date.now())}, title:{stringValue: e.title || ''}, location:{stringValue: e.location || ''}, notes:{stringValue: e.notes || ''}}}});
+// a coach cancels event e (reason from CANCEL_REASONS), or reinstates it (reason null)
+async function cancelEvent(e, reason){
+  const ne = Object.assign({}, e); if(reason) ne.cancelled = {reason, at: Date.now()}; else delete ne.cancelled;
+  await saveEvents([ne]); return ne;
+}
+// the team admin: the latest changes to what players and parents read
+async function eventLog(){
+  return (await listDocs(`/groups/${S.sync.group}/log`)).map(d => { const f = d.fields || {}, t = k => f[k] ? String(f[k].stringValue ?? f[k].integerValue ?? '') : '';
+    return {event: t('event'), who: t('who'), at: +t('at') || 0, title: t('title'), location: t('location'), notes: t('notes')}; }).sort((a, b) => b.at - a.at);
+}
 const eventWrite = e => { const t = evTimes(e);
   return {update:{name: DOCNAME(`groups/${S.sync.group}/events/${e.id}`), fields:Object.assign({json:{stringValue: JSON.stringify(e)}, by:{stringValue: S.sync.who || ''}, at:{integerValue: String(Date.now())},
     startAt:{integerValue: String(t.startAt)}, endAt:{integerValue: String(t.endAt)}}, t.closeAt ? {closeAt:{integerValue: String(t.closeAt)}} : {})}}; };
 async function saveEvents(list){
-  for(let i = 0; i < list.length; i += 400) await fb('POST', ':commit', {writes: list.slice(i, i + 400).map(eventWrite)});
-  const z = fixData();
+  list = list.map(tidyEvent);
+  const z = fixData(), by = tokenUid(await fbToken()), old = id => z.events.find(x => x.id === id);
+  // each event, and a log entry when what players and parents read has changed
+  const writes = list.flatMap(e => [eventWrite(e), ...(!old(e.id) || freeText(old(e.id)) !== freeText(e) ? [logWrite(e, by)] : [])]);
+  for(let i = 0; i < writes.length; i += 400) await fb('POST', ':commit', {writes: writes.slice(i, i + 400)});
   for(const e of list){ const i = z.events.findIndex(x => x.id === e.id); if(i >= 0) z.events[i] = e; else z.events.push(e); }
   z.events.sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time)); save();
 }
@@ -3207,7 +3312,7 @@ async function deleteEvent(e){
 async function setAvail(evId, pid, status, z = S.sync){
   fixData(z); const uid = tokenUid(await fbToken()), k = avKey(evId, pid), now = Date.now();
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/avail/${k}`), fields:{event:{stringValue: evId}, player:{stringValue: pid}, status:{stringValue: status}, by:{stringValue: uid}, who:{stringValue: z.who || ''}, at:{integerValue: String(now)}}}}]});
-  z.avail[k] = {status, who: z.who || '', by: uid, at: now}; save();
+  z.avail[k] = {status, who: z.who || '', by: uid, at: now}; save(); phoneReminders();
 }
 function avCounts(e, z = S.sync){
   const c = {yes: 0, maybe: 0, no: 0, none: 0};
@@ -3260,23 +3365,23 @@ function renderFixtures(){
   const byKid = kidsAll.length > 1, kid = byKid && kidsAll.find(k => k.key === S.ui.fixKid) || null;
   const only = kid ? kid.z.group : !byKid && multi && all.some(z => z.group === S.ui.fixTeam) ? S.ui.fixTeam : '';
   const teams = all.filter(z => !only || z.group === only), coach = hatKind() === 'coach', past = !!S.ui.fixPast;
-  const rowsFor = (e, z) => kidsFor(e, z).filter(pid => !kid || pid === kid.pid);
+  const kidsOn = (e, z) => kidsFor(e, z).filter(pid => !kid || pid === kid.pid), rowsFor = (e, z) => e.cancelled ? [] : kidsOn(e, z);
   const first = (pid, z) => nameOfPlayer(pid, z).split(' ')[0];
   const family = all.filter(z => viewerRole(z.role)), unlinked = family.filter(z => z.role === 'parent' && !(z.kids || []).length), anyKids = all.some(z => kidsOf(z).length);
-  const list = fixtureList(teams, past).filter(({e, z}) => !kid || rowsFor(e, z).length);
+  const list = fixtureList(teams, past).filter(({e, z}) => !kid || kidsOn(e, z).length);
   // replies due: a child who hasn't said whether they can come, to an event whose replies close within a week
   const due = hatKind() === 'parent' && !past ? (kid ? [kid] : kidsAll.length ? kidsAll : []).flatMap(({z, pid}) => (z.events || [])
-    .filter(e => !evPast(e) && repliesOpen(e) && evTimes(e).closeAt && evTimes(e).closeAt - Date.now() < 7 * 864e5 && kidsFor(e, z).includes(pid) && !statusOf(e.id, pid, z))
+    .filter(e => !e.cancelled && !evPast(e) && repliesOpen(e) && evTimes(e).closeAt && evTimes(e).closeAt - Date.now() < 7 * 864e5 && kidsFor(e, z).includes(pid) && !statusOf(e.id, pid, z))
     .map(e => ({z, pid, e}))).sort((a, b) => evTimes(a.e).closeAt - evTimes(b.e).closeAt) : [];
   const players = family.length && family.every(z => z.role === 'player');
   let month = '';
   const card = ({e, z}) => {
     const d = evDate(e), m = d.toLocaleDateString('en-GB', {month: 'long', year: 'numeric'}), head = m !== month ? `<div class="section-h"><span>${m}</span></div>` : ''; month = m;
     const mine = z === S.sync && coach, ref = z.group + '|' + e.id;
-    return `${head}<div class="evcard ev-${e.type}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
+    return `${head}<div class="evcard ev-${e.type}${e.cancelled ? ' cancelled' : ''}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
       <div class="evbody">${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
         <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
-        ${resultText(e) ? `<div class="result">${esc(resultText(e))}</div>` : !evPast(e) && closeDaysOf(e) ? `<div class="closed">Replies close end of ${dayName(closeDay(e))}</div>` : ''}
+        ${e.cancelled ? `<div class="closed st-no">${esc(cancelText(e))}</div>` : resultText(e) ? `<div class="result">${esc(resultText(e))}</div>` : !evPast(e) && closeDaysOf(e) ? `<div class="closed">Replies close end of ${dayName(closeDay(e))}</div>` : ''}
         ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>` : ''}
           ${rowsFor(e, z).map(pid => kidRow(e, z, pid)).join('')}
       </div></div>`; };
@@ -3284,7 +3389,7 @@ function renderFixtures(){
     ${byKid ? `<div class="mact fixbar"><button class="chip${kid ? '' : ' on'}" data-fk="">All</button>${kidsAll.map(k => `<button class="chip tchip${kid && kid.key === k.key ? ' on' : ''}" data-fk="${k.key}" style="--gc:${groupColour(k.z.group)}"><span class="gdot"></span>${esc(first(k.pid, k.z))}</button>`).join('')}</div>`
       : multi ? `<div class="mact fixbar"><button class="chip${only ? '' : ' on'}" data-ft="">All</button>${all.map(z => `<button class="chip tchip${only === z.group ? ' on' : ''}" data-ft="${z.group}" style="--gc:${groupColour(z.group)}"><span class="gdot"></span>${esc(z.groupName)}</button>`).join('')}</div>` : ''}
     <div class="mact fixbar">${coach ? `<button class="chip on" id="fxAdd">Add${multi ? ' to ' + esc(S.sync.groupName) : ''}</button><button class="chip" id="fxImport">Import</button><button class="chip" id="fxAttend">Attendance</button>` : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
-      ${hatKind() === 'parent' ? '<button class="chip" id="fxKids">My children</button>' : ''}</div>
+      ${hatKind() === 'parent' ? '<button class="chip" id="fxKids">My children</button>' : ''}${['parent', 'player'].includes(hatKind()) ? `<button class="chip" id="fxUpd">Updates${unseenUpdates() ? `<span class="cnt">${unseenUpdates()}</span>` : ''}</button>` : ''}</div>
     ${hatKind() === 'parent' && unlinked.length ? `<div class="evnote"><b>Link your child${multi ? ' in ' + unlinked.map(z => esc(z.groupName)).join(' and ') : ''}</b><p class="hint">Tell us your child’s name and date of birth on the Children tab. Once the team admin links you, you see their fixtures and say when they’re available.</p><button class="btn" id="fxKids2">Link your child</button></div>`
       : hatKind() === 'player' && waitText(S.sync) ? `<div class="evnote"><b>${S.sync.status === 'inactive' ? 'Switched off' : 'Waiting for approval'}</b><p class="hint">${esc(waitText(S.sync))}</p></div>`
       : hatKind() === 'player' && !kidsOf(S.sync).length ? '<p class="hint">Ask your team admin to set which player this phone is, to see your availability and team sheets here.</p>' : ''}
@@ -3307,7 +3412,7 @@ function renderFixtures(){
   const on = (id, fn) => { const b = $(id, el); if(b) b.addEventListener('click', fn); };
   on('#fxAdd', () => editEvent(null)); on('#fxImport', () => importEvents());
   on('#fxPast', () => { S.ui.fixPast = !past; save(); renderFixtures(); }); on('#fxAttend', showAttendance);
-  on('#fxRefresh', () => refreshFixtures(true)); on('#fxKids', () => showTab('kids')); on('#fxKids2', () => showTab('kids'));
+  on('#fxRefresh', () => refreshFixtures(true)); on('#fxUpd', showUpdates); on('#fxKids', () => showTab('kids')); on('#fxKids2', () => showTab('kids'));
   if(!fixLoading && all.some(fixStale)) refreshFixtures(false);
 }
 async function refreshFixtures(loud){
@@ -3327,18 +3432,26 @@ function showEvent(ref){
     return ps.length ? `<div class="section-h"><span class="${k ? 'st-' + k : ''}">${l} · ${ps.length}</span></div>${ps.map(p => `<div class="mem"><div><b>${esc(p.name)}</b>${k ? who(p.id) : ''}</div>${AV.map(([s, sl, sy]) => `<button class="avb ${s}${k === s ? ' on' : ''}" data-cav="${p.id}|${s}" aria-label="${esc(p.name)}: ${sl}">${sy}</button>`).join('')}</div>`).join('')}` : ''; }).join('') : '';
   const kids = kidsFor(e, z).map(pid => { const s = statusOf(e.id, pid, z); return `<div class="mem"><div><b>${esc(nameOfPlayer(pid, z))}</b></div><span class="${s ? 'st-' + s : 'muted'}">${s ? AV.find(a => a[0] === s)[1] : 'No reply yet'}</span></div>`; }).join('');
   openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.sub && subById(e.sub, z) ? ' · ' + esc(subName(e.sub, z)) : ''}</div><h2>${esc(evTitle(e))}</h2>
-    <p class="muted">${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
+    ${e.cancelled ? `<p class="warnbox">${esc(cancelText(e))}</p>` : ''}<p class="muted">${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
     ${kids}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
       ${resultText(e) ? `<p class="result">${esc(resultText(e))}</p>` : ''}
       <div class="row-btns"><button class="btn" id="evPick">${linked ? `Open selection · ${pickedCount(linked)} picked` : 'Pick the team'}</button><button class="btn ghost" id="evReg">Register</button>${e.type === 'match' ? '<button class="btn ghost" id="evScore">Score</button>' : ''}<button class="btn ghost" id="evEdit">Edit</button></div>
       <p class="hint">${closeDaysOf(e) ? `Parents’ replies ${repliesOpen(e) ? 'close' : 'closed'} at the end of ${dayName(closeDay(e))}. ` : ''}${coachCanReply(e) ? 'Tap ✓ ? ✗ to mark a player yourself (until the end of the day of the event).' : 'Replies can no longer be changed.'}</p>${groups}` : ''}
+    ${coach && !evPast(e) ? `<button class="btn ${e.cancelled ? '' : 'danger'} wide" id="evCancel">${e.cancelled ? 'Reinstate this event' : 'Cancel this event'}</button>` : ''}
     ${coachElsewhere ? `<button class="btn" id="evOpen">Open as coach of ${esc(z.groupName)} to see replies</button>` : ''}
     <button class="btn ghost wide" data-close>Close</button>`,
     el => {
       const o = $('#evOpen', el); if(o) o.addEventListener('click', () => setHat(hatsOnPhone().find(x => x.kind === 'coach' && x.id === z.group), 'fix'));
       if(!coach) return;
       $('#evEdit', el).addEventListener('click', () => editEvent(e));
+      const cx = $('#evCancel', el); if(cx) cx.addEventListener('click', () => {
+        if(e.cancelled) return cancelEvent(e, null).then(() => { closeSheet(); renderAll(); toast(`${evTitle(e)} is back on`); }, err => toast(niceErr(err)));
+        openSheet(`<div class="eyebrow">${esc(evTitle(e))} · ${esc(evWhen(e))}</div><h2>Cancel this event?</h2><p class="muted">Players and parents see it as cancelled, with the reason you pick. Replies close.</p>
+          <div class="hats">${CANCEL_REASONS.map(([k, l]) => `<button class="hatrow" style="--gc:var(--danger)" data-cr="${k}"><b>${l}</b></button>`).join('')}</div><button class="btn ghost wide" data-close>Keep it on</button>`,
+          sh => $$('[data-cr]', sh).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
+            try { await cancelEvent(e, b.dataset.cr); closeSheet(); renderAll(); toast(`${evTitle(e)} cancelled`); } catch(err){ b.disabled = false; toast(niceErr(err)); } })));
+      });
       $('#evPick', el).addEventListener('click', () => pickFor(e));
       $('#evReg', el).addEventListener('click', () => showRegister(e));
       const sb = $('#evScore', el); if(sb) sb.addEventListener('click', () => showScore(e));
@@ -3359,10 +3472,11 @@ function editEvent(e){
     <div class="field"><label class="field-label" for="evTitle">Title</label><input id="evTitle" type="text" value="${esc(e.title || '')}" placeholder="${type === 'match' ? 'Blank = “vs” and the opponent' : 'e.g. Tuesday training'}"></div>
     <div class="field evtimes"><div><label class="field-label" for="evDate">Date</label><input id="evDate" type="date" value="${e.date}"></div>
       <div><label class="field-label" for="evTime">Start</label><input id="evTime" type="time" value="${e.time || ''}"></div><div><label class="field-label" for="evEnd">End</label><input id="evEnd" type="time" value="${e.end || ''}"></div></div>
-    <div class="field"><label class="field-label" for="evLoc">Where</label><input id="evLoc" type="text" value="${esc(e.location || '')}" placeholder="e.g. Home, or the club's address"></div>
+    <div class="field"><label class="field-label" for="evLoc">Where</label><input id="evLoc" type="text" maxlength="${LIMITS.location}" value="${esc(e.location || '')}" placeholder="e.g. Home, or the club's address"></div>
     <div class="field"><label class="field-label" for="evClose">Parents’ replies close</label><select id="evClose"></select>
       <p class="hint">After this parents can’t change availability; coaches can until the end of the day of the event.</p></div>
-    <div class="field"><label class="field-label" for="evNotes">Notes</label><textarea id="evNotes" placeholder="Meet time, kit, what to bring">${esc(e.notes || '')}</textarea></div>
+    <div class="field"><label class="field-label" for="evNotes">Notes</label><textarea id="evNotes" maxlength="${LIMITS.notes}" placeholder="Meet time, kit, what to bring">${esc(e.notes || '')}</textarea>
+      <p class="hint">Players and parents see this. Keep it to the practical details (up to ${LIMITS.notes} letters); the team admin can see every change.</p></div>
     <div class="row-btns"><button class="btn" id="evSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     ${isNew ? '' : '<button class="btn danger" id="evDel">Delete event</button>'}
     <p class="hint" id="evErr" role="alert"></p>`,
@@ -3838,7 +3952,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 8 Oct 2026, 17:16</p>`,
+    <p class="hint" style="text-align:center">Version 8 Oct 2026, 22:43</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4128,11 +4242,12 @@ async function loadCodesInto(box, admin){
 /* Admin tab (team admins only): codes, invites and the people in the team */
 function renderAdminTab(){
   const el = $('#adminBody'), bar = $('#adminTabs'), z = S.sync; if(!isGroupAdmin()){ el.innerHTML = bar.innerHTML = ''; return; }
-  const secs = [['waiting', 'Waiting'], ['unlinked', 'Unlinked'], ['linked', 'Linked'], ['people', 'People'], ['codes', 'Codes'], ['invites', 'Invites'], ['scores', 'Scores']];
+  const secs = [['waiting', 'Waiting'], ['unlinked', 'Unlinked'], ['linked', 'Linked'], ['people', 'People'], ['codes', 'Codes'], ['invites', 'Invites'], ['scores', 'Scores'], ['log', 'Changes']];
   if(!secs.some(x => x[0] === S.ui.adminSec)) S.ui.adminSec = 'waiting';
   bar.innerHTML = secs.map(([k, l]) => `<button class="chip" data-asec="${k}">${l}<span class="cnt" id="adCnt-${k}"></span></button>`).join('');
   el.innerHTML = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">Team admin</span><b>${esc(z.groupName)}</b><small>Children, people, codes and invites</small></div>
     <div class="field" data-sec="waiting"><div id="gpWaiting"><p class="muted">Loading…</p></div></div>
+    <div class="field" data-sec="log"><div class="field-label">What players and parents read: every change</div><div id="gpLog"><p class="muted">Loading…</p></div></div>
     <div class="field" data-sec="codes"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
     <div class="field" data-sec="invites"><div class="field-label">Invite coaches</div><p class="hint">Each invite works once, on one phone.</p>
       <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a team admin</button></div><div id="gpInvites"></div></div>
@@ -4237,7 +4352,14 @@ function renderAdminTab(){
           after(`${byUid(b.dataset.wrj).who || 'That phone'} removed`); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
     } catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; }
   };
-  loadInvites(); loadPeople(); loadWaiting();
+  const loadLog = async () => {
+    const box = $('#gpLog', el); if(!box) return;
+    try { const ls = (await eventLog()).slice(0, 60); if(!box.isConnected) return;
+      box.innerHTML = ls.length ? ls.map(l => `<div class="mem"><div><b>${esc(l.title || 'Event')}</b><small>${esc(l.who || 'A coach')} · ${new Date(l.at).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'})}${l.location ? ' · where: ' + esc(l.location) : ''}</small>${l.notes ? `<small>${esc(l.notes)}</small>` : ''}</div></div>`).join('')
+        + '<p class="hint">Each time a coach saves an event’s title, place or notes, it’s kept here. They can’t be changed or deleted.</p>' : '<p class="hint">No changes yet. Each time a coach saves an event’s title, place or notes, it’s kept here.</p>'; }
+    catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; }
+  };
+  loadInvites(); loadPeople(); loadWaiting(); loadLog();
   const invite = async (b, role) => { b.disabled = true;
     try { const code = await newInvite(role); loadInvites(); await shareText(joinText(code, role), z.groupName, 'Invite code: ' + fmtCode(code)); }
     catch(e){ toast(niceErr(e)); } finally { b.disabled = false; } };
@@ -4318,7 +4440,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 17:16'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 22:43'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
