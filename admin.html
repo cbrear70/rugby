@@ -114,7 +114,7 @@ input,select,textarea{width:100%;background:var(--panel2);color:var(--ink);borde
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 8 Oct 2026, 13:15</p>
+  <p class="hint" style="text-align:center">Version 8 Oct 2026, 15:21</p>
 </main>
 <script>
 (() => {
@@ -331,19 +331,24 @@ async function load(){
 const when = ms => { if(!ms) return '—'; const d = new Date(+ms), days = (Date.now() - d) / 864e5;
   return days < 1 ? 'today' : days < 2 ? 'yesterday' : days < 7 ? Math.floor(days) + ' days ago' : d.toLocaleDateString('en-GB', {day:'numeric', month:'short', year: days > 300 ? 'numeric' : undefined}); };
 const ROLES = [['admin', 'Team admin'], ['coach', 'Coach'], ['player', 'Player'], ['parent', 'Parent']];
+// a child's phone switched off (no parent linked any more) is deleted after this many days, as the app says
+const RETAIN_DAYS = 90;
 // age from a date of birth (YYYY-MM-DD), as the app works it out
 function ageOf(dob, now = new Date()){ const [y, m, d] = dob.split('-').map(Number); return now.getFullYear() - y - (now.getMonth() + 1 < m || (now.getMonth() + 1 === m && now.getDate() < d) ? 1 : 0); }
 async function showMembers(code, el){
   const box = el.querySelector('[data-members]');
   try {
-    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue, role: f.role?.stringValue || 'coach', wants: f.wants?.stringValue || '', pending: f.status?.stringValue === 'pending', dob: f.dob?.stringValue || ''}; })
+    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue, role: f.role?.stringValue || 'coach', wants: f.wants?.stringValue || '', pending: f.status?.stringValue === 'pending', dob: f.dob?.stringValue || '', off: f.status?.stringValue === 'inactive' ? +(f.inactiveAt?.integerValue || 1) : 0, kids: (f.kids?.arrayValue?.values || []).map(v => v.stringValue)}; })
       .sort((a, b) => (b.seen || 0) - (a.seen || 0));
     const stale = ms.filter(m => Date.now() - (m.seen || 0) > 60 * 864e5);
+    // children's phones switched off (no parent linked any more) for longer than the app keeps them
+    const expired = ms.filter(m => m.off && Date.now() - m.off > RETAIN_DAYS * 864e5);
     const count = r => ms.filter(m => m.role === r).length, admins = count('admin');
     box.querySelector('summary').textContent = ms.length ? `People · ${ms.length} phone${ms.length > 1 ? 's' : ''} (${ROLES.map(([k, l]) => count(k) ? count(k) + ' ' + l.toLowerCase() + (count(k) > 1 ? 's' : '') : '').filter(Boolean).join(', ')})${admins ? '' : ' · no team admin'}` : 'People · none registered yet';
-    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}ID ${esc(m.id.slice(0, 8))} · joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}${m.dob ? ' · aged ' + ageOf(m.dob) : ''}${m.pending ? ' · <b>waiting for the team admin to approve</b>' : ''}</small></td>
+    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}ID ${esc(m.id.slice(0, 8))} · joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}${m.dob ? ' · aged ' + ageOf(m.dob) : ''}${m.pending ? ' · <b>waiting for the team admin to approve</b>' : ''}${m.off ? ' · <b>switched off ' + when(m.off) + '</b>' : ''}</small></td>
         <td><select data-role="${esc(m.id)}" aria-label="Role for ${esc(m.who)}">${ROLES.map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select></td><td>${when(m.seen)}</td><td><button class="btn ghost sm" data-rm="${esc(m.id)}">Remove</button></td></tr>`).join('')}</tbody></table>
       ${stale.length ? `<div class="row"><button class="btn ghost sm" data-rmold>Remove ${stale.length} not active for 60 days</button></div>` : ''}
+      ${expired.length ? `<div class="row"><button class="btn sm" data-rmoff>Delete ${expired.length} child’s phone${expired.length > 1 ? 's' : ''} switched off over ${RETAIN_DAYS} days ago</button></div>` : ''}
       <p class="hint">Each phone or browser registers once, when it joins with an invite or code (a coach with an iPhone and a PC appears twice). Phones from before roles count as coaches. A removed phone can't see the team any more; it needs a new invite, or the player or parent code, to come back. The team admin can also manage people in the app, on their Admin tab.</p>` : '<p class="hint">Phones register when they join with an invite or code. Use Invite team admin to get the first person in.</p>';
     const drop = async ids => { await commit(ids.map(id => del(`groups/${code}/members/${id}`))); await showMembers(code, el); box.open = true; };
     box.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', async () => { b.disabled = true; try { await drop([b.dataset.rm]); } catch(e){ status(e.message, 'err'); b.disabled = false; } }));
@@ -354,6 +359,9 @@ async function showMembers(code, el){
         status(`${m.who} is now ${ROLES.find(r => r[0] === s.value)[1].toLowerCase()}. Their phone picks it up next time it syncs.`, 'ok'); await showMembers(code, el); box.open = true; }
       catch(e){ status(e.message, 'err'); s.disabled = false; }
     }));
+    const off = box.querySelector('[data-rmoff]'); if(off) off.addEventListener('click', async () => { off.disabled = true;
+      try { await commit(expired.flatMap(m => [del(`groups/${code}/members/${m.id}`), ...m.kids.map(pid => del(`groups/${code}/links/${pid}/who/${m.id}`))])); await showMembers(code, el); box.open = true; status(`Deleted ${expired.length} switched-off phone${expired.length > 1 ? 's' : ''}.`, 'ok'); }
+      catch(e){ status(e.message, 'err'); off.disabled = false; } });
     const old = box.querySelector('[data-rmold]'); if(old) old.addEventListener('click', async () => { old.disabled = true; try { await drop(stale.map(m => m.id)); } catch(e){ status(e.message, 'err'); old.disabled = false; } });
   } catch(e){ box.querySelector('summary').textContent = 'People · could not load (' + e.message + ')'; }
 }

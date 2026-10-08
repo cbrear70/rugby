@@ -3062,12 +3062,12 @@ async function codeFree(code){
 async function newInvite(role){ return withNewCode(code => fb('POST', ':commit', {writes:[inviteDoc(code, role, true)]})); }
 async function groupInvites(){
   const r = await fb('POST', ':runQuery', {structuredQuery:{from:[{collectionId:'invites'}], where:{fieldFilter:{field:{fieldPath:'group'}, op:'EQUAL', value:{stringValue: S.sync.group}}}}});
-  return (r || []).filter(x => x.document).map(x => { const f = x.document.fields || {}; return {code: x.document.name.split('/').pop(), role: f.role ? f.role.stringValue : '', single: !!(f.single && f.single.booleanValue), usedBy: f.usedBy ? f.usedBy.stringValue : '', at: +(f.at && f.at.integerValue || 0), by: f.by ? f.by.stringValue : ''}; });
+  return (r || []).filter(x => x.document).map(x => { const f = x.document.fields || {}; return {code: x.document.name.split('/').pop(), role: f.role ? f.role.stringValue : '', single: !!(f.single && f.single.booleanValue), usedBy: f.usedBy ? f.usedBy.stringValue : '', at: +(f.at && f.at.integerValue || 0), by: f.by ? f.by.stringValue : '', invitedBy: f.invitedBy ? f.invitedBy.stringValue : ''}; });
 }
 async function groupMembers(){
   return (await listDocs(`/groups/${S.sync.group}/members`)).map(d => { const f = d.fields || {};
     return {uid: d.name.split('/').pop(), who: f.who ? f.who.stringValue : '', device: f.device ? f.device.stringValue : '', role: f.role ? f.role.stringValue : 'coach', wants: f.wants ? f.wants.stringValue : '', seen: +(f.seen && f.seen.integerValue || f.at && f.at.integerValue || 0),
-      kids: (f.kids && f.kids.arrayValue && f.kids.arrayValue.values || []).map(v => v.stringValue), status: f.status ? f.status.stringValue : 'approved', dob: f.dob ? f.dob.stringValue : '', invite: f.invite ? f.invite.stringValue : '', asks: asksOf(f)}; });
+      kids: (f.kids && f.kids.arrayValue && f.kids.arrayValue.values || []).map(v => v.stringValue), status: f.status ? f.status.stringValue : 'approved', dob: f.dob ? f.dob.stringValue : '', invite: f.invite ? f.invite.stringValue : '', asks: asksOf(f), inactiveAt: +(f.inactiveAt && f.inactiveAt.integerValue || 0)}; });
 }
 // fields: {role?, wants?}; null removes the field
 async function setMember(uid, fields){
@@ -3125,11 +3125,12 @@ const kidsFor = (e, z) => kidsOf(z).filter(pid => inSub((z.roster || []).find(p 
 
 // What a phone can see in a team (as the security rules' canView): coaches everything; a player's phone once the team
 // admin has approved it; a parent once linked to a child. Phones from before approvals have no status: approved.
-function mayView(z){ return !viewerRole(z.role) || (z.status !== 'pending' && (z.role !== 'parent' || (z.kids || []).length > 0)); }
+function mayView(z){ return !viewerRole(z.role) || (z.status !== 'pending' && z.status !== 'inactive' && (z.role !== 'parent' || (z.kids || []).length > 0)); }
 // why a player's or parent's phone sees nothing yet ('' if it can see the team)
 function waitText(z){
   if(mayView(z)) return '';
-  return z.status === 'pending' ? `Waiting for the team admin of ${z.groupName} to approve this phone. Once they have set which player you are, your drills, fixtures and team sheets appear here.`
+  return z.status === 'inactive' ? `This phone has been switched off in ${z.groupName}, because no parent or carer is linked to you any more. Ask a parent or carer, or the team admin, to sort it out.`
+    : z.status === 'pending' ? `Waiting for the team admin of ${z.groupName} to approve this phone. Once they have set which player you are, your drills, fixtures and team sheets appear here.`
     : `You see nothing from ${z.groupName} until you are linked to your child. On the Children tab, give your child’s name and date of birth; the team admin then links you.`;
 }
 // a phone that can't see the team (any more) keeps none of what it loaded before
@@ -3250,7 +3251,7 @@ function renderFixtures(){
     <div class="mact fixbar">${coach ? `<button class="chip on" id="fxAdd">Add${multi ? ' to ' + esc(S.sync.groupName) : ''}</button><button class="chip" id="fxImport">Import</button><button class="chip" id="fxAttend">Attendance</button>` : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
       ${hatKind() === 'parent' ? '<button class="chip" id="fxKids">My children</button>' : ''}</div>
     ${hatKind() === 'parent' && unlinked.length ? `<div class="evnote"><b>Link your child${multi ? ' in ' + unlinked.map(z => esc(z.groupName)).join(' and ') : ''}</b><p class="hint">Tell us your child’s name and date of birth on the Children tab. Once the team admin links you, you see their fixtures and say when they’re available.</p><button class="btn" id="fxKids2">Link your child</button></div>`
-      : hatKind() === 'player' && waitText(S.sync) ? `<div class="evnote"><b>Waiting for approval</b><p class="hint">${esc(waitText(S.sync))}</p></div>`
+      : hatKind() === 'player' && waitText(S.sync) ? `<div class="evnote"><b>${S.sync.status === 'inactive' ? 'Switched off' : 'Waiting for approval'}</b><p class="hint">${esc(waitText(S.sync))}</p></div>`
       : hatKind() === 'player' && !kidsOf(S.sync).length ? '<p class="hint">Ask your team admin to set which player this phone is, to see your availability and team sheets here.</p>' : ''}
     ${list.length ? list.map(card).join('') : !coach && teams.every(z => waitText(z)) ? '' : `<div class="empty">${past ? 'No past events.' : coach && !only ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. The coaches add fixtures and training here.'}</div>`}`;
   $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
@@ -3800,7 +3801,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 8 Oct 2026, 13:15</p>`,
+    <p class="hint" style="text-align:center">Version 8 Oct 2026, 15:21</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3863,7 +3864,7 @@ async function makeRoleCodes(){ await newRoleCode('player'); await newRoleCode('
 // each by name)
 const asksForCoach = m => !!m.wants && viewerRole(m.role);
 // a player's phone waiting for the team admin to approve it (by setting which player it is)
-const waitsApproval = m => m.role === 'player' && m.status === 'pending';
+const waitsApproval = m => m.role === 'player' && (m.status === 'pending' || m.status === 'inactive');
 // a parent who joined with the parent code and isn't linked to a child yet
 const waitsLink = m => (m.role === 'parent' && !m.kids.length) || (m.role !== 'player' && m.asks.length > 0);
 // The team admin's Waiting list: {players to approve, parents to link}. Its size is kept with the team (z.waiting) for
@@ -3879,7 +3880,42 @@ const approveCoach = uid => setMember(uid, {role:'coach', wants:null});
 const declineCoach = uid => setMember(uid, {wants:null});
 // a phone's role; becoming a coach or team admin also clears any request for coach access
 const setMemberRole = (uid, role) => setMember(uid, viewerRole(role) ? {role} : {role, wants: null});
-const removeMember = uid => fb('DELETE', `/groups/${S.sync.group}/members/${uid}`);
+/* Removing people. A child's phone (a player under 18) can't leave or unlink itself: a parent linked to the child, or the
+   team admin, removes it. When a child is left with no parent or carer linked, their own phone is switched off (status
+   inactive, from inactiveAt): it sees nothing, the squad keeps the player, and the team admin can approve it again once a
+   parent is linked. Switched-off phones are deleted after RETAIN_DAYS (admin page). Removing a parent also deletes the
+   unused invites they made for their children's phones. */
+const RETAIN_DAYS = 90;
+const isChildPhone = m => m.role === 'player' && dobOk(m.dob) && !isAdult(m.dob);
+const switchOffWrite = (g, uid) => ({update:{name: DOCNAME(`groups/${g}/members/${uid}`), fields:{status:{stringValue: 'inactive'}, inactiveAt:{integerValue: String(Date.now())}}}, updateMask:{fieldPaths:['status', 'inactiveAt']}, currentDocument:{exists:true}});
+// the team admin: switching off child pid's own phone once parent m is no longer linked, if no other parent is
+function orphanWrites(ms, m, pid){
+  if(ms.some(x => x.role !== 'player' && x.uid !== m.uid && x.kids.includes(pid))) return [];
+  return ms.filter(x => isChildPhone(x) && x.kids[0] === pid && x.status !== 'inactive').map(x => switchOffWrite(S.sync.group, x.uid));
+}
+// the team admin removes phone m (ms: everyone in the team); returns how many children's phones were switched off
+async function removeMemberFully(m, ms){
+  const g = S.sync.group, writes = [{delete: DOCNAME(`groups/${g}/members/${m.uid}`)}, ...m.kids.map(pid => ({delete: DOCNAME(`groups/${g}/links/${pid}/who/${m.uid}`)}))];
+  if(m.role !== 'player'){
+    for(const pid of m.kids) writes.push(...orphanWrites(ms, m, pid));
+    for(const i of await groupInvites().catch(() => [])) if(i.invitedBy === m.uid && !i.usedBy) writes.push({delete: DOCNAME('invites/' + i.code)});
+  }
+  await fb('POST', ':commit', {writes});
+  return writes.filter(w => w.update).length;
+}
+const offNote = n => n ? ` ${n > 1 ? n + ' children’s phones were' : 'Their child’s phone was'} switched off: no parent is linked any more.` : '';
+// a parent: switch off child pid's own phones in team z if this phone is their last parent (it may not be allowed, for
+// a phone from before dates of birth or a child now 18: then nothing changes)
+async function switchOffIfLast(z, pid){
+  const me = tokenUid(await fbToken()), ls = await linkedTo(pid, z).catch(() => []);
+  if(ls.some(l => l.role !== 'player' && l.uid !== me)) return 0;
+  let n = 0; for(const l of ls.filter(l => l.role === 'player')){ try { await fb('POST', ':commit', {writes:[switchOffWrite(z.group, l.uid)]}); n++; } catch(e){} }
+  return n;
+}
+// a parent removes their child's own phone from team z
+async function removeChildPhone(z, pid, uid){
+  await fb('POST', ':commit', {writes:[{delete: DOCNAME(`groups/${z.group}/members/${uid}`)}, {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${uid}`)}]});
+}
 // the other phones already set as player pid (their names)
 const phonesSetAs = (ms, m, pid) => ms.filter(x => x.role === 'player' && x.uid !== m.uid && x.kids.includes(pid)).map(x => x.who || 'another phone');
 // which player a player's phone (member m) is: its link moves from the player it was before. This is also what approves
@@ -3938,12 +3974,13 @@ function kidsOverview(ms, names){
   const linkedTo = pid => ms.filter(m => m.kids.includes(pid)), hasParent = p => linkedTo(p.id).some(m => m.role !== 'player');
   return {linkedTo, none: names.filter(p => !hasParent(p)), linked: names.filter(hasParent), waiting: ms.filter(m => m.role === 'parent' && !m.kids.length)};
 }
-// unlink child pid from member m (a parent, or the child's own phone); they stay in the team
-async function unlinkChild(m, pid){
-  const z = S.sync, kids = m.kids.filter(k => k !== pid);
+// unlink child pid from member m (a parent, or the child's own phone); they stay in the team. A child left with no
+// parent has their own phone switched off; returns how many were
+async function unlinkChild(m, pid, ms = []){
+  const z = S.sync, kids = m.kids.filter(k => k !== pid), off = m.role !== 'player' ? orphanWrites(ms, m, pid) : [];
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${m.uid}`), fields:{kids:{arrayValue:{values: kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
-    {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${m.uid}`)}]});
-  m.kids = kids;
+    {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${m.uid}`)}, ...off]});
+  m.kids = kids; return off.length;
 }
 // a new code for child pid: the old one stops linking anyone new
 async function replaceKidCode(pid){ return makeKidCode(pid, await kidCode(pid)); }
@@ -3955,7 +3992,7 @@ function renderTeamTab(){
   const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">${z.clubName ? esc(z.clubName) + ' · ' : ''}${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} selection${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
   const tail = `<div class="field"><label class="field-label" for="gpWho">Your name in the team</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
     <button class="btn ghost wide" id="gpCode">Enter a code</button>
-    <button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>`;
+    ${z.role === 'player' && dobOk(S.dob) && !isAdult(S.dob) ? '<p class="hint">To leave the team, ask your parent or carer, or the team admin: they can remove this phone.</p>' : `<button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>`}`;
   el.innerHTML = viewer ? `${card}
     <p class="muted">Updated ${ago(z.lastSync)}.</p>
     <button class="btn wide" id="gpSync">Check for new drills${fixOn() ? ' and fixtures' : ''}</button>
@@ -4093,7 +4130,7 @@ function renderAdminTab(){
         if(!m.kids[0]) return pickPlayer(m);
         askConfirm(`Change ${m.who || 'this phone'}’s player?`, `This phone is set as ${nameOfPlayer(m.kids[0])}. Only change it if that’s wrong.`, 'Yes, change it', () => pickPlayer(m)); }));
       $$('[data-rm]', box).forEach(b => b.addEventListener('click', () => {
-        if(b.dataset.sure) act(b, () => removeMember(b.dataset.rm), `${nm(b.dataset.rm)} removed`);
+        if(b.dataset.sure){ b.disabled = true; removeMemberFully(ms.find(x => x.uid === b.dataset.rm), ms).then(n => { toast(`${nm(b.dataset.rm)} removed.${offNote(n)}`); loadPeople(); loadWaiting(); }, e => { b.disabled = false; toast(niceErr(e)); }); }
         else { b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); }
       }));
     } catch(e){ box.innerHTML = `<p class="hint">Could not load people: ${esc(niceErr(e))}</p>`; }
@@ -4117,10 +4154,10 @@ function renderAdminTab(){
       const guess = m => { for(const a of m.asks.slice().reverse()){ const g = guessChild(a, names); if(g) return g; } return ''; };
       const parentRow = m => `<div class="mem req"><div><b>${esc(m.who || 'No name')}</b><small>${m.asks.length ? asked(m) + ' · ' : m.kids.length ? '' : 'hasn’t said which child yet · '}${m.dob ? ageText(m.dob) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>
         ${names.length ? `<div class="selstack"><select data-wlk="${m.uid}" aria-label="Which child is ${esc(m.who)}’s"><option value="">Which child?</option>${names.map(p => `<option value="${p.id}"${guess(m) === p.id ? ' selected' : ''}>${esc(p.name)}</option>`).join('')}</select><button class="chip on" data-wgo="${m.uid}">Link</button></div>` : ''}<button class="chip" data-wrj="${m.uid}">Reject</button></div>${passed(m)}`;
-      const who = m => `<div><b>${esc(m.who || 'No name')}</b><small>${by[m.uid] != null ? `${esc(nameOfPlayer(m.kids[0]))}’s own phone, invited by ${esc(by[m.uid] || 'a parent')} · ` : ''}${m.dob ? ageText(m.dob) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>`;
+      const who = m => `<div><b>${esc(m.who || 'No name')}</b><small>${m.status === 'inactive' ? `switched off ${ago(m.inactiveAt)}: no parent linked to ${esc(nameOfPlayer(m.kids[0]))} · ` : ''}${by[m.uid] != null ? `${esc(nameOfPlayer(m.kids[0]))}’s own phone, invited by ${esc(by[m.uid] || 'a parent')} · ` : ''}${m.dob ? ageText(m.dob) + ' · ' : ''}${m.device ? esc(m.device) + ' · ' : ''}joined ${ago(m.seen)} · ID ${m.uid.slice(0, 8)}</small></div>`;
       box.innerHTML = (players.length || parents.length ? '' : '<p class="hint">Nobody is waiting. Players who join with the player code, and parents who join with the parent code, appear here until you approve or link them.</p>')
         + (players.length ? `<div class="section-h"><span>Players to approve · ${players.length}</span></div>` + players.map(m => `<div class="mem req">${who(m)}<div class="selstack">${by[m.uid] != null ? `<button class="chip on" data-wok="${m.uid}">Approve</button><button class="chip" data-wap="${m.uid}">Someone else?</button>` : `<button class="chip on" data-wap="${m.uid}">Approve as…</button>`}</div><button class="chip" data-wrj="${m.uid}">Reject</button></div>`).join('')
-          + '<p class="hint">They see nothing until you approve them. Approve as… sets which player the phone belongs to; if they’re new, you can add them to the squad there. Reject removes the phone.</p>' : '')
+          + `<p class="hint">They see nothing until you approve them. Approve as… sets which player the phone belongs to; if they’re new, you can add them to the squad there. Reject removes the phone. A child’s phone is switched off when no parent is linked to them; approve it again once one is. Switched-off phones are deleted after ${RETAIN_DAYS} days.</p>` : '')
         + (parents.length ? `<div class="section-h"><span>Parents to link · ${parents.length}</span></div>` + parents.map(parentRow).join('')
           + '<p class="hint">A parent sees nothing until linked to their child. The child they asked for is picked if it matches the squad. If the child already has parents linked, you can ask them to approve. Only link someone you know is that child’s parent or carer. Reject removes the phone.</p>' : '');
       const byUid = uid => ms.find(x => x.uid === uid) || {};
@@ -4145,7 +4182,7 @@ function renderAdminTab(){
       }));
       $$('[data-wrj]', box).forEach(b => b.addEventListener('click', async () => {
         if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Reject? Tap again'; b.classList.add('on'); return; }
-        b.disabled = true; try { await removeMember(b.dataset.wrj); for(const a of appr[b.dataset.wrj] || []) await fb('DELETE', `/groups/${z.group}/approvals/${a.id}`).catch(() => {});
+        b.disabled = true; try { await removeMemberFully(byUid(b.dataset.wrj), ms); for(const a of appr[b.dataset.wrj] || []) await fb('DELETE', `/groups/${z.group}/approvals/${a.id}`).catch(() => {});
           after(`${byUid(b.dataset.wrj).who || 'That phone'} removed`); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
     } catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; }
   };
@@ -4230,7 +4267,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 13:15'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 15:21'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -4446,10 +4483,11 @@ async function ensureMyLinks(z){
   z.linksDone = (z.kids || []).join(); save();
 }
 async function unlinkKid(z, pid){
+  const off = await switchOffIfLast(z, pid); await cancelChildInvite(z, pid).catch(() => {});
   const uid = tokenUid(await fbToken()), kids = (z.kids || []).filter(k => k !== pid);
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{kids:{arrayValue:{values: kids.map(k => ({stringValue: k}))}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}},
     {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${uid}`)}]});
-  z.kids = kids; save();
+  z.kids = kids; save(); return off;
 }
 // team sheets shown to players and parents: [{id, name, eventId, size, bench, picks: {shirt: player id}}]
 async function publishSheets(){
@@ -4529,7 +4567,11 @@ function renderKidsTab(){
     const [g, pid] = box.dataset.kl.split('|'), z = zOf(g);
     Promise.all([linkedTo(pid, z), fbToken()]).then(([ls, tok]) => { if(!box.isConnected) return; const me = tokenUid(tok);
       const others = ls.filter(l => l.uid !== me);
-      box.innerHTML = `<small>Linked: you${others.map(l => ', ' + esc(l.who || 'someone') + (l.role === 'player' ? ' (their own phone)' : '')).join('')}</small>`;
+      const own = others.filter(l => l.role === 'player'); // removing an adult's phone is refused: only children's
+      box.innerHTML = `<small>Linked: you${others.map(l => ', ' + esc(l.who || 'someone') + (l.role === 'player' ? ' (their own phone)' : '')).join('')}</small>`
+        + own.map(l => `<button class="chip" data-krm="${l.uid}">Remove ${esc(nameOfPlayer(pid, z).split(' ')[0])}’s phone</button>`).join('');
+      $$('[data-krm]', box).forEach(b => b.addEventListener('click', () => askConfirm(`Remove ${nameOfPlayer(pid, z).split(' ')[0]}’s phone?`, 'It leaves the team and sees nothing more. You can invite it again from here.', 'Remove', async () => {
+        try { await removeChildPhone(z, pid, b.dataset.krm); toast('Removed'); renderKidsTab(); } catch(e){ toast(niceErr(e)); } })));
     }).catch(() => { box.innerHTML = ''; });
   }
   // asking to be linked to a child: always "Request sent" (whether or not there is such a child)
@@ -4572,8 +4614,8 @@ function renderKidsTab(){
   }
   $$('[data-kshare]', el).forEach(b => b.addEventListener('click', async () => { const [g, pid] = b.dataset.kshare.split('|'); b.disabled = true; try { await shareKidCode(pid, zOf(g)); } catch(e){ toast(niceErr(e)); } b.disabled = false; }));
   $$('[data-kun]', el).forEach(b => b.addEventListener('click', () => { const [g, pid] = b.dataset.kun.split('|'), z = zOf(g);
-    askConfirm(`Unlink ${nameOfPlayer(pid, z)}?`, 'You will no longer see their fixtures or mark their availability. You need their code to link them again.', 'Unlink', async () => {
-      try { await unlinkKid(z, pid); toast('Unlinked'); renderAll(); } catch(e){ toast(niceErr(e)); } }); }));
+    askConfirm(`Unlink ${nameOfPlayer(pid, z)}?`, 'You will no longer see their fixtures or mark their availability. If no other parent or carer is linked, their own phone is switched off too.', 'Unlink', async () => {
+      try { const n = await unlinkKid(z, pid); toast('Unlinked.' + (n ? ' ' + nameOfPlayer(pid, z).split(' ')[0] + '’s own phone was switched off: no parent is linked any more.' : '')); renderAll(); } catch(e){ toast(niceErr(e)); } }); }));
   $$('[data-kleave]', el).forEach(b => b.addEventListener('click', () => { const z = zOf(b.dataset.kleave);
     askConfirm('Leave ' + z.groupName + '?', 'Its fixtures and drills are removed from this phone, and your children in it are unlinked. You need a code to come back.', 'Leave team', () => { if(S.sync.group !== z.group) switchGroup(z.group, true); leaveGroup(); }); }));
   for(const c of clubs) clubTeams(c.id).then(ts => {
@@ -4632,7 +4674,7 @@ function showKidLinks(pid, ms, onChange){
       if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
       const m = ms.find(x => x.uid === b.dataset.kul); b.disabled = true;
       try {
-        await unlinkChild(m, pid); toast(`${m.who || 'They'} ${m.role === 'player' ? 'is no longer set as' : 'is no longer linked to'} ${name}`);
+        const n = await unlinkChild(m, pid, ms); toast(`${m.who || 'They'} ${m.role === 'player' ? 'is no longer set as' : 'is no longer linked to'} ${name}.${offNote(n)}`);
         onChange && onChange(); showKidLinks(pid, ms, onChange);
       } catch(e){ b.disabled = false; toast(niceErr(e)); }
     })); });
