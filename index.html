@@ -59,6 +59,7 @@ main{flex:1;min-height:0;position:relative}
 .tabbar{display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--panel)}
 .tabbar button{background:none;border:0;padding:7px 0 6px;display:flex;flex-direction:column;align-items:center;gap:2px;color:var(--muted);font:600 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase}
 .tabbar button[aria-selected="true"]{color:var(--accent)}
+.kstate{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0}.kstate small::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}.kstate.on small::before{background:var(--ok,#5BC77A)}.kstate.wait small::before{background:var(--accent)}.kstate.off small::before{background:var(--danger,#E4573F)}
 .tabbar button{position:relative}.tabbar button.tabdot::after{content:'';position:absolute;top:5px;left:calc(50% + 9px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
 
 /* pitch */
@@ -3084,7 +3085,30 @@ function joinText(code, role){
     : viewerRole(role) ? `${z.groupName} ${role}s: watch the drills your coaches share in Rugby Team Picker. Open this link, or enter code ${fmtCode(code)}: ${link}. Then the team admin approves your phone.${IOS_NOTE}`
     : `You're invited to join ${z.groupName} in Rugby Team Picker as ${role === 'admin' ? 'a team admin' : 'a coach'}. The code works once, on one phone. Open this link, or enter code ${fmtCode(code)}: ${link}${IOS_NOTE}`;
 }
-function leaveGroup(){
+// Leaving a team. A parent (or a coach with children of their own in it) is first unlinked from their children there,
+// which switches off a child's own phone if they were its last parent; their unused invites and requests go, and a
+// parent's membership too. Without a connection the phone doesn't leave, so it's never gone here but still linked there.
+const leavesLinks = z => z.role !== 'player' && ((z.kids || []).length > 0 || z.role === 'parent');
+async function leaveOnServer(z){
+  if(!leavesLinks(z)) return 0;
+  const uid = tokenUid(await fbToken()); let off = 0;
+  for(const pid of z.kids || []) off += await switchOffIfLast(z, pid);
+  for(const pid of Object.keys(z.childInvites || {})) await cancelChildInvite(z, pid).catch(() => {});
+  for(const a of await approvalsWhere(z, 'uid', uid).catch(() => [])) await fb('DELETE', `/groups/${z.group}/approvals/${a.id}`).catch(() => {});
+  const writes = (z.kids || []).map(pid => ({delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${uid}`)}));
+  writes.push(z.role === 'parent' ? {delete: DOCNAME(`groups/${z.group}/members/${uid}`)}
+    : {update:{name: DOCNAME(`groups/${z.group}/members/${uid}`), fields:{kids:{arrayValue:{values: []}}}}, updateMask:{fieldPaths:['kids']}, currentDocument:{exists:true}});
+  // refused or not found: no longer in the team anyway
+  try { await fb('POST', ':commit', {writes}); } catch(e){ if(e.status !== 403 && e.status !== 404 && !/NOT_FOUND|no entity/i.test(e.message)) throw e; }
+  return off;
+}
+const leaveText = z => leavesLinks(z) ? `You leave ${z.groupName} and are unlinked from your children in it. If you were a child’s last parent or carer, their own phone is switched off. You need a code to come back.` : '';
+async function leaveGroup(){
+  const z = S.sync;
+  if(z && z.group && !z.removed){
+    try { const n = await leaveOnServer(z); if(n) setTimeout(() => toast(`${n > 1 ? n + ' children’s phones were' : 'Your child’s phone was'} switched off: no parent is linked any more.`), 1500); }
+    catch(e){ toast('Couldn’t leave: ' + niceErr(e)); return; }
+  }
   S.ui.hat = null; const next = leaveWorkspace();
   if(next) switchGroup(next);
   else { syncDot(); renderAll(); showGate(false); }
@@ -3230,10 +3254,20 @@ let fixLoading = false;
 function renderFixtures(){
   const el = $('#fixBody');
   if(!syncing()){ el.innerHTML = `<div class="empty">Fixtures and availability are shared through your team. Join a team to use them.</div>`; return; }
-  const all = fixScope(), multi = all.length > 1, only = multi && all.some(z => z.group === S.ui.fixTeam) ? S.ui.fixTeam : '';
+  const all = fixScope(), multi = all.length > 1;
+  // a parent with more than one child switches between children (All, or one child: their team, their rows) rather than teams
+  const kidsAll = hatKind() === 'parent' ? all.flatMap(z => kidsOf(z).map(pid => ({z, pid, key: z.group + '|' + pid}))) : [];
+  const byKid = kidsAll.length > 1, kid = byKid && kidsAll.find(k => k.key === S.ui.fixKid) || null;
+  const only = kid ? kid.z.group : !byKid && multi && all.some(z => z.group === S.ui.fixTeam) ? S.ui.fixTeam : '';
   const teams = all.filter(z => !only || z.group === only), coach = hatKind() === 'coach', past = !!S.ui.fixPast;
+  const rowsFor = (e, z) => kidsFor(e, z).filter(pid => !kid || pid === kid.pid);
+  const first = (pid, z) => nameOfPlayer(pid, z).split(' ')[0];
   const family = all.filter(z => viewerRole(z.role)), unlinked = family.filter(z => z.role === 'parent' && !(z.kids || []).length), anyKids = all.some(z => kidsOf(z).length);
-  const list = fixtureList(teams, past);
+  const list = fixtureList(teams, past).filter(({e, z}) => !kid || rowsFor(e, z).length);
+  // replies due: a child who hasn't said whether they can come, to an event whose replies close within a week
+  const due = hatKind() === 'parent' && !past ? (kid ? [kid] : kidsAll.length ? kidsAll : []).flatMap(({z, pid}) => (z.events || [])
+    .filter(e => !evPast(e) && repliesOpen(e) && evTimes(e).closeAt && evTimes(e).closeAt - Date.now() < 7 * 864e5 && kidsFor(e, z).includes(pid) && !statusOf(e.id, pid, z))
+    .map(e => ({z, pid, e}))).sort((a, b) => evTimes(a.e).closeAt - evTimes(b.e).closeAt) : [];
   const players = family.length && family.every(z => z.role === 'player');
   let month = '';
   const card = ({e, z}) => {
@@ -3244,18 +3278,21 @@ function renderFixtures(){
         <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
         ${resultText(e) ? `<div class="result">${esc(resultText(e))}</div>` : !evPast(e) && closeDaysOf(e) ? `<div class="closed">Replies close end of ${dayName(closeDay(e))}</div>` : ''}
         ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>` : ''}
-          ${kidsFor(e, z).map(pid => kidRow(e, z, pid)).join('')}
+          ${rowsFor(e, z).map(pid => kidRow(e, z, pid)).join('')}
       </div></div>`; };
-  el.innerHTML = `<div class="section-h"><span>${only ? esc(fixTeam(only).groupName) : multi ? 'All teams' : esc(S.sync.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${S.sync.fixAt ? 'Updated ' + ago(Math.min(...all.map(z => z.fixAt || 0))) : ''}</span></div>
-    ${multi ? `<div class="mact fixbar"><button class="chip${only ? '' : ' on'}" data-ft="">All</button>${all.map(z => `<button class="chip tchip${only === z.group ? ' on' : ''}" data-ft="${z.group}" style="--gc:${groupColour(z.group)}"><span class="gdot"></span>${esc(z.groupName)}</button>`).join('')}</div>` : ''}
+  el.innerHTML = `<div class="section-h"><span>${kid ? esc(first(kid.pid, kid.z)) : byKid ? 'All your children' : only ? esc(fixTeam(only).groupName) : multi ? 'All teams' : esc(S.sync.groupName)} · ${past ? 'Past' : 'Coming up'}</span><span>${S.sync.fixAt ? 'Updated ' + ago(Math.min(...all.map(z => z.fixAt || 0))) : ''}</span></div>
+    ${byKid ? `<div class="mact fixbar"><button class="chip${kid ? '' : ' on'}" data-fk="">All</button>${kidsAll.map(k => `<button class="chip tchip${kid && kid.key === k.key ? ' on' : ''}" data-fk="${k.key}" style="--gc:${groupColour(k.z.group)}"><span class="gdot"></span>${esc(first(k.pid, k.z))}</button>`).join('')}</div>`
+      : multi ? `<div class="mact fixbar"><button class="chip${only ? '' : ' on'}" data-ft="">All</button>${all.map(z => `<button class="chip tchip${only === z.group ? ' on' : ''}" data-ft="${z.group}" style="--gc:${groupColour(z.group)}"><span class="gdot"></span>${esc(z.groupName)}</button>`).join('')}</div>` : ''}
     <div class="mact fixbar">${coach ? `<button class="chip on" id="fxAdd">Add${multi ? ' to ' + esc(S.sync.groupName) : ''}</button><button class="chip" id="fxImport">Import</button><button class="chip" id="fxAttend">Attendance</button>` : ''}<button class="chip" id="fxPast">${past ? 'Coming up' : 'Past'}</button><button class="chip" id="fxRefresh">Refresh</button>
       ${hatKind() === 'parent' ? '<button class="chip" id="fxKids">My children</button>' : ''}</div>
     ${hatKind() === 'parent' && unlinked.length ? `<div class="evnote"><b>Link your child${multi ? ' in ' + unlinked.map(z => esc(z.groupName)).join(' and ') : ''}</b><p class="hint">Tell us your child’s name and date of birth on the Children tab. Once the team admin links you, you see their fixtures and say when they’re available.</p><button class="btn" id="fxKids2">Link your child</button></div>`
       : hatKind() === 'player' && waitText(S.sync) ? `<div class="evnote"><b>${S.sync.status === 'inactive' ? 'Switched off' : 'Waiting for approval'}</b><p class="hint">${esc(waitText(S.sync))}</p></div>`
       : hatKind() === 'player' && !kidsOf(S.sync).length ? '<p class="hint">Ask your team admin to set which player this phone is, to see your availability and team sheets here.</p>' : ''}
+    ${due.length ? `<div class="evnote"><b>Replies due</b>${due.slice(0, 6).map(({z, pid, e}) => `<button class="memlink" data-evopen="${z.group}|${e.id}"><small><b>${esc(first(pid, z))}</b>: ${esc(evTitle(e))}, ${esc(evWhen(e).split(' · ')[0])} · say by end of ${esc(dayName(closeDay(e)))}</small></button>`).join('')}${due.length > 6 ? `<small class="muted">and ${due.length - 6} more</small>` : ''}</div>` : ''}
     ${list.length ? list.map(card).join('') : !coach && teams.every(z => waitText(z)) ? '' : `<div class="empty">${past ? 'No past events.' : coach && !only ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. The coaches add fixtures and training here.'}</div>`}`;
   $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
   $$('[data-ft]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixTeam = b.dataset.ft; save(); renderFixtures(); }));
+  $$('[data-fk]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixKid = b.dataset.fk; save(); renderFixtures(); }));
   $$('[data-here]', el).forEach(b => b.addEventListener('click', async () => {
     const [g, ev, pid, v] = b.dataset.here.split('|'), z = fixTeam(g); b.disabled = true;
     try { if(v === '1'){ await setHere(ev, pid, true, z); toast(`${nameOfPlayer(pid, z)} marked as there`); }
@@ -3801,7 +3838,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 8 Oct 2026, 15:21</p>`,
+    <p class="hint" style="text-align:center">Version 8 Oct 2026, 17:16</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -3941,13 +3978,27 @@ async function childInviteState(z, pid){
   const code = (z.childInvites || {})[pid]; if(!code) return null;
   const d = await fb('GET', '/invites/' + code); if(!d) return {code, state: 'gone'};
   const f = d.fields || {}, exp = +(f.expiresAt && f.expiresAt.integerValue || 0);
-  return {code, state: f.usedBy ? 'used' : exp < Date.now() ? 'expired' : 'open', expiresAt: exp};
+  return {code, state: f.usedBy ? 'used' : exp < Date.now() ? 'expired' : 'open', expiresAt: exp, usedBy: f.usedBy ? f.usedBy.stringValue : ''};
 }
 async function cancelChildInvite(z, pid){
   const code = (z.childInvites || {})[pid]; if(code) await fb('DELETE', '/invites/' + code);
   z.childInvites = Object.assign({}, z.childInvites); delete z.childInvites[pid]; save();
 }
 const forgetChildInvite = (z, pid) => { if(z.childInvites && z.childInvites[pid]){ delete z.childInvites[pid]; save(); } };
+// how child pid's own phone in team z is getting on, for their card: {state: none | invite | expired | waiting | active |
+// off, code, expiresAt, uid, adult}. The phone is the one linked to the child, or the one that used this phone's invite.
+async function childPhoneState(z, pid){
+  const [st, ls] = await Promise.all([childInviteState(z, pid).catch(() => null), linkedTo(pid, z).catch(() => [])]);
+  const uid = (ls.find(l => l.role === 'player') || {}).uid || (st && st.state === 'used' ? st.usedBy : '');
+  const d = uid ? await fb('GET', `/groups/${z.group}/members/${uid}`).catch(() => null) : null, f = d && d.fields;
+  if(f){
+    const status = f.status ? f.status.stringValue : 'approved', dob = f.dob ? f.dob.stringValue : '';
+    if(status === 'approved') forgetChildInvite(z, pid);
+    return {state: status === 'approved' ? 'active' : status === 'inactive' ? 'off' : 'waiting', uid, adult: dobOk(dob) && isAdult(dob)};
+  }
+  if(st && st.state === 'open') return {state: 'invite', code: st.code, expiresAt: st.expiresAt};
+  return {state: st && st.state === 'expired' ? 'expired' : 'none'};
+}
 const childInviteText = (z, pid, code) => `${nameOfPlayer(pid, z)}: join ${z.groupName} in Rugby Team Picker on your own phone. Open this link, or enter code ${fmtCode(code)}: ${linkBase()}#join=${fmtCode(code)}. It works once, within a week; then the team admin approves your phone.${IOS_NOTE}`;
 // which player a player's phone (member m) is, which also approves it if it's waiting: the squad to pick from, or add
 // them to the squad; done() runs after
@@ -4018,9 +4069,9 @@ function renderTeamTab(){
   on('#gpHelp', showHelp);
   on('#gpWhoSave', () => { setMyName($('#gpWho', el).value); toast('Name saved'); });
   on('#gpLeave', () => askConfirm('Leave '+z.groupName+'?',
-      viewer ? 'Its drills are removed from this phone. You need the code to join again.'
+      leaveText(z) || (viewer ? 'Its drills are removed from this phone. You need the code to join again.'
       : others.length ? `Its selections and drills are removed from this phone${n ? `, including ${n} change${n>1?'s':''} you haven't synced` : ''}. The team keeps everything you've synced. To come back you need a new invite from the team admin.`
-      : 'Your selections stay on this phone but stop syncing. To come back you need a new invite from the team admin.', 'Leave team', leaveGroup));
+      : 'Your selections stay on this phone but stop syncing. To come back you need a new invite from the team admin.'), 'Leave team', leaveGroup));
   on('#gpCode', () => showGate(true));
   if(viewer && (z.kids || []).length){
     myAskCode(z).then(c => { const g = $('#gpKidCode', el); if(g) g.textContent = fmtCode(c); }).catch(() => { const g = $('#gpKidCode', el); if(g) g.textContent = 'Sync first'; });
@@ -4267,7 +4318,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 15:21'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 17:16'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -4546,11 +4597,11 @@ function renderKidsTab(){
   el.innerHTML = `<div class="gcard" style="--gc:${PARENT_COLOUR}"><span class="eyebrow">Parent</span><b>${mine.length ? 'Your children' : 'No children linked yet'}</b><small>${mine.length ? 'Who else is linked, and where they’re picked' : 'Tell us your child’s name and date of birth below, or enter a code the team admin sent you. You see their fixtures and drills once you’re linked.'}</small></div>
     <div id="kdAnswer"></div>
     ${mine.map(({z, pid}) => `<div class="kid" style="--gc:${groupColour(z.group)}"><div class="kidhead"><b>${esc(nameOfPlayer(pid, z))}</b>${teamPill(z)}</div>
+      <div class="kidinv" data-ki="${z.group}|${pid}"><small class="muted">Checking their phone…</small></div>
       <div class="kidlinks" data-kl="${z.group}|${pid}"><small class="muted">Checking who is linked…</small></div>
       ${pickedLine(z, pid)}
       <div class="rcode"><div class="gcode" data-kc="${z.group}|${pid}">…</div><button class="chip" data-kshare="${z.group}|${pid}">Share</button><button class="chip" data-kun="${z.group}|${pid}">Unlink</button></div>
-      <small class="muted">${esc(nameOfPlayer(pid, z))}’s code: another parent enters it to link them too</small>
-      <div class="kidinv" data-ki="${z.group}|${pid}"></div></div>`).join('')}
+      <small class="muted">${esc(nameOfPlayer(pid, z))}’s code: another parent enters it to link them too</small></div>`).join('')}
     ${teamsOnPhone().filter(z => z.role !== 'player').map(z => `<div class="field" data-ka="${z.group}"><div class="field-label">Link a child in ${esc(z.groupName)}</div>
       ${(z.asks || []).map(a => `<p class="hint">Request sent: ${esc(a.child ? 'with ' + (nameOfPlayer(a.child, z) === 'Unknown player' ? 'your child' : nameOfPlayer(a.child, z)) + '’s code' : a.name + (a.dob ? ', born ' + fmtDob(a.dob) : ''))} · ${ago(a.at)}</p>`).join('')}
       <div class="add-row"><input type="text" data-kan placeholder="Child’s full name"><input type="date" data-kad max="${ymd(new Date())}" aria-label="Child’s date of birth"></div>
@@ -4567,11 +4618,7 @@ function renderKidsTab(){
     const [g, pid] = box.dataset.kl.split('|'), z = zOf(g);
     Promise.all([linkedTo(pid, z), fbToken()]).then(([ls, tok]) => { if(!box.isConnected) return; const me = tokenUid(tok);
       const others = ls.filter(l => l.uid !== me);
-      const own = others.filter(l => l.role === 'player'); // removing an adult's phone is refused: only children's
-      box.innerHTML = `<small>Linked: you${others.map(l => ', ' + esc(l.who || 'someone') + (l.role === 'player' ? ' (their own phone)' : '')).join('')}</small>`
-        + own.map(l => `<button class="chip" data-krm="${l.uid}">Remove ${esc(nameOfPlayer(pid, z).split(' ')[0])}’s phone</button>`).join('');
-      $$('[data-krm]', box).forEach(b => b.addEventListener('click', () => askConfirm(`Remove ${nameOfPlayer(pid, z).split(' ')[0]}’s phone?`, 'It leaves the team and sees nothing more. You can invite it again from here.', 'Remove', async () => {
-        try { await removeChildPhone(z, pid, b.dataset.krm); toast('Removed'); renderKidsTab(); } catch(e){ toast(niceErr(e)); } })));
+      box.innerHTML = `<small>Linked: you${others.map(l => ', ' + esc(l.who || 'someone') + (l.role === 'player' ? ' (their own phone)' : '')).join('')}</small>`;
     }).catch(() => { box.innerHTML = ''; });
   }
   // asking to be linked to a child: always "Request sent" (whether or not there is such a child)
@@ -4592,23 +4639,26 @@ function renderKidsTab(){
       answerApproval(z, a, yes).then(() => { toast(yes ? `Approved: ${a.who || 'they'} will be linked to ${nameOfPlayer(a.child, z)}` : 'Declined. The team admin has been told.'); renderKidsTab(); }, e => { b.disabled = false; toast(niceErr(e)); }); };
     $$('[data-apy]', box).forEach(b => b.addEventListener('click', () => answer(b, true))); $$('[data-apn]', box).forEach(b => b.addEventListener('click', () => answer(b, false)));
   })();
-  // the child's own phone: invite it, and how the invite is getting on
+  // the child's own phone: whether they have one in the team, and how it's getting on; invite it, or remove it
   for(const box of $$('[data-ki]', el)){
     const [g, pid] = box.dataset.ki.split('|'), z = zOf(g), name = esc(nameOfPlayer(pid, z).split(' ')[0]);
     const show = async () => {
-      let st = null, own = false;
-      try { [st, own] = await Promise.all([childInviteState(z, pid), linkedTo(pid, z).then(ls => ls.some(l => l.role === 'player'), () => false)]); } catch(e){}
+      let st = {state: 'none'}; try { st = await childPhoneState(z, pid); } catch(e){}
       if(!box.isConnected) return;
-      if(own && st){ forgetChildInvite(z, pid); st = null; }
-      const make = `<button class="chip on" data-kim>Invite ${name}’s phone</button>`;
-      box.innerHTML = own ? '' : !st || st.state === 'gone' ? `<div class="row-btns">${make}</div><small class="muted">A one-use invite for ${name}’s own phone, so they see their fixtures and team sheets. It lasts a week; the team admin approves the phone.</small>`
-        : st.state === 'open' ? `<div class="rcode"><div class="gcode">${fmtCode(st.code)}</div><button class="chip" data-kis>Share</button><button class="chip" data-kix>Cancel</button></div><small class="muted">Invite for ${name}’s phone · works once, until ${new Date(st.expiresAt).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short'})}</small>`
-        : st.state === 'used' ? `<small>${name}’s phone has joined. It sees nothing until the team admin approves it.</small>`
-        : `<div class="row-btns">${make}</div><small class="muted">The last invite ran out before it was used.</small>`;
+      const make = `<button class="chip on" data-kim>Invite ${name}’s phone</button>`, remove = st.adult ? '' : `<button class="chip" data-krm>Remove ${name}’s phone</button>`;
+      const line = (cls, text, btns = '') => `<div class="kstate ${cls}"><small>${text}</small>${btns}</div>`;
+      box.innerHTML = st.state === 'active' ? line('on', `Active on ${name}’s own phone`, remove)
+        : st.state === 'waiting' ? line('wait', `${name}’s phone has joined: waiting for the team admin to approve it`, remove)
+        : st.state === 'off' ? line('off', `${name}’s phone is switched off: no parent was linked. The team admin can approve it again.`, remove)
+        : st.state === 'invite' ? line('wait', `Invite sent for ${name}’s phone · works once, until ${new Date(st.expiresAt).toLocaleDateString('en-GB', {weekday: 'short', day: 'numeric', month: 'short'})}`)
+            + `<div class="rcode"><div class="gcode">${fmtCode(st.code)}</div><button class="chip" data-kis>Share</button><button class="chip" data-kix>Cancel</button></div>`
+        : line('', st.state === 'expired' ? 'The last invite ran out before it was used.' : `No phone of ${name}’s own yet. Invite one so they see their fixtures and team sheets: it works once, within a week, and the team admin approves it.`, make);
       const on = (sel, fn) => { const b = $(sel, box); if(b) b.addEventListener('click', async () => { b.disabled = true; try { await fn(); } catch(e){ toast(niceErr(e)); } show(); }); };
       on('[data-kim]', async () => { const code = await makeChildInvite(z, pid); show(); await shareText(childInviteText(z, pid, code), z.groupName, 'Invite code: ' + fmtCode(code)); });
       on('[data-kis]', () => shareText(childInviteText(z, pid, st.code), z.groupName, 'Invite code: ' + fmtCode(st.code)));
       on('[data-kix]', async () => { await cancelChildInvite(z, pid); toast('Invite cancelled'); });
+      const rm = $('[data-krm]', box); if(rm) rm.addEventListener('click', () => askConfirm(`Remove ${nameOfPlayer(pid, z).split(' ')[0]}’s phone?`, 'It leaves the team and sees nothing more. You can invite it again from here.', 'Remove', async () => {
+        try { await removeChildPhone(z, pid, st.uid); toast('Removed'); show(); } catch(e){ toast(niceErr(e)); } }));
     };
     show();
   }
@@ -4617,7 +4667,7 @@ function renderKidsTab(){
     askConfirm(`Unlink ${nameOfPlayer(pid, z)}?`, 'You will no longer see their fixtures or mark their availability. If no other parent or carer is linked, their own phone is switched off too.', 'Unlink', async () => {
       try { const n = await unlinkKid(z, pid); toast('Unlinked.' + (n ? ' ' + nameOfPlayer(pid, z).split(' ')[0] + '’s own phone was switched off: no parent is linked any more.' : '')); renderAll(); } catch(e){ toast(niceErr(e)); } }); }));
   $$('[data-kleave]', el).forEach(b => b.addEventListener('click', () => { const z = zOf(b.dataset.kleave);
-    askConfirm('Leave ' + z.groupName + '?', 'Its fixtures and drills are removed from this phone, and your children in it are unlinked. You need a code to come back.', 'Leave team', () => { if(S.sync.group !== z.group) switchGroup(z.group, true); leaveGroup(); }); }));
+    askConfirm('Leave ' + z.groupName + '?', leaveText(z) || 'Its fixtures and drills are removed from this phone. You need a code to come back.', 'Leave team', () => { if(S.sync.group !== z.group) switchGroup(z.group, true); leaveGroup(); }); }));
   for(const c of clubs) clubTeams(c.id).then(ts => {
     const box = $(`[data-kclub="${c.id}"]`, el); if(!box) return;
     const rest = ts.filter(t => !teamsOnPhone().some(z => z.group === t.code));
