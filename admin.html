@@ -23,7 +23,7 @@ h2{margin:0;font:800 21px/1.1 var(--display);text-transform:uppercase;letter-spa
 .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:10px}
 .field{display:flex;flex-direction:column;gap:6px}
 .field-label{font:700 12px/1 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
-input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;font-family:inherit}
+input,select,textarea{width:100%;background:var(--panel2);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;font-family:inherit}
 .code-in{font:800 20px/1.1 var(--display);letter-spacing:.12em;text-transform:uppercase}
 .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
 .btn{border:0;border-radius:10px;padding:10px 14px;background:var(--accent);color:var(--accent-ink);font:700 14px/1.1 var(--body);cursor:pointer}
@@ -46,10 +46,14 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
 .members .hint{margin-top:8px}
 .top{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;flex-wrap:wrap}
 [hidden]{display:none !important}
-.tabs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
+.tabs{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:4px;padding:4px;background:var(--panel);border:1px solid var(--line);border-radius:12px;position:sticky;top:8px;z-index:2}
 .tabs button{border:0;border-radius:9px;padding:10px 8px;background:none;color:var(--muted);font:700 14px/1.1 var(--body);letter-spacing:.04em;text-transform:uppercase;cursor:pointer}
 .tabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .panel{display:flex;flex-direction:column;gap:12px}
+.card.safe{border-color:color-mix(in srgb,var(--danger) 60%,var(--line))}
+.stag{font:700 11px/1 var(--body);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)} .stag.hot{color:var(--danger)}
+.smsg{white-space:pre-wrap;margin:0}
+.sdiag{font-size:12px;color:var(--muted);margin:0;word-break:break-word}
 .sw{display:flex;gap:10px;align-items:center;font-weight:600}.sw input{width:22px;height:22px;accent-color:var(--accent)}
 </style>
 </head>
@@ -71,7 +75,13 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
       <button role="tab" id="tabGroups" aria-selected="true" aria-controls="pGroups">Teams</button>
       <button role="tab" id="tabNew" aria-selected="false" aria-controls="pNew">New team</button>
       <button role="tab" id="tabClubs" aria-selected="false" aria-controls="pClubs">Clubs</button>
+      <button role="tab" id="tabSupport" aria-selected="false" aria-controls="pSupport">Support<span id="supCnt"></span></button>
     </div>
+    <section class="panel" id="pSupport" role="tabpanel" hidden>
+    <div class="top"><h2>Support requests</h2><div class="row"><label class="sw"><input type="checkbox" id="supAll"> Show closed</label><button class="btn ghost" id="supReload">Refresh</button></div></div>
+    <div id="support" class="panel"></div>
+    <p class="hint">Sent from the app by club admins, and by team admins of teams that aren't in a club. Your answer shows on their phone under Contact support → Your requests; Email opens a reply to the address they gave. Safeguarding requests are listed first.</p>
+    </section>
     <section class="panel" id="pClubs" role="tabpanel" hidden>
     <div class="card">
       <h2>New club</h2>
@@ -104,7 +114,7 @@ input,select{width:100%;background:var(--panel2);color:var(--ink);border:1px sol
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 1 Oct 2026, 09:45</p>
+  <p class="hint" style="text-align:center">Version 8 Oct 2026, 11:14</p>
 </main>
 <script>
 (() => {
@@ -318,12 +328,12 @@ const ROLES = [['admin', 'Team admin'], ['coach', 'Coach'], ['player', 'Player']
 async function showMembers(code, el){
   const box = el.querySelector('[data-members]');
   try {
-    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue, role: f.role?.stringValue || 'coach', wants: f.wants?.stringValue || ''}; })
+    const ms = (await list(`/groups/${code}/members`)).map(d => { const f = d.fields || {}; return {id: idOf(d), who: f.who?.stringValue || '(no name)', device: f.device?.stringValue || '', joined: f.at?.integerValue, seen: f.seen?.integerValue || f.at?.integerValue, role: f.role?.stringValue || 'coach', wants: f.wants?.stringValue || '', pending: f.status?.stringValue === 'pending'}; })
       .sort((a, b) => (b.seen || 0) - (a.seen || 0));
     const stale = ms.filter(m => Date.now() - (m.seen || 0) > 60 * 864e5);
     const count = r => ms.filter(m => m.role === r).length, admins = count('admin');
     box.querySelector('summary').textContent = ms.length ? `People · ${ms.length} phone${ms.length > 1 ? 's' : ''} (${ROLES.map(([k, l]) => count(k) ? count(k) + ' ' + l.toLowerCase() + (count(k) > 1 ? 's' : '') : '').filter(Boolean).join(', ')})${admins ? '' : ' · no team admin'}` : 'People · none registered yet';
-    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}ID ${esc(m.id.slice(0, 8))} · joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}</small></td>
+    box.querySelector('.mlist').innerHTML = ms.length ? `<table><thead><tr><th>Name</th><th>Role</th><th>Last active</th><th></th></tr></thead><tbody>${ms.map(m => `<tr><td>${esc(m.who)}<small>${m.device ? esc(m.device) + ' · ' : ''}ID ${esc(m.id.slice(0, 8))} · joined ${when(m.joined)}${m.wants ? ' · <b>asks for coach access</b>' : ''}${m.pending ? ' · <b>waiting for the team admin to approve</b>' : ''}</small></td>
         <td><select data-role="${esc(m.id)}" aria-label="Role for ${esc(m.who)}">${ROLES.map(([k, l]) => `<option value="${k}"${k === m.role ? ' selected' : ''}>${l}</option>`).join('')}</select></td><td>${when(m.seen)}</td><td><button class="btn ghost sm" data-rm="${esc(m.id)}">Remove</button></td></tr>`).join('')}</tbody></table>
       ${stale.length ? `<div class="row"><button class="btn ghost sm" data-rmold>Remove ${stale.length} not active for 60 days</button></div>` : ''}
       <p class="hint">Each phone or browser registers once, when it joins with an invite or code (a coach with an iPhone and a PC appears twice). Phones from before roles count as coaches. A removed phone can't see the team any more; it needs a new invite, or the player or parent code, to come back. The team admin can also manage people in the app, on their Admin tab.</p>` : '<p class="hint">Phones register when they join with an invite or code. Use Invite team admin to get the first person in.</p>';
@@ -489,12 +499,56 @@ $('#create').addEventListener('click', async () => {
   finally { $('#create').disabled = false; }
 });
 tidy($('#nCode'));
+// support requests (support/<id>): newest first, safeguarding ones on top; answer, close or reopen
+const SUP_TOPICS = {bug: 'Something isn’t working', howto: 'How do I…', safeguarding: 'Safeguarding or data protection', billing: 'Billing', idea: 'Idea or request'};
+const supWhen = t => t ? new Date(t).toLocaleString('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : '';
+async function loadSupport(){
+  const box = $('#support'); box.innerHTML = '<p class="muted">Loading…</p>';
+  try {
+    const all = (await list('/support')).map(d => { const f = d.fields || {}, g = k => f[k] ? (f[k].stringValue ?? f[k].integerValue ?? '') : '';
+      return {id: idOf(d), kind: g('kind'), club: g('club'), group: g('group'), name: g('name'), who: g('who'), topic: g('topic'), msg: g('msg'), email: g('email'), by: g('by'),
+        at: +g('at') || 0, status: g('status'), role: g('role'), version: g('version'), device: g('device'), ua: g('ua'), reply: g('reply'), repliedAt: +g('repliedAt') || 0}; });
+    const open = all.filter(r => r.status !== 'done');
+    $('#supCnt').textContent = open.length ? ` · ${open.length}` : '';
+    const rs = ($('#supAll').checked ? all : open).sort((a, b) => (b.topic === 'safeguarding' && b.status !== 'done') - (a.topic === 'safeguarding' && a.status !== 'done') || b.at - a.at);
+    box.innerHTML = rs.length ? '' : `<p class="muted">${all.length ? 'No open requests.' : 'No requests yet.'}</p>`;
+    for(const r of rs){
+      const el = document.createElement('section'), hot = r.topic === 'safeguarding' && r.status !== 'done';
+      el.className = 'card' + (hot ? ' safe' : '');
+      const subj = `Rugby Team Picker: ${SUP_TOPICS[r.topic] || r.topic} (${r.name})`;
+      el.innerHTML = `<span class="stag${hot ? ' hot' : ''}">${esc(SUP_TOPICS[r.topic] || r.topic)} · ${r.status === 'done' ? 'closed' : r.reply ? 'answered' : 'new'} · ${supWhen(r.at)}</span>
+        <h2>${esc(r.name)}</h2>
+        <p class="hint">${esc(r.who || 'No name')} · ${esc(r.role)} · ${esc(r.email)}</p>
+        <p class="smsg">${esc(r.msg)}</p>
+        <p class="sdiag">${r.kind === 'club' ? 'Club ' + esc(r.club) : 'Team join code ' + esc(fmt(r.group))} · phone ID ${esc(r.by.slice(0, 8))} (full: ${esc(r.by)}) · ${esc(r.device)} · version ${esc(r.version)}<br>${esc(r.ua)}</p>
+        ${r.reply ? `<p class="hint">Your answer, ${supWhen(r.repliedAt)}:</p><p class="smsg">${esc(r.reply)}</p>` : ''}
+        <div class="field"><label class="field-label">${r.reply ? 'Change your answer' : 'Answer (shown in their app)'}</label><textarea rows="4" data-ans>${esc(r.reply)}</textarea></div>
+        <div class="row"><button class="btn" data-s="answer">Save answer</button>
+          <a class="btn ghost" style="text-decoration:none" href="mailto:${encodeURIComponent(r.email)}?subject=${encodeURIComponent(subj)}&body=${encodeURIComponent('\n\n> ' + r.msg.replace(/\n/g, '\n> '))}">Email</a>
+          <button class="btn ghost" data-s="${r.status === 'done' ? 'open' : 'done'}">${r.status === 'done' ? 'Reopen' : 'Close'}</button></div>`;
+      el.querySelectorAll('[data-s]').forEach(b => b.addEventListener('click', async () => {
+        const k = b.dataset.s, ans = el.querySelector('[data-ans]').value.trim();
+        if(k === 'answer' && !ans) return status('Write an answer first.', 'err');
+        const fields = k === 'answer' ? {reply: str(ans), repliedAt: {integerValue: String(Date.now())}, status: str('answered')} : {status: str(k === 'done' ? 'done' : (r.reply ? 'answered' : 'new'))};
+        b.disabled = true;
+        try { await fb('PATCH', `/support/${r.id}?${Object.keys(fields).map(f => 'updateMask.fieldPaths=' + f).join('&')}`, {fields}); status(k === 'answer' ? 'Answer saved. It shows in their app.' : k === 'done' ? 'Closed.' : 'Reopened.', 'ok'); loadSupport(); }
+        catch(e){ b.disabled = false; status(e.message, 'err'); }
+      }));
+      box.appendChild(el);
+    }
+  } catch(e){ box.innerHTML = ''; status(e.message, 'err'); }
+}
+$('#supReload').addEventListener('click', loadSupport);
+$('#supAll').addEventListener('change', loadSupport);
+
 function tab(which){
-  for(const [t, pnl, k] of [['#tabGroups', '#pGroups', 'groups'], ['#tabNew', '#pNew', 'new'], ['#tabClubs', '#pClubs', 'clubs']]){ $(t).setAttribute('aria-selected', which === k); $(pnl).hidden = which !== k; }
+  for(const [t, pnl, k] of [['#tabGroups', '#pGroups', 'groups'], ['#tabNew', '#pNew', 'new'], ['#tabClubs', '#pClubs', 'clubs'], ['#tabSupport', '#pSupport', 'support']]){ $(t).setAttribute('aria-selected', which === k); $(pnl).hidden = which !== k; }
   if(which === 'new'){ $('#nName').focus(); clubNames().then(n => { $('#nClub').innerHTML = '<option value="">No club</option>' + Object.entries(n).map(([id, nm]) => `<option value="${id}">${esc(nm)}</option>`).join(''); }); }
   if(which === 'clubs') loadClubs();
+  if(which === 'support') loadSupport();
 }
 $('#tabClubs').addEventListener('click', () => tab('clubs'));
+$('#tabSupport').addEventListener('click', () => tab('support'));
 $('#tabGroups').addEventListener('click', () => tab('groups'));
 $('#tabNew').addEventListener('click', () => tab('new'));
 $('#go').addEventListener('click', signIn);
@@ -503,7 +557,7 @@ $('#reload').addEventListener('click', load);
 $('#out').addEventListener('click', () => { auth = null; keep(); status(''); show(); });
 function show(){
   $('#signin').hidden = !!auth; $('#admin').hidden = !auth; $('#out').hidden = !auth;
-  if(auth){ tab('groups'); load(); }
+  if(auth){ tab('groups'); load(); loadSupport(); }
 }
 show();
 })();
