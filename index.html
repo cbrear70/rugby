@@ -62,6 +62,7 @@ main{flex:1;min-height:0;position:relative}
 .kstate{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0}.kstate small::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}.kstate.on small::before{background:var(--ok,#5BC77A)}.kstate.wait small::before{background:var(--accent)}.kstate.off small::before{background:var(--danger,#E4573F)}
 .evcard.cancelled .evtitle{text-decoration:line-through;opacity:.7}
 .mem.upd b{white-space:normal;overflow:visible;text-overflow:clip}
+.hint a,.muted a{color:var(--accent)}
 .tabbar button{position:relative}.tabbar button.tabdot::after{content:'';position:absolute;top:5px;left:calc(50% + 9px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
 
 /* pitch */
@@ -2975,7 +2976,7 @@ function showGate(canClose){
   g.innerHTML = `<div class="gate-in">
     <div class="eyebrow">Rugby Team Picker</div><h1>${syncing() ? 'Enter a code' : 'Join your team'}</h1>
     <p class="muted">Enter the code you were given: an invite from a team or club admin, your team’s player or parent code, the club parent code, or your child’s code. Coaches share the squad, selections and drills; players and parents see their fixtures, team sheets and the drills their coaches share.</p>
-    <p class="hint"><b>No messaging, by design.</b> There’s no chat and no private messages: the app only gives updates about fixtures and team sheets. Under-18s join through a parent or carer, and the team admin approves everyone.</p>
+    <p class="hint"><b>No messaging, by design.</b> There’s no chat and no private messages: the app only gives updates about fixtures and team sheets. Under-18s join through a parent or carer, and the team admin approves everyone. ${privacyLink('How we look after your information')}.</p>
     <div class="field"><label class="field-label" for="gtCode">Code</label><input id="gtCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK" value="${pre ? fmtCode(pre) : ''}"></div>
     <div class="field"><label class="field-label" for="gtWho">Your name</label><input id="gtWho" type="text" placeholder="Shown to your team, e.g. Chris" value="${esc((S.sync||{}).who||'')}"></div>
     <div class="field"><label class="field-label" for="gtDob">Your date of birth</label><input id="gtDob" type="date" max="${ymd(new Date())}" value="${esc(S.dob || '')}">
@@ -3274,6 +3275,9 @@ async function publishRoster(){
    and the free text that's left is short (LIMITS) and logged for the team admin: groups/<id>/log/<id> =
    {kind: 'event', event, by, who, at, title, location, notes}, written with each change and never edited. */
 const LIMITS = {location: 80, notes: 300};
+// the privacy policy (cbrear70.github.io repo, privacy/index.html), linked wherever people join or ask for help
+const PRIVACY_URL = 'https://cbrear70.github.io/privacy/';
+const privacyLink = (text = 'Privacy policy') => `<a href="${PRIVACY_URL}" target="_blank" rel="noopener">${text}</a>`;
 const CANCEL_REASONS = [['weather', 'Weather'], ['pitch', 'Pitch unplayable'], ['opposition', 'Opposition cancelled'], ['other', 'Other']];
 const cancelReason = e => e.cancelled ? (CANCEL_REASONS.find(r => r[0] === e.cancelled.reason) || CANCEL_REASONS[3])[1] : '';
 const cancelText = e => e.cancelled ? 'Cancelled · ' + cancelReason(e) : '';
@@ -3952,7 +3956,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 8 Oct 2026, 22:43</p>`,
+    <p class="hint" style="text-align:center">Version 9 Oct 2026, 00:00</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4157,6 +4161,7 @@ function renderTeamTab(){
   const card = `<div class="gcard" style="--gc:${groupColour(z.group)}"><span class="eyebrow">${z.clubName ? esc(z.clubName) + ' · ' : ''}${ROLE_NAMES[z.role || 'coach']}</span><b>${esc(z.groupName)}</b><small>${viewer ? `${S.moves.length} drill${S.moves.length===1?'':'s'} from your coaches` : `${S.teams.length} selection${S.teams.length===1?'':'s'}, ${S.moves.length} drill${S.moves.length===1?'':'s'}`}</small></div>`;
   const tail = `<div class="field"><label class="field-label" for="gpWho">Your name in the team</label><div class="add-row"><input id="gpWho" type="text" value="${esc(z.who||'')}"><button class="btn ghost" id="gpWhoSave">Save</button></div></div>
     <button class="btn ghost wide" id="gpCode">Enter a code</button>
+    <p class="hint">No messaging, by design. ${privacyLink()}</p>
     ${z.role === 'player' && dobOk(S.dob) && !isAdult(S.dob) ? '<p class="hint">To leave the team, ask your parent or carer, or the team admin: they can remove this phone.</p>' : `<button class="btn danger" id="gpLeave">Leave ${esc(z.groupName)}</button>`}`;
   el.innerHTML = viewer ? `${card}
     <p class="muted">Updated ${ago(z.lastSync)}.</p>
@@ -4440,7 +4445,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Oct 2026, 22:43'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Oct 2026, 00:00'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -4455,7 +4460,7 @@ function showSupport(){
   if(!places.length) return toast('Ask your team admin, or your club admin, to contact support');
   const cur = places.find(p => (p.kind === 'club' && hatKind() === 'club' && (hat() || {}).id === p.club) || (p.kind === 'team' && syncing() && S.sync.group === p.group)) || places[0];
   openSheet(`<div class="eyebrow">Club and team admins</div><h2>Contact support</h2>
-    <p class="hint">For problems with the app itself. Please check Help first: most answers are there.</p>
+    <p class="hint">For problems with the app itself. Please check Help first: most answers are there. To see, correct or delete the information the app holds, see the ${privacyLink()}.</p>
     ${places.length > 1 ? `<div class="field"><label class="field-label" for="spWhere">About</label><select id="spWhere">${places.map((p, i) => `<option value="${i}"${p === cur ? ' selected' : ''}>${esc(p.name)} · ${p.kind === 'club' ? 'club' : 'team'}</option>`).join('')}</select></div>`
       : `<p><b>${esc(cur.name)}</b> <span class="muted">· ${cur.kind === 'club' ? 'club admin' : 'team admin'}</span></p>`}
     <div class="field"><label class="field-label" for="spTopic">What’s it about?</label><select id="spTopic">${SUPPORT_TOPICS.map(([k, l]) => `<option value="${k}">${l}</option>`).join('')}</select></div>
@@ -4730,6 +4735,7 @@ function renderKidsTab(){
       <button class="btn ghost" data-kas>Send request</button></div>`).join('')}
     <p class="hint">The team admin checks each request${teamsOnPhone().some(z => z.role !== 'player') ? ', and may ask a parent already linked to the child' : ''}. You see nothing new until you are linked.</p>
     <button class="btn wide" id="kdJoin">Enter a code</button>
+    <p class="hint">No messaging, by design. ${privacyLink()}</p>
     ${clubs.map(c => `<div class="field"><div class="field-label">More teams at ${esc(c.name)}</div><div data-kclub="${c.id}"><p class="muted">Loading…</p></div></div>`).join('')}
     ${parentTeams.length ? `<div class="field"><div class="field-label">Your teams as a parent</div>${parentTeams.map(z => `<div class="mem"><span class="sdot" style="--sc:${groupColour(z.group)}"></span><div><b>${esc(z.groupName)}</b><small>${esc(kidsOf(z).map(k => nameOfPlayer(k, z)).join(', ') || 'no child linked')}</small></div><button class="chip" data-kleave="${z.group}">Leave</button></div>`).join('')}</div>` : ''}`;
   const zOf = g => teamsOnPhone().find(x => x.group === g);
