@@ -61,6 +61,7 @@ main{flex:1;min-height:0;position:relative}
 .tabbar button[aria-selected="true"]{color:var(--accent)}
 .kstate{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:4px 0}.kstate small::before{content:'';display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}.kstate.on small::before{background:var(--ok,#5BC77A)}.kstate.wait small::before{background:var(--accent)}.kstate.off small::before{background:var(--danger,#E4573F)}
 .evcard.cancelled .evtitle{text-decoration:line-through;opacity:.7}
+.field-label.plain{text-transform:none;letter-spacing:0;font-size:13px}
 .mem.upd b{white-space:normal;overflow:visible;text-overflow:clip}
 .hint a,.muted a{color:var(--accent)}
 .tabbar button{position:relative}.tabbar button.tabdot::after{content:'';position:absolute;top:5px;left:calc(50% + 9px);width:8px;height:8px;border-radius:50%;background:var(--accent)}
@@ -3328,13 +3329,22 @@ const teamPill = z => `<span class="tpill" style="--gc:${groupColour(z.group)}">
 
 /* Fixture helpers kept apart from the screens (like the squad and selection actions): the saving, deleting and
    availability calls above, and these, work on the data only. */
+/* An event's details, the same in the editor and in a spreadsheet to import (EVENT_COLUMNS, in that order): Date, Start
+   time, End time, Opponent, Home/Away, Location, Notes and Heading (e.title). Home/Away (e.homeAway: home | away) is for
+   a match. The editor also has Type, For (a sub-squad) and Replies close. */
+const EVENT_COLUMNS = ['Date', 'Start time', 'End time', 'Opponent', 'Home/Away', 'Location', 'Notes', 'Heading'];
+const HOME_AWAY = [['home', 'Home'], ['away', 'Away']];
+const homeAwayOf = s => /^h(ome)?$/i.test((s || '').trim()) ? 'home' : /^a(way)?$/i.test((s || '').trim()) ? 'away' : '';
+const homeAwayText = e => e.type === 'match' && e.homeAway ? (HOME_AWAY.find(h => h[0] === e.homeAway) || [])[1] || '' : '';
 // a new event's starting values: a match today at 10:00
-const blankEvent = () => ({id: uid(), type: 'match', title: '', opponent: '', date: ymd(new Date()), time: '10:00', end: '', location: '', notes: ''});
-// e with the editor's fields f: {type, title, opponent, date, time, end, location, notes, sub, closeDays} (text trimmed,
-// the opponent kept only for a match, sub '' = whole squad). Returns {event}, or {error} when the date is missing.
+const blankEvent = () => ({id: uid(), type: 'match', title: '', opponent: '', homeAway: '', date: ymd(new Date()), time: '10:00', end: '', location: '', notes: ''});
+// e with the editor's fields f: {type, title, opponent, homeAway, date, time, end, location, notes, sub, closeDays} (text
+// trimmed, the opponent and home/away kept only for a match, sub '' = whole squad). Returns {event}, or {error} when the
+// date is missing.
 function eventWith(e, f){
   const tr = s => (s || '').trim();
-  const ne = Object.assign({}, e, {type: f.type, title: tr(f.title), opponent: f.type === 'match' ? tr(f.opponent) : '', date: tr(f.date), time: tr(f.time), end: tr(f.end), location: tr(f.location), notes: tr(f.notes)});
+  const ne = Object.assign({}, e, {type: f.type, title: tr(f.title), opponent: f.type === 'match' ? tr(f.opponent) : '', homeAway: f.type === 'match' ? homeAwayOf(f.homeAway) : '',
+    date: tr(f.date), time: tr(f.time), end: tr(f.end), location: tr(f.location), notes: tr(f.notes)});
   if(f.sub) ne.sub = f.sub; else delete ne.sub;
   ne.closeDays = +f.closeDays;
   if(!/^\d{4}-\d{2}-\d{2}$/.test(ne.date)) return {error: 'Pick a date.'};
@@ -3384,7 +3394,7 @@ function renderFixtures(){
     const mine = z === S.sync && coach, ref = z.group + '|' + e.id;
     return `${head}<div class="evcard ev-${e.type}${e.cancelled ? ' cancelled' : ''}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
       <div class="evbody">${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
-        <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
+        <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${homeAwayText(e) ? ' · ' + homeAwayText(e) : ''}${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
         ${e.cancelled ? `<div class="closed st-no">${esc(cancelText(e))}</div>` : resultText(e) ? `<div class="result">${esc(resultText(e))}</div>` : !evPast(e) && closeDaysOf(e) ? `<div class="closed">Replies close end of ${dayName(closeDay(e))}</div>` : ''}
         ${mine ? `<button class="avsum" data-evopen="${ref}">${avSummary(e)}</button>` : ''}
           ${rowsFor(e, z).map(pid => kidRow(e, z, pid)).join('')}
@@ -3436,7 +3446,7 @@ function showEvent(ref){
     return ps.length ? `<div class="section-h"><span class="${k ? 'st-' + k : ''}">${l} · ${ps.length}</span></div>${ps.map(p => `<div class="mem"><div><b>${esc(p.name)}</b>${k ? who(p.id) : ''}</div>${AV.map(([s, sl, sy]) => `<button class="avb ${s}${k === s ? ' on' : ''}" data-cav="${p.id}|${s}" aria-label="${esc(p.name)}: ${sl}">${sy}</button>`).join('')}</div>`).join('')}` : ''; }).join('') : '';
   const kids = kidsFor(e, z).map(pid => { const s = statusOf(e.id, pid, z); return `<div class="mem"><div><b>${esc(nameOfPlayer(pid, z))}</b></div><span class="${s ? 'st-' + s : 'muted'}">${s ? AV.find(a => a[0] === s)[1] : 'No reply yet'}</span></div>`; }).join('');
   openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.sub && subById(e.sub, z) ? ' · ' + esc(subName(e.sub, z)) : ''}</div><h2>${esc(evTitle(e))}</h2>
-    ${e.cancelled ? `<p class="warnbox">${esc(cancelText(e))}</p>` : ''}<p class="muted">${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
+    ${e.cancelled ? `<p class="warnbox">${esc(cancelText(e))}</p>` : ''}<p class="muted">${homeAwayText(e) ? homeAwayText(e) + ' · ' : ''}${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
     ${kids}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
       ${resultText(e) ? `<p class="result">${esc(resultText(e))}</p>` : ''}
@@ -3470,16 +3480,17 @@ function editEvent(e){
   const isNew = !e; e = e || blankEvent();
   let type = e.type;
   openSheet(`<div class="eyebrow">${isNew ? 'New event' : 'Edit event'}</div>
-    <div class="field"><div class="field-label">Type</div><div class="cats">${EV_TYPES.map(([k, l]) => `<button type="button" class="chip${k === type ? ' on' : ''}" data-et="${k}">${l}</button>`).join('')}</div></div>
-    <div class="field" id="evOppF"${type === 'match' ? '' : ' hidden'}><label class="field-label" for="evOpp">Opponent</label><input id="evOpp" type="text" value="${esc(e.opponent || '')}" placeholder="e.g. Hawks U12"></div>
-    ${subsOf().length ? `<div class="field"><label class="field-label" for="evSub">For</label><select id="evSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}"${e.sub === sb.id ? ' selected' : ''}>${esc(sb.name)}</option>`).join('')}</select></div>` : ''}
-    <div class="field"><label class="field-label" for="evTitle">Title</label><input id="evTitle" type="text" value="${esc(e.title || '')}" placeholder="${type === 'match' ? 'Blank = “vs” and the opponent' : 'e.g. Tuesday training'}"></div>
-    <div class="field evtimes"><div><label class="field-label" for="evDate">Date</label><input id="evDate" type="date" value="${e.date}"></div>
-      <div><label class="field-label" for="evTime">Start</label><input id="evTime" type="time" value="${e.time || ''}"></div><div><label class="field-label" for="evEnd">End</label><input id="evEnd" type="time" value="${e.end || ''}"></div></div>
-    <div class="field"><label class="field-label" for="evLoc">Where</label><input id="evLoc" type="text" maxlength="${LIMITS.location}" value="${esc(e.location || '')}" placeholder="e.g. Home, or the club's address"></div>
-    <div class="field"><label class="field-label" for="evClose">Parents’ replies close</label><select id="evClose"></select>
+    <div class="field"><div class="field-label plain">Type</div><div class="cats">${EV_TYPES.map(([k, l]) => `<button type="button" class="chip${k === type ? ' on' : ''}" data-et="${k}">${l}</button>`).join('')}</div></div>
+    ${subsOf().length ? `<div class="field"><label class="field-label plain" for="evSub">For</label><select id="evSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}"${e.sub === sb.id ? ' selected' : ''}>${esc(sb.name)}</option>`).join('')}</select></div>` : ''}
+    <div class="field"><label class="field-label plain" for="evTitle">Heading</label><input id="evTitle" type="text" value="${esc(e.title || '')}" placeholder="${type === 'match' ? 'Blank = “vs” and the opponent' : 'e.g. Tuesday training'}"></div>
+    <div class="field evtimes"><div><label class="field-label plain" for="evDate">Date</label><input id="evDate" type="date" value="${e.date}"></div>
+      <div><label class="field-label plain" for="evTime">Start time</label><input id="evTime" type="time" value="${e.time || ''}"></div><div><label class="field-label plain" for="evEnd">End time</label><input id="evEnd" type="time" value="${e.end || ''}"></div></div>
+    <div class="field evtimes" id="evOppF" style="grid-template-columns:2fr 1fr"${type === 'match' ? '' : ' hidden'}><div><label class="field-label plain" for="evOpp">Opponent</label><input id="evOpp" type="text" value="${esc(e.opponent || '')}" placeholder="e.g. Hawks U12"></div>
+      <div><label class="field-label plain" for="evHA">Home/Away</label><select id="evHA"><option value="">—</option>${HOME_AWAY.map(([k, l]) => `<option value="${k}"${e.homeAway === k ? ' selected' : ''}>${l}</option>`).join('')}</select></div></div>
+    <div class="field"><label class="field-label plain" for="evLoc">Location</label><input id="evLoc" type="text" maxlength="${LIMITS.location}" value="${esc(e.location || '')}" placeholder="e.g. Home, or the club's address"></div>
+    <div class="field"><label class="field-label plain" for="evClose">Replies close</label><select id="evClose"></select>
       <p class="hint">After this parents can’t change availability; coaches can until the end of the day of the event.</p></div>
-    <div class="field"><label class="field-label" for="evNotes">Notes</label><textarea id="evNotes" maxlength="${LIMITS.notes}" placeholder="Meet time, kit, what to bring">${esc(e.notes || '')}</textarea>
+    <div class="field"><label class="field-label plain" for="evNotes">Notes</label><textarea id="evNotes" maxlength="${LIMITS.notes}" placeholder="Meet time, kit, what to bring">${esc(e.notes || '')}</textarea>
       <p class="hint">Players and parents see this. Keep it to the practical details (up to ${LIMITS.notes} letters); the team admin can see every change.</p></div>
     <div class="row-btns"><button class="btn" id="evSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     ${isNew ? '' : '<button class="btn danger" id="evDel">Delete event</button>'}
@@ -3493,7 +3504,7 @@ function editEvent(e){
       $$('[data-et]', el).forEach(b => b.addEventListener('click', () => { type = b.dataset.et; $$('[data-et]', el).forEach(x => x.classList.toggle('on', x === b)); $('#evOppF', el).hidden = type !== 'match'; }));
       $('#evSave', el).addEventListener('click', async () => {
         const v = id => $(id, el).value, es = $('#evSub', el);
-        const {event: ne, error} = eventWith(e, {type, title: v('#evTitle'), opponent: v('#evOpp'), date: v('#evDate'), time: v('#evTime'), end: v('#evEnd'), location: v('#evLoc'), notes: v('#evNotes'), sub: es ? es.value : '', closeDays: v('#evClose')});
+        const {event: ne, error} = eventWith(e, {type, title: v('#evTitle'), opponent: v('#evOpp'), homeAway: v('#evHA'), date: v('#evDate'), time: v('#evTime'), end: v('#evEnd'), location: v('#evLoc'), notes: v('#evNotes'), sub: es ? es.value : '', closeDays: v('#evClose')});
         if(error) return $('#evErr', el).textContent = error;
         $('#evSave', el).disabled = true;
         try { await saveEvents([ne]); closeSheet(); renderAll(); toast(isNew ? 'Event added' : 'Event saved'); }
@@ -3577,9 +3588,18 @@ function parseTimeText(s){
   let h = +m[1]; if(m[3]){ if(/pm/i.test(m[3]) && h < 12) h += 12; if(/am/i.test(m[3]) && h === 12) h = 0; }
   return h < 24 ? `${pad2(h)}:${m[2] || '00'}` : '';
 }
-const CSV_FIELDS = [['date', 'Date', /date|day|when/i], ['time', 'Start time', /kick|k\.?o\b|start|^time|meet/i], ['end', 'End time', /end|finish/i], ['title', 'Title', /title|event|summary|subject|name|description/i],
-  ['opponent', 'Opponent', /oppo|against|versus|\bvs?\b/i], ['home', 'Home team', /home/i], ['away', 'Away team', /away/i], ['location', 'Where', /venue|ground|location|where|address|pitch/i],
-  ['type', 'Type', /type|category|kind|competition/i], ['notes', 'Notes', /notes?|comment|info|details/i]];
+// the columns a spreadsheet can have: ours (EVENT_COLUMNS) first, then those other exports use (a home and an away team, a type)
+const CSV_FIELDS = [['date', 'Date', /date|day|when/i], ['time', 'Start time', /kick|k\.?o\b|start|^time|meet/i], ['end', 'End time', /end|finish/i],
+  ['opponent', 'Opponent', /oppo|against|versus|\bvs?\b/i], ['homeAway', 'Home/Away', /home\s*\/\s*away|^h\s*\/\s*a$|home or away/i],
+  ['location', 'Location', /venue|ground|location|where|address|pitch/i], ['notes', 'Notes', /notes?|comment|info|details/i],
+  ['title', 'Heading', /heading|title|event|summary|subject|name|description/i],
+  ['home', 'Home team', /home/i], ['away', 'Away team', /away/i], ['type', 'Type', /type|category|kind|competition/i]];
+// a spreadsheet whose headings are exactly our columns (in any order, any capitals): read without matching
+const ourColumns = head => head.length > 0 && head.every(h => EVENT_COLUMNS.some(c => c.toLowerCase() === (h || '').trim().toLowerCase()))
+  && head.some(h => (h || '').trim().toLowerCase() === 'date');
+const columnsByName = head => { const col = {}; head.forEach((h, i) => { const f = CSV_FIELDS.find(([, l]) => l.toLowerCase() === (h || '').trim().toLowerCase()); if(f) col[f[0]] = i; }); return col; };
+// a spreadsheet to fill in: our headings and one example row
+const templateCSV = () => EVENT_COLUMNS.join(',') + '\r\n' + ['18/10/2026', '10:00', '11:30', 'Hawks U12', 'Home', 'Main pitch', 'Meet 9:30, red socks', ''].join(',') + '\r\n';
 // A chosen file's text: {events} from a calendar, {rows} from a spreadsheet (columns still to match), or {error}
 function readEventsFile(text){
   if(/BEGIN:VCALENDAR|BEGIN:VEVENT/i.test(text)){ const events = parseICS(text); return events.length ? {events} : {error: 'No events found in that calendar file.'}; }
@@ -3597,10 +3617,10 @@ function rowsToEvents(rows, col, allTraining){
   const cell = (r, k) => col[k] == null ? '' : (r[col[k]] || '').trim();
   return rows.slice(1).map(r => {
     const date = parseDateText(cell(r, 'date')); if(!date) return null;
-    const home = cell(r, 'home'), away = cell(r, 'away'), title = cell(r, 'title') || (home && away ? `${home} v ${away}` : '');
+    const home = cell(r, 'home'), away = cell(r, 'away'), title = cell(r, 'title') || (home && away ? `${home} v ${away}` : ''), homeAway = homeAwayOf(cell(r, 'homeAway'));
     const t = cell(r, 'type'), time = parseTimeText(cell(r, 'time')) || (col.time == null ? parseTimeText(cell(r, 'date').replace(/^\S+/, '')) : '');
-    return {date, time, end: parseTimeText(cell(r, 'end')), title, opponent: cell(r, 'opponent'), location: cell(r, 'location'), notes: cell(r, 'notes'),
-      type: allTraining ? 'training' : guessType(t + ' ' + title + (cell(r, 'opponent') || (home && away) ? ' vs' : '')), key: 'csv:' + [date, time, title || cell(r, 'opponent')].join('|').toLowerCase()};
+    return {date, time, end: parseTimeText(cell(r, 'end')), title, opponent: cell(r, 'opponent'), homeAway, location: cell(r, 'location'), notes: cell(r, 'notes'),
+      type: allTraining ? 'training' : guessType(t + ' ' + title + (cell(r, 'opponent') || homeAway || (home && away) ? ' vs' : '')), key: 'csv:' + [date, time, title || cell(r, 'opponent')].join('|').toLowerCase()};
   }).filter(Boolean);
 }
 // the open team's events that came from an import, by their key in the file
@@ -3613,15 +3633,24 @@ function importEvents(){
     <p class="muted">Choose a calendar file (<b>.ics</b>) or a spreadsheet saved as <b>CSV</b>.</p>
     <ul class="hint implist"><li><b>Spond, TeamSnap and most apps:</b> subscribe to the team calendar on your phone or in Google Calendar, then export it as .ics (Google Calendar → Settings → Import &amp; export).</li>
       <li><b>RFU GMS:</b> export the fixtures list as CSV (Excel), then choose it here.</li>
-      <li><b>Excel or Google Sheets:</b> one row per event with at least a date column; File → Download → CSV.</li></ul>
+      <li><b>Excel or Google Sheets:</b> one row per event with at least a date column; File → Download → CSV. With the columns <b>${EVENT_COLUMNS.join(', ')}</b>, it’s read straight in.</li></ul>
+    <button class="btn ghost wide" id="imTpl">Get a spreadsheet to fill in</button>
     <input type="file" id="imFile" accept=".ics,.csv,.txt,text/calendar,text/csv">
     <p class="hint" id="imErr" role="alert"></p><button class="btn ghost wide" data-close>Cancel</button>`,
-    el => $('#imFile', el).addEventListener('change', async () => {
+    el => { $('#imFile', el).addEventListener('change', async () => {
       const f = $('#imFile', el).files[0]; if(!f) return;
       const r = readEventsFile(await f.text());
       if(r.error) return $('#imErr', el).textContent = r.error;
-      if(r.events) previewImport(r.events, f.name); else mapColumns(r.rows, f.name);
-    }));
+      if(r.events) previewImport(r.events, f.name);
+      else if(ourColumns(r.rows[0])){ const evs = rowsToEvents(r.rows, columnsByName(r.rows[0]), false); if(!evs.length) return $('#imErr', el).textContent = 'No dates could be read from the Date column. Write them day first, e.g. 18/10/2026.'; previewImport(evs, f.name); }
+      else mapColumns(r.rows, f.name);
+    });
+    // the template: saved as a file in a browser, shared as text in the phone app (which can't save files)
+    $('#imTpl', el).addEventListener('click', async () => {
+      if(window.RTP_APP) return shareText(templateCSV(), 'Fixtures template', 'Template copied');
+      const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([templateCSV()], {type: 'text/csv'})); a.download = 'fixtures-template.csv';
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    }); });
 }
 function mapColumns(rows, fname){
   const head = rows[0], guess = guessColumns(head);
@@ -3956,7 +3985,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 9 Oct 2026, 00:00</p>`,
+    <p class="hint" style="text-align:center">Version 9 Oct 2026, 23:05</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4445,7 +4474,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Oct 2026, 00:00'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Oct 2026, 23:05'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
