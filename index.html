@@ -3797,7 +3797,14 @@ function showEvent(ref){
       if(!coachCanReply(e)) $$('[data-cav]', el).forEach(b => b.disabled = true);
       $$('[data-cav]', el).forEach(b => b.addEventListener('click', async () => {
         const [pid, st] = b.dataset.cav.split('|'); b.disabled = true;
-        try { await setAvail(e.id, pid, st); showEvent(ref); renderAll(); } catch(err){ b.disabled = false; toast(niceErr(err)); }
+        // the sheet redraws from the top: keep the coach's place by holding the next player in the list (or the one
+        // before, at the end of a group) where it was on screen, as this one moves up into its new group
+        const rowOf = id => { const x = $(`[data-cav^="${id}|"]`, sheetEl); return x && x.closest('.mem'); }, row = b.closest('.mem');
+        const near = [row.nextElementSibling, row.previousElementSibling].find(x => x && x.matches('.mem') && x.querySelector('[data-cav]'));
+        const anchor = near && near.querySelector('[data-cav]').dataset.cav.split('|')[0], top = near && near.getBoundingClientRect().top, keep = sheetEl.scrollTop;
+        try { await setAvail(e.id, pid, st); showEvent(ref); renderAll();
+          const a = anchor && rowOf(anchor); sheetEl.scrollTop = a ? a.getBoundingClientRect().top - top : keep;
+        } catch(err){ b.disabled = false; toast(niceErr(err)); }
       }));
     });
 }
@@ -4311,7 +4318,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 19:49</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 19:52</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4851,7 +4858,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 19:49'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 19:52'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
