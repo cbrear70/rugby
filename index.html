@@ -244,6 +244,9 @@ textarea{resize:vertical;min-height:84px}
 .srow.bor select{border-color:color-mix(in srgb,var(--jog) 70%,transparent)}
 .srow.bor.unav select{border-color:color-mix(in srgb,var(--danger) 60%,transparent)}
 .srow .avtag.btag{color:#8FB8FF}
+.unpicked{margin-top:14px}.unpicked summary{cursor:pointer;list-style:none}.unpicked summary::-webkit-details-marker{display:none}
+.unpicked summary span::before{content:'+';display:inline-block;width:14px;color:var(--accent)}.unpicked[open] summary span::before{content:'-'}
+.unpicked .prow{cursor:default}.unpicked .prow.off b{color:var(--muted)}
 .selstats{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 10px;font-size:14px;color:var(--muted)}
 .selstats b{color:var(--ink);font-size:18px;margin-right:3px}
 .selstats .bor b{color:#8FB8FF}
@@ -1290,6 +1293,8 @@ function renderSelect(){
   const own = t.sub && subById(t.sub) ? t.sub : '', isBorrowed = p => own && subOfPlayer(p) !== own, borrowed = p => isBorrowed(p) ? `<span class="avtag btag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
   const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
   const linked = selEventOf(t), canPlay = p => p.available !== false && avOf(p) !== 'no';
+  // the selection's own players not on this sheet: those who can play first, then the rest (folded away below the sheet)
+  const unpicked = squadSorted().filter(p => (!own || subOfPlayer(p) === own) && !numberOf(t, p.id)).sort((a, b) => canPlay(b) - canPlay(a));
   const avail = S.players.filter(p => (!own || subOfPlayer(p) === own) && canPlay(p)).length, pickedAll = starters + bench, lent = allShirts(t).filter(n => { const p = playerAt(t,n); return p && isBorrowed(p); }).length;
   el.innerHTML = `<div class="mact" style="margin-bottom:8px">${selChip()}</div>
     <div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
@@ -1300,11 +1305,14 @@ function renderSelect(){
     <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear sheet</button></div>
     ${onPitch.map(row).join('')}
     ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
+    ${unpicked.length ? `<details class="unpicked" id="selUnpicked"${S.ui.showUnpicked ? ' open' : ''}><summary class="section-h"><span>Not picked · ${unpicked.filter(canPlay).length} available${unpicked.some(p => !canPlay(p)) ? `, ${unpicked.filter(p => !canPlay(p)).length} not` : ''}</span></summary>
+      <div class="list">${unpicked.map(p => `<div class="prow${canPlay(p) ? '' : ' off'}"><span class="dot${canPlay(p) ? '' : ' off'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos || 'No position set')}${p.available === false ? ' · unavailable' : ev && avOf(p) ? ' · ' + AV.find(a => a[0] === avOf(p))[1].toLowerCase() : ev ? ' · no reply' : ''}${(w => w.length ? ' · ' + esc(w.join(', ')) : '')(pickedIn(p.id))}</small></span></div>`).join('')}</div></details>` : ''}
     <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Selection settings (tap the selection name).</p>
     ${S.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => { assign(t, +s.dataset.n, s.value || null); renderSelect(); }));
   const se = $('#selEv', el); if(se) se.addEventListener('change', () => { S.ui.selEv = se.value; save(); renderSelect(); });
+  const un = $('#selUnpicked', el); if(un) un.addEventListener('toggle', () => { S.ui.showUnpicked = un.open; save(); });
   const so = $('#selOpen', el) || $('#selMake', el); if(so) so.addEventListener('click', () => pickFor(ev));
   $('#clearSel').addEventListener('click', () => askConfirm('Clear the team sheet?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear sheet', () => {
     clearSheet(t); renderSelect(); toast('Team sheet cleared');
@@ -4091,7 +4099,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 11:47</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 11:51</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4585,7 +4593,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 11:47'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 11:51'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
