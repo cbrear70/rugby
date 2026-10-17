@@ -114,7 +114,7 @@ input,select,textarea{width:100%;background:var(--panel2);color:var(--ink);borde
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 17 Oct 2026, 18:28</p>
+  <p class="hint" style="text-align:center">Version 17 Oct 2026, 19:49</p>
 </main>
 <script>
 (() => {
@@ -136,7 +136,8 @@ const KEY = 'rtpAdmin';
 let auth = null; try { auth = JSON.parse(localStorage.getItem(KEY) || 'null'); } catch(e){}
 const keep = () => { try { auth ? localStorage.setItem(KEY, JSON.stringify(auth)) : localStorage.removeItem(KEY); } catch(e){} };
 
-const status = (t, kind) => { const s = $('#status'); s.textContent = t || ''; s.className = 'status' + (kind ? ' '+kind : ''); };
+const status = (t, kind) => { const s = $('#status'); s.textContent = t || ''; s.className = 'status' + (kind ? ' '+kind : '');
+  if(t) s.scrollIntoView({block: 'nearest', behavior: 'smooth'}); }; // it sits at the top, out of sight of the team cards below
 async function errOf(r){ try { const j = await r.json(); return (j.error && (j.error.message || j.error.status)) || 'HTTP '+r.status; } catch(e){ return 'HTTP '+r.status; } }
 async function token(){
   if(!auth) throw new Error('Signed out');

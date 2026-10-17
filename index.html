@@ -363,6 +363,8 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .banner span{flex:1}
 .banner .chip{background:rgba(0,0,0,.15);border-color:rgba(0,0,0,.25);color:var(--accent-ink)}
 .banner.lapsed{background:var(--danger);color:#fff}
+.sync-banner{width:100%;border:0;text-align:left;font-family:inherit;cursor:pointer}
+.sync-banner b{flex:none;padding:4px 10px;border-radius:999px;background:rgba(0,0,0,.15)}
 .transport{display:flex;align-items:center;gap:6px;padding:8px 12px;border-top:1px solid var(--line);background:var(--panel)}
 .transport .icon-btn{width:38px;height:38px;flex:none}
 .transport .play{background:var(--accent);color:var(--accent-ink)}
@@ -452,6 +454,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
     </button>
   </header>
   <div class="banner" id="billBanner" role="status" hidden><span id="billText"></span></div>
+  <button type="button" class="banner sync-banner" id="syncBanner" hidden><span id="syncBannerText" role="status"></span><b>Choose</b></button>
 
   <main>
     <!-- PITCH -->
@@ -688,7 +691,7 @@ function pooledMoves(d){
   for(const m of d.moves) if(m.localOnly){ m.draft = true; delete m.localOnly; }
   return d;
 }
-let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} syncDot(); }, 250); }
+let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} syncDot(); scheduleAutoSend(); }, 250); }
 const team = () => S.teams.find(t => t.id === S.currentTeamId) || S.teams[0];
 const playerById = (t,id) => S.players.find(p => p.id === id);
 // which teams have picked this player, e.g. "U13 A #10 · U13 B #22"
@@ -1369,7 +1372,7 @@ function renderSquad(){
     if(sh){ openSelection(sh.dataset.sheet); ME.moveId = null; renderAll(); showTab('select'); } else editPlayer(b.dataset.pid); }));
   const ss = $('#sqSubs', el); if(ss) ss.addEventListener('click', manageSubs);
   const sv = $('#sqView', el); if(sv) sv.addEventListener('click', () => { S.ui.squadAll = bySquad; save(); renderSquad(); });
-  const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { shareLocalPlayers(); renderSquad(); toast('Squad will be shared with the other coaches when you sync'); });
+  const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { shareLocalPlayers(); renderSquad(); toast('Squad will be shared with the other coaches in a moment'); });
 }
 // the squad split into its sub-squads (in order), then those in none; one section when there are no sub-squads
 function squadSections(list){
@@ -1461,7 +1464,7 @@ function renderSelect(){
   $$('[data-daysel]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.daysel === t.id) return; openSelection(b.dataset.daysel); ME.moveId = null; renderAll(); }));
   const pb = $('#pubSel', el); if(pb) pb.addEventListener('click', () => t.forPlayers
     ? askConfirm('Unpublish the team sheet?', 'Players and parents stop seeing it, and their fixture cards stop saying who is selected.', 'Unpublish', () => { delete t.forPlayers; save(); renderSelect(); runSync(null, true); toast('Team sheet unpublished'); })
-    : askConfirm('Publish the team sheet?', `Players and parents see who is picked${linked ? ' for ' + evTitle(linked) : ''}, and picked players get an update. Changes you make afterwards reach them when you sync.`, 'Publish', () => { t.forPlayers = true; save(); renderSelect(); runSync(null, true); toast('Team sheet published'); }));
+    : askConfirm('Publish the team sheet?', `Players and parents see who is picked${linked ? ' for ' + evTitle(linked) : ''}, and picked players get an update. Changes you make afterwards are sent on their own, shortly after you make them.`, 'Publish', () => { t.forPlayers = true; save(); renderSelect(); runSync(null, true); toast('Team sheet published'); }));
   // coach versions: open mine (made from the draft the first time), another coach's, the draft, or delete mine
   const mv = $('#myVer', el); if(mv) mv.addEventListener('click', () => { const fresh = !versionsOf(draft).some(isMyVersion), v = myVersion(draft);
     openSelection(v.id); ME.moveId = null; renderAll(); if(fresh){ toast('Your version: change players or shirts. Every coach can see it.'); runSync(null, true); } });
@@ -1826,9 +1829,9 @@ function renderMoves(){
   $$('[data-send]', el).forEach(b => b.addEventListener('click', () => sendToGroup(all.find(x => x.id===b.dataset.send))));
   $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => shareMove(all.find(x => x.id===b.dataset.togroup))));
   $$('[data-dup]', el).forEach(b => b.addEventListener('click', () => { duplicateDrill(b.dataset.dup); save(); renderMoves(); toast('Drill duplicated'); }));
-  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This drill will be deleted for every selection, and from the other coaches’ phones when you sync.' : 'This drill will be deleted for every selection on this phone.', 'Delete move', () => { deleteDrill(m.id); save(); renderMoves(); toast('Drill deleted'); }); }));
+  $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x=>x.id===b.dataset.del); askConfirm('Delete '+m.name+'?', syncing() && !m.draft ? 'This drill will be deleted for every selection, and from the other coaches’ phones.' : 'This drill will be deleted for every selection on this phone.', 'Delete move', () => { deleteDrill(m.id); save(); renderMoves(); toast('Drill deleted'); }); }));
 }
-const forPlayersToast = m => toast(m.forPlayers ? `Players and parents will see ${m.name} after you sync` : `${m.name} will be taken off players' phones when you sync`);
+const forPlayersToast = m => toast(m.forPlayers ? `Players and parents will see ${m.name} shortly` : `${m.name} will be taken off players' phones shortly`);
 function renderViewerMoves(){
   const z = S.sync, el = $('#movesList'), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
   const cats = CATS.filter(([k]) => S.moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CATS[0])[0];
@@ -1845,9 +1848,9 @@ function renderViewerMoves(){
   $$('[data-open]', el).forEach(b => b.addEventListener('click', () => openMove(b.dataset.open)));
   $$('[data-vteam]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.vteam === z.group) return; const h = hat(); S.ui.parentTeam = b.dataset.vteam; switchGroup(b.dataset.vteam, true); if(h) S.ui.hat = {kind: h.kind, id: h.id}; renderAll(); runSync(null, true); }))
 }
-function shareMove(m){ shareDrill(m); save(); renderMoves(); toast(`${m.name} will be shared with ${S.sync.groupName} when you sync`); }
+function shareMove(m){ shareDrill(m); save(); renderMoves(); toast(`${m.name} will be shared with ${S.sync.groupName} in a moment`); }
 function unshareMove(m){
-  askConfirm(`Move ${m.name} back to drafts?`, `It will be removed from the other coaches’ phones in ${S.sync.groupName} when you sync. You keep it here as a draft.`, 'Move to drafts',
+  askConfirm(`Move ${m.name} back to drafts?`, `It will be removed from the other coaches’ phones in ${S.sync.groupName}. You keep it here as a draft.`, 'Move to drafts',
     () => { unshareDrill(m); save(); renderMoves(); toast(`${m.name} is a draft again. Sync to take it off the other coaches’ phones.`); });
 }
 function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
@@ -2074,7 +2077,7 @@ $('#edTitle').addEventListener('click', () => {
     <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames · ${secs(n)}${n===20?' (standard)':''}</option>`).join('')}</select>
       <p class="hint">Extra frames are added at the end: everyone holds their last position until you give them more to do. Shortening cuts frames off the end.</p></div>
     ${syncing() ? `<label class="check"><input type="checkbox" id="mvPlayers"${m.forPlayers ? ' checked' : ''}> Share with players and parents</label>
-      <p class="hint">They can watch it but not change it. They see it after you sync${m.draft ? ', once it is shared with the coaches' : ''}.</p>` : ''}
+      <p class="hint">They can watch it but not change it. They see it shortly${m.draft ? ', once it is shared with the coaches' : ''}.</p>` : ''}
     <div class="row-btns"><button class="btn" id="mvSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn ghost" id="mvShare">Share this drill</button>
     ${fbOn() ? '<button class="btn ghost" id="mvSend">Send to another team</button>' : ''}`,
@@ -2332,7 +2335,7 @@ function teamSettings(t, isNew){
     ${subsOf().length ? `<div class="field"><label class="field-label" for="tsSub">Picks from</label><select id="tsSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}"${t.sub === sb.id ? ' selected' : ''}>${esc(sb.name)}</option>`).join('')}</select><p class="hint">Players from the rest of the squad can still be borrowed.</p></div>` : ''}
     <p class="hint" id="tsWarn"></p>
     ${syncing() ? `<label class="check"><input type="checkbox" id="tsPlayers"${t.forPlayers ? ' checked' : ''}> Show this team sheet to players and parents</label>
-      <p class="hint">They see who is picked and in which shirt, after you sync. For a fixture, this is the same as Publish on the Selection tab.</p>` : ''}
+      <p class="hint">They see who is picked and in which shirt, shortly after you save. For a fixture, this is the same as Publish on the Selection tab.</p>` : ''}
     <div class="row-btns"><button class="btn" id="tsSave">${isNew ? (S.players.length ? 'Save and pick the team' : 'Save and add squad') : 'Save'}</button><button class="btn ghost" data-close>${isNew ? 'Skip' : 'Cancel'}</button></div>
     ${isNew ? '' : `<button class="btn danger" id="tmDel">Delete “${esc(t.name)}”</button>`}`,
     el => {
@@ -2350,7 +2353,7 @@ function teamSettings(t, isNew){
         closeSheet(); teamZoomed = false; renderAll();
         if(!isNew) toast(resized ? `Now ${N}-a-side` : 'Selection settings saved'); // a new team's welcome runs from the sheet's close handler
       });
-      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its team sheet will be deleted from this phone, and from the other coaches’ phones when you sync. The squad and drills are kept.' : 'Its team sheet will be deleted from this phone. The squad and drills are kept. Share it first if you want a copy.', 'Delete selection', () => {
+      const d = $('#tmDel', el); if(d) d.addEventListener('click', () => askConfirm('Delete '+t.name+'?', syncing() && !t.localOnly ? 'Its team sheet will be deleted from this phone, and from the other coaches’ phones. The squad and drills are kept.' : 'Its team sheet will be deleted from this phone. The squad and drills are kept. Share it first if you want a copy.', 'Delete selection', () => {
         deleteSelection(t.id); ME.moveId = null; renderAll(); toast('Selection deleted');
         if(syncing() && !t.localOnly) runSync(null, true);
       }));
@@ -3023,7 +3026,9 @@ function sendToGroup(m){
 let SYNCING = false;
 // after a sync: if the drill open in the editor has gone, close it
 const dropMissingMove = () => { if(ME.moveId && !curMove()){ ME.moveId = null; ME.editing = null; } };
-async function runSync(choices, quiet){
+// auto: started by the app rather than the coach (see scheduleAutoSend), so a clash waits in a banner instead of
+// opening a sheet, and only news from the team is worth a toast
+async function runSync(choices, quiet, auto){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
     await refreshRole(); await refreshClub().catch(() => {}); loadConfig();
@@ -3036,25 +3041,48 @@ async function runSync(choices, quiet){
       if(!quiet || r.got || r.gone) toast(r.got || r.gone ? [r.got ? `${r.got} new or changed drill${r.got>1?'s':''} from your coaches` : '', r.gone ? `${r.gone} drill${r.gone>1?'s':''} taken off` : ''].filter(Boolean).join(' · ') : 'Up to date');
       return;
     }
-    const r = await syncNow(choices);
-    if(r.needs){ SYNCING = false; askTeamConflicts(r.needs, choices || {}); return; }
-    dropMissingMove();
+    const r = await syncNow(choices || {}); // quiet syncs pass null
+    if(r.needs){ SYNCING = false; showClashBanner(r.needs); if(!auto) askTeamConflicts(r.needs, choices || {}); return; }
+    showClashBanner(null); dropMissingMove();
     try { await publishShared(); await publishRoster(); await publishSheets().catch(e => { if(e.status !== 403) throw e; }); } catch(e){ if(e.status !== 403) throw e; } // 403: security rules from older versions
     try { await loadFixtures(); } catch(e){}
     const waiting = await refreshWaiting().catch(() => 0);
     stopPlay(); renderAll();
     if(waiting) toast(`${waiting} new ${waiting > 1 ? 'people are' : 'person is'} waiting for you: Admin → Waiting`);
-    else if(!quiet || r.sent || r.got) toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} drill${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
+    else if(!quiet || r.got || r.copies || (r.sent && !auto)) toast(r.sent || r.got ? `Synced · ${r.sent} sent, ${r.got} received${r.copies ? ` · ${r.copies} drill${r.copies>1?'s':''} kept as “my version”` : ''}` : 'Up to date');
     checkInboxQuietly();
   } catch(e){
     // the admin removed the group or this phone: say so rather than showing a permissions error
     let gone = !!e.gone; if(!gone && e.status===403){ try { gone = !(await fetchGroup(S.sync.group)); } catch(_){} }
     if(gone) askNewCode(); else if(e.removed) showRemoved();
-    else if(e.status===403 && billState()==='lapsed'){ renderBilling(); toast('Read only: the subscription has ended, so changes can’t be saved.'); }
+    else if(e.status===403 && billState()==='lapsed'){ renderBilling(); if(!auto) toast('Read only: the subscription has ended, so changes can’t be saved.'); }
+    else if(auto){ failedAuto = true; console.warn('Auto sync failed', e); } // no signal, most likely: try again in a minute, without a toast each time
     else toast(niceErr(e));
   }
-  finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); setTimeout(checkLinkRequests, 300); }
+  finally { SYNCING = false; $('#syncBtn').classList.remove('spin'); syncDot(); setTimeout(checkLinkRequests, 300); scheduleAutoSend(failedAuto ? 60e3 : AUTO_SEND_MS); failedAuto = false; } // edits made while it ran
 }
+// A coach's changes go to the team on their own: a short while after the last edit, and when the app is put away
+// (iOS may stop that one part way; the rest goes on the next open). It waits while a sheet is open, a drill is playing
+// or being edited, or a finger is on the screen, so nothing redraws under the coach's hands. Sync still sends at once.
+const AUTO_SEND_MS = 20e3;
+let autoT = 0, failedAuto = false, FINGER = false;
+document.addEventListener('pointerdown', () => { FINGER = true; }, true);
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, () => { FINGER = false; }, true));
+// not while a clash is waiting: the coach settles that first
+const autoSendable = () => fbOn() && syncing() && !isViewer() && billState() !== 'lapsed' && $('#syncBanner').hidden && pendingChanges() > 0;
+function scheduleAutoSend(ms = AUTO_SEND_MS){ clearTimeout(autoT); autoT = 0; if(autoSendable()) autoT = setTimeout(autoSend, ms); }
+function autoSend(){
+  autoT = 0; if(!autoSendable()) return;
+  if(SYNCING || !navigator.onLine || document.visibilityState !== 'visible' || !sheetEl.hidden || ME.playing || ME.editing || FINGER) return scheduleAutoSend(5e3);
+  runSync(null, true, true);
+}
+function sendOnHide(){ if(!autoSendable() || SYNCING || !navigator.onLine) return; clearTimeout(autoT); autoT = 0; runSync(null, true, true); }
+// a selection changed on two phones: the coach chooses when they're ready (the banner stays until it's settled)
+function showClashBanner(needs){
+  const b = $('#syncBanner'); b.hidden = !needs; if(!needs) return;
+  $('#syncBannerText').textContent = `${needs[0].name}${needs.length > 1 ? ` and ${needs.length - 1} more` : ''} changed on two phones. Nothing more is sent until you choose which to keep.`;
+}
+$('#syncBanner').addEventListener('click', () => runSync());
 // The admin changed this group's join code (or deleted the group). The new group lists the codes it replaced, so a
 // phone can only be moved to the same group; its teams, moves and unsynced changes carry straight on.
 function askNewCode(){
@@ -3163,7 +3191,7 @@ async function moveToNewCode(code){
 function switchGroup(code, quiet){
   const w = S.parked && S.parked[code]; if(!w) return;
   S.ui.hat = null;
-  stopPlay(); closeSheet(); swapWorkspace(code);
+  stopPlay(); closeSheet(); swapWorkspace(code); showClashBanner(null);
   ME.moveId = null; ME.editing = null; teamZoomed = false;
   syncDot(); renderAll(); if(!quiet) toast(`Now in ${S.sync.groupName} · last synced ${ago(S.sync.lastSync)}`);
   checkInboxQuietly();
@@ -3304,7 +3332,7 @@ async function chooseUploads(){
   if(!teams.length && !moves.length && !squad.length){ runSync(); return; }
   const opt = (kind, id, name, info, dup, sample, dupText = 'the team already has one with this name') => `<label class="opt"><input type="checkbox" data-up="${kind}:${id}"${dup||sample?'':' checked'}><span><b>${esc(name)}</b><small>${info}${dup?' · '+dupText:''}${sample?' · sample data':''}</small></span></label>`;
   openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Share with the other coaches?</h2>
-    <p class="muted">Ticked items go to the team when you sync. Unticked selections stay on this phone, and unticked drills go into your drafts; you can share them later.</p>
+    <p class="muted">Ticked items go to the team straight away. Unticked selections stay on this phone, and unticked drills go into your drafts; you can share them later.</p>
     ${teams.length ? `<div class="field-label">Selections</div><div class="opts">${teams.map(t => opt('t', t.id, t.name, pickedCount(t)+' players picked', teamNames.has(baseName(t.name)), /\(sample\)/i.test(t.name))).join('')}</div>` : ''}
     ${squad.length ? `<div class="field-label">Squad</div><div class="opts">${opt('s', 'all', squad.length+' player'+(squad.length>1?'s':''), esc(squad.slice(0, 4).map(pl => pl.name).join(', '))+(squad.length > 4 ? '…' : ''), groupHasSquad, sampleSquad, 'the team already has a squad; if unticked they stay on this phone')}</div>` : ''}
     ${moves.length ? `<div class="field-label">Drills</div><div class="opts">${moves.map(m => opt('m', m.id, m.name, iconIds(m).filter(i => i!=='ball').length+' players', moveNames.has(baseName(m.name)), isSampleMove(m))).join('')}</div>` : ''}
@@ -4283,7 +4311,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 18:28</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 19:49</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4305,9 +4333,9 @@ function showSelections(){
     ${fbOn() && !syncing() ? '<button class="btn ghost wide" id="tmJoin">Join a team</button>' : ''}`,
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { openSelection(b.dataset.sw); ME.moveId = null; ME.editing = null; closeSheet(); renderAll(); }));
-      $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id===b.dataset.togroup); x.localOnly = false; save(); closeSheet(); toast(x.name+' will go to the other coaches when you sync'); }));
+      $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id===b.dataset.togroup); x.localOnly = false; save(); closeSheet(); toast(x.name+' will go to the other coaches in a moment'); }));
       $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id === b.dataset.del); if(!x) return;
-        askConfirm('Delete ' + x.name + '?', `${pickedCount(x)} picked. ` + (syncing() && !x.localOnly ? 'Its team sheet will be deleted from this phone, and from the other coaches’ phones when you sync. The squad and drills are kept.' : 'Its team sheet will be deleted from this phone. The squad and drills are kept.'), 'Delete selection', () => {
+        askConfirm('Delete ' + x.name + '?', `${pickedCount(x)} picked. ` + (syncing() && !x.localOnly ? 'Its team sheet will be deleted from this phone, and from the other coaches’ phones. The squad and drills are kept.' : 'Its team sheet will be deleted from this phone. The squad and drills are kept.'), 'Delete selection', () => {
           deleteSelection(x.id); ME.moveId = null; renderAll(); showSelections(); toast(x.name + ' deleted');
           if(syncing() && !x.localOnly) runSync(null, true); }); }));
       $('#tmSettings', el).addEventListener('click', () => teamSettings(t));
@@ -4505,7 +4533,7 @@ function renderTeamTab(){
       : waitText(z) ? `<p class="hint">${esc(waitText(z))}</p>` : '<p class="hint">Ask your team admin to set which player this phone is (Admin → People). Then your code for your parents appears here.</p>'}</div>
     ${tail}`
   : `${card}
-    <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet.` : 'No changes waiting to be sent.'}</p>
+    <p class="muted">Last synced ${ago(z.lastSync)}. ${n ? `${n} change${n>1?'s':''} on this phone not sent yet (they go on their own shortly).` : 'No changes waiting to be sent: they go on their own shortly after you make them.'}</p>
     <button class="btn wide" id="gpSync">Sync now</button>
     <button class="btn ghost wide" id="gpHelp">Help: how do I…?</button>
     <div class="field"><div class="field-label">Codes for players and parents</div><div id="gpCodes"><p class="muted">Loading…</p></div></div>
@@ -4717,10 +4745,10 @@ const HELP = [
     <li>Tap <b>Passes</b> to set who has the ball and when it’s passed. <b>Cones</b> adds cones.</li>
     <li>Tap the drill’s name to rename it, add a description or change its length. Press play to watch it.</li></ol>
     <p>New drills are <b>drafts</b>: only you can see them until you share them (see the next question).</p>`],
-  ['Share a drill with the coaches or players', '', 'coach|moves', `<ul><li><b>Share with coaches</b> (on the drill’s card) sends it to the other coaches when you sync. <b>Move to drafts</b> takes it back off their phones.</li>
-    <li><b>Share with players</b> lets players and parents watch it (they can’t change it). They get it after you sync.</li>
+  ['Share a drill with the coaches or players', '', 'coach|moves', `<ul><li><b>Share with coaches</b> (on the drill’s card) sends it to the other coaches. <b>Move to drafts</b> takes it back off their phones.</li>
+    <li><b>Share with players</b> lets players and parents watch it (they can’t change it). They get it the next time they open the app.</li>
     <li><b>Send to another team</b> needs that team’s send code (on their Team tab).</li></ul>`],
-  ['Add a player to the squad', '', 'coach|squad', `<p>On the <b>Squad</b> tab, type the name and tap Add, then <b>Sync now</b> (Team tab). A child has to be in the squad before a parent can be linked to them.</p>`],
+  ['Add a player to the squad', '', 'coach|squad', `<p>On the <b>Squad</b> tab, type the name and tap Add. It goes to the other coaches on its own shortly afterwards. A child has to be in the squad before a parent can be linked to them.</p>`],
   ['Link a parent to a child', 'Team admin', 'admin|admin team', `<p><b>Admin → Unlinked</b>, then <b>Invite parent</b> next to the child. That sends the child’s code. When the parent enters it (tap the heading at the top → <b>Enter a code</b>), they join the team already linked to that child.</p>
     <p>If the parent has already joined with the team’s parent code, they show under <b>Parents waiting to be linked</b>: pick their child from <b>Link to…</b>.</p>
     <p>A parent can also link themselves by entering the code shown on their child’s phone (Team tab).</p>`],
@@ -4750,7 +4778,7 @@ const HELP = [
     <li>Change any shirt from its drop-down. The players who play that position are listed first. Picking someone who already has a shirt swaps the two.</li></ol>
     <p>Empty shirts are yellow, borrowed players blue. <b>Not picked</b> at the bottom lists who is left.</p>`],
   ['Publish a team sheet', '', 'coach|select fix', `<p>On the <b>Selection</b> tab, tap <b>Publish</b> next to My version. Until then players and parents see nothing about the team.</p>
-    <p>Once published, the fixture card turns green with <b>TEAM SELECTED</b>, picked players get an update, and tapping the card shows the team on the pitch. Changes you make afterwards reach them when you sync. Tap <b>Published ✓</b> to take it back.</p>`],
+    <p>Once published, the fixture card turns green with <b>TEAM SELECTED</b>, picked players get an update, and tapping the card shows the team on the pitch. Changes you make afterwards are sent on their own shortly after you make them; players and parents see them the next time they open the app. Tap <b>Published ✓</b> to take it back.</p>`],
   ['Make your own version of a team sheet', '', 'coach|select', `<p>On a team sheet, tap <b>My version</b>. You get your own copy to change, players or shirts, without touching the draft. Every coach can see it, but only you can change it.</p>
     <p>The draft lists everyone’s versions under <b>Versions</b>, with how many players and positions differ from it. Tap one to look at it, <b>Draft</b> to go back. Versions can’t be published: only the draft goes to players and parents.</p>`],
   ['Borrow a player from another sub-squad', '', 'coach|select squad', `<p>In a shirt’s drop-down, players from the other sub-squads are listed under <b>Borrow from …</b>. Anyone already starting for another team sheet that day is listed last.</p>
@@ -4823,7 +4851,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 18:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 19:49'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -5348,9 +5376,14 @@ if('serviceWorker' in navigator && location.protocol==='https:' && !INFRAME){ na
 syncDot();
 function checkJoinLink(){ if(fbOn() && /join=/.test(location.hash)) showGate(syncing()); }
 // coaches take in the group's changes (e.g. a deleted selection) on open, and on coming back to the app after a while
-const syncQuietly = () => syncing() && !isViewer() ? runSync(null, true) : checkInboxQuietly();
+const syncQuietly = () => syncing() && !isViewer() ? runSync(null, true, true) : checkInboxQuietly();
 if(fbOn() && !syncing()) showGate(false); else { checkJoinLink(); if(fbOn()) setTimeout(syncQuietly, 1200); }
-document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible' && fbOn() && syncing() && Date.now() - (S.sync.lastSync || 0) > 5 * 60e3) syncQuietly(); });
+document.addEventListener('visibilitychange', () => {
+  if(document.visibilityState === 'hidden') return sendOnHide();
+  if(fbOn() && syncing() && Date.now() - (S.sync.lastSync || 0) > 5 * 60e3) syncQuietly(); else scheduleAutoSend();
+});
+window.addEventListener('pagehide', sendOnHide);
+window.addEventListener('online', () => scheduleAutoSend(2e3));
 if(fbOn()) setTimeout(loadConfig, 600);
 if(fbOn()) setTimeout(checkLinkRequests, 2000);
 window.addEventListener('hashchange', checkJoinLink);
