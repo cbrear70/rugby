@@ -3775,7 +3775,7 @@ function showEvent(ref){
     ${!coach ? mySheets(e, z).map(sh => `<div class="section-h"><span>Team sheet${mySheets(e, z).length > 1 ? ' · ' + esc(sh.name) : ''}</span></div>${sheetPitch(sh, z, kidsOf(z))}`).join('') : ''}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
       ${resultText(e) ? `<p class="result">${esc(resultText(e))}</p>` : ''}
-      <div class="row-btns"><button class="btn" id="evPick">${linked ? `Open selection · ${pickedCount(linked)} picked` : 'Pick the team'}</button><button class="btn ghost" id="evReg">Register</button>${e.type === 'match' ? '<button class="btn ghost" id="evScore">Score</button>' : ''}<button class="btn ghost" id="evEdit">Edit</button></div>
+      <div class="row-btns">${e.type === 'match' || linked ? `<button class="btn" id="evPick">${linked ? `Open selection · ${pickedCount(linked)} picked` : 'Pick the team'}</button>` : ''}<button class="btn ghost" id="evReg">Register</button>${e.type === 'match' ? '<button class="btn ghost" id="evScore">Score</button>' : ''}<button class="btn ghost" id="evEdit">Edit</button></div>
       <p class="hint">${closeDaysOf(e) ? `Parents’ replies ${repliesOpen(e) ? 'close' : 'closed'} at the end of ${dayName(closeDay(e))}. ` : ''}${coachCanReply(e) ? 'Tap ✓ ? ✗ to mark a player yourself (until the end of the day of the event).' : 'Replies can no longer be changed.'}</p>${groups}` : ''}
     ${coach && !evPast(e) ? `<button class="btn ${e.cancelled ? '' : 'danger'} wide" id="evCancel">${e.cancelled ? 'Reinstate this event' : 'Cancel this event'}</button>` : ''}
     ${coachElsewhere ? `<button class="btn" id="evOpen">Open as coach of ${esc(z.groupName)} to see replies</button>` : ''}
@@ -3791,7 +3791,7 @@ function showEvent(ref){
           sh => $$('[data-cr]', sh).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
             try { await cancelEvent(e, b.dataset.cr); closeSheet(); renderAll(); toast(`${evTitle(e)} cancelled`); } catch(err){ b.disabled = false; toast(niceErr(err)); } })));
       });
-      $('#evPick', el).addEventListener('click', () => pickFor(e));
+      const pk = $('#evPick', el); if(pk) pk.addEventListener('click', () => pickFor(e)); // matches only (or a training sheet already made)
       $('#evReg', el).addEventListener('click', () => showRegister(e));
       const sb = $('#evScore', el); if(sb) sb.addEventListener('click', () => showScore(e));
       if(!coachCanReply(e)) $$('[data-cav]', el).forEach(b => b.disabled = true);
@@ -4318,7 +4318,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 19:52</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 20:16</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4858,7 +4858,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 19:52'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 20:16'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
