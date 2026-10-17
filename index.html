@@ -251,6 +251,8 @@ textarea{resize:vertical;min-height:84px}
 .unpicked .prow{cursor:default}.unpicked .prow.off b{color:var(--muted)}
 .chip.pubd{border-color:var(--ok);color:var(--ok)}
 .versions{margin:-4px 0 10px;align-items:center}.versions .muted{font-size:13px;margin-right:2px}
+.srow.chg-new,.srow.chg-moved{background:color-mix(in srgb,#B98CF5 16%,transparent);box-shadow:inset 3px 0 0 #B98CF5;padding-left:8px;padding-right:6px;border-radius:6px}
+.srow.chg-new select,.srow.chg-moved select{border-color:#B98CF5}.srow .avtag.chgtag{color:#CDB2FA}
 .vnote{border-color:color-mix(in srgb,#B98CF5 55%,var(--line));background:color-mix(in srgb,#B98CF5 12%,var(--panel2))}
 .srow select:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink)}.chip.on.pubd{color:var(--accent-ink)}
 .daysels{margin:-2px 0 10px;align-items:center}.daysels .muted{font-size:13px;margin-right:2px}
@@ -1416,7 +1418,13 @@ function renderSelect(){
   const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
   const avTag = p => { const s = avOf(p); return s ? `<span class="avtag st-${s}">${AV.find(a => a[0] === s)[1]}</span>` : ev ? '<span class="avtag">No reply</span>' : ''; };
   const own = t.sub && subById(t.sub) ? t.sub : '', isBorrowed = p => own && subOfPlayer(p) !== own, borrowed = p => isBorrowed(p) ? `<span class="avtag btag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
-  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no'; return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}"${ro ? ' disabled' : ''}>${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  // on a coach's version, a shirt that differs from the draft is marked: a player not in the draft, or one moved from another shirt
+  const chg = n => { if(!isVersion(t) || !draftOf(t)) return null; const p = playerAt(t,n), d = draftOf(t), was = p ? numberOf(d, p.id) : null, had = playerAt(d, n);
+    if(p && !was) return {cls: ' chg-new', tag: `New${had ? ' · instead of ' + esc(surname(had.name)) : ''}`};
+    if(p && was !== +n) return {cls: ' chg-moved', tag: `Moved from #${was}`};
+    if(!p && had) return {cls: ' chg-new', tag: `${esc(surname(had.name))} taken off`};
+    return null; };
+  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no', c = chg(n); return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}${c ? c.cls : ''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}${c ? `<span class="avtag chgtag">${c.tag}</span>` : ''}</label><select id="sel-${n}" data-n="${n}"${ro ? ' disabled' : ''}>${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
   const linked = selEventOf(draftOf(t) || t), canPlay = p => avOf(p) !== 'no';
   // coach versions (only in a team): the draft has Publish and My version; a version says whose it is and what changed
   const draft = draftOf(t) || t, vers = syncing() ? versionsOf(draft) : [], ro = readOnlySheet(t);
@@ -4275,7 +4283,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 18:18</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 18:28</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4815,7 +4823,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 18:18'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 18:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
