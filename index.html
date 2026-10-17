@@ -295,6 +295,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
 /* fixtures */
 .fixbar{margin:0 0 6px}
+.tapcard{cursor:pointer}
 .evcard{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:14px;padding:12px;margin-bottom:10px}
 .evcard.ev-match{border-left-color:var(--accent)}.evcard.ev-training{border-left-color:var(--jog)}
 .evdate{flex:none;width:50px;text-align:center;border-radius:10px;background:var(--panel2);padding:6px 0;align-self:flex-start}
@@ -351,8 +352,9 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .fcount small{display:block;font:600 9.5px/1 var(--body);color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
 
 /* sheet */
-.backdrop{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:20}
-.sheet{position:fixed;left:0;right:0;bottom:0;z-index:21;max-width:760px;margin:0 auto;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;padding:6px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:86%;overflow-y:auto;animation:up .18s ease-out;display:flex;flex-direction:column;gap:12px}
+.backdrop{position:fixed;inset:0 0 var(--tabh,0px) 0;background:rgba(0,0,0,.5);z-index:20}
+.sheet{position:fixed;left:0;right:0;bottom:var(--tabh,0px);z-index:21;max-width:760px;margin:0 auto;background:var(--panel);border-top:1px solid var(--line);border-radius:18px 18px 0 0;padding:6px 16px calc(18px + env(safe-area-inset-bottom,0px));max-height:calc(92% - var(--tabh,0px));overflow-y:auto;animation:up .18s ease-out;display:flex;flex-direction:column;gap:12px}
+.sheet.overtabs{padding-bottom:18px;border-bottom:1px solid var(--line)}
 @keyframes up{from{transform:translateY(24px);opacity:.4}to{transform:none;opacity:1}}
 @media (prefers-reduced-motion: reduce){.sheet{animation:none}}
 .grab{width:38px;height:4px;border-radius:2px;background:var(--line);margin:4px auto 2px}
@@ -970,7 +972,15 @@ function PitchCtl(svg, h){
 /* ---------- sheets ---------- */
 const sheetEl = $('#sheet'), backdrop = $('#backdrop');
 let sheetOnClose = null;
+// pop-ups sit above the tab bar, so the tabs stay in view and a tap on one closes the pop-up and goes there
+function fitAboveTabs(){
+  const tb = $('.tabbar'), r = tb && tb.offsetParent ? tb.getBoundingClientRect() : null;
+  document.documentElement.style.setProperty('--tabh', r && r.height ? Math.max(0, window.innerHeight - r.top) + 'px' : '0px');
+  sheetEl.classList.toggle('overtabs', !!(r && r.height));
+}
+window.addEventListener('resize', () => { if(!sheetEl.hidden) fitAboveTabs(); });
 function openSheet(html, mount, onClose){
+  fitAboveTabs();
   sheetEl.innerHTML = '<div class="grab"></div>' + html;
   sheetEl.hidden = false; backdrop.hidden = false; sheetEl.scrollTop = 0;
   sheetOnClose = onClose || null;
@@ -979,6 +989,11 @@ function openSheet(html, mount, onClose){
 }
 function closeSheet(){ sheetEl.hidden = true; backdrop.hidden = true; sheetEl.innerHTML = ''; const f = sheetOnClose; sheetOnClose = null; f && f(); }
 backdrop.addEventListener('click', closeSheet);
+// a fixture or drill card opens from a tap anywhere on it, not just its title; its own buttons and chips still do their own thing
+document.addEventListener('click', e => {
+  const card = e.target.closest('.tapcard'); if(!card || e.target.closest('button, a, input, select, textarea, label, summary')) return;
+  const main = card.querySelector('[data-evopen], [data-open]'); if(main) main.click();
+});
 function askConfirm(title, msg, okLabel, onOk){
   openSheet(`<h2>${esc(title)}</h2><p class="muted">${esc(msg)}</p><div class="row-btns"><button class="btn danger" id="cfOk">${esc(okLabel)}</button><button class="btn ghost" data-close>Cancel</button></div>`,
     el => $('#cfOk', el).addEventListener('click', () => { closeSheet(); onOk(); }));
@@ -1001,7 +1016,7 @@ function showTab(tab){
   if(tab !== 'moves') stopPlay();
   renderAll();
 }
-$$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+$$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => { if(!sheetEl.hidden) closeSheet(); showTab(b.dataset.tab); }));
 function renderAll(){
   document.body.classList.toggle('viewer', isViewer());
   const h = hat(), allowed = hatTabs(h);
@@ -1650,7 +1665,7 @@ function renderMoves(){
   const all = S.moves, el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
   const mv = all.filter(m => catOf(m) === cur), catName = CATS.find(c => c[0] === cur)[1];
   const card = m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length, draft = grp && m.draft;
-      return `<div class="mcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
+      return `<div class="mcard tapcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
         ${m.desc?`<div class="mdesc">${esc(m.desc)}</div>`:''}
         <div class="mmeta">${draft ? '<span class="dtag">Draft</span> ' : ''}${grp && !draft && m.forPlayers ? '<span class="dtag">Players see this</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames · ${secs(framesOf(m))}</div>
@@ -1686,7 +1701,7 @@ function renderViewerMoves(){
   el.innerHTML = `${pts.length > 1 ? `<div class="mact fixbar">${pts.map(x => `<button class="chip tchip${x === z ? ' on' : ''}" data-vteam="${x.group}" style="--gc:${groupColour(x.group)}"><span class="gdot"></span>${esc(x.groupName)}</button>`).join('')}</div>` : ''}
     <div class="section-h"><span>${esc(z.groupName)} · ${ROLE_NAMES[z.role]}</span><span>Updated ${ago(z.lastSync)}</span></div>
     ${S.moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${l}<small>${S.moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
-      ${mv.map(m => `<div class="mcard"><button class="thumb" data-open="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
+      ${mv.map(m => `<div class="mcard tapcard"><button class="thumb" data-open="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
         <div class="mmeta">${framesOf(m)} frames · ${secs(framesOf(m))}</div><div class="mact"><button class="chip on" data-open="${m.id}">Watch</button></div></div></div>`).join('')}`
     : `<div class="empty">${waitText(z) ? esc(waitText(z)) : 'Your coaches haven’t shared any drills yet. Tap the cloud button at the top to check for new ones.'}</div>`}`;
@@ -3505,7 +3520,7 @@ function renderFixtures(){
   const card = ({e, z}) => {
     const d = evDate(e), m = d.toLocaleDateString('en-GB', {month: 'long', year: 'numeric'}), head = m !== month ? `<div class="section-h"><span>${m}</span></div>` : ''; month = m;
     const mine = z === S.sync && coach, ref = z.group + '|' + e.id;
-    return `${head}<div class="evcard ev-${e.type}${e.cancelled ? ' cancelled' : ''}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
+    return `${head}<div class="evcard tapcard ev-${e.type}${e.cancelled ? ' cancelled' : ''}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
       <div class="evbody">${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
         <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${homeAwayText(e) ? ' · ' + homeAwayText(e) : ''}${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
         ${e.cancelled ? `<div class="closed st-no">${esc(cancelText(e))}</div>` : resultText(e) ? `<div class="result">${esc(resultText(e))}</div>` : !evPast(e) && closeDaysOf(e) ? `<div class="closed">Replies close end of ${dayName(closeDay(e))}</div>` : ''}
@@ -4099,7 +4114,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 11:51</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 14:57</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4593,7 +4608,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 11:51'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 14:57'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
