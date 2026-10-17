@@ -1095,7 +1095,11 @@ function editSlot(n){
 /* ---------- SQUAD ACTIONS ----------
    The squad's data changes, kept apart from the screens: each one changes S and saves, and never touches the page
    (no rendering, toasts or reading inputs). The screens below call them, then redraw. */
-const squadSorted = () => [...S.players].sort((a,b)=>a.name.localeCompare(b.name));
+// players are listed by surname (the last word of the name), then first name: "Sam de Vries" files under Vries
+const nameParts = n => { const w = String(n || '').trim().split(/\s+/); return [w.length > 1 ? w.pop() : w[0] || '', w.join(' ')]; };
+const bySurname = (a, b) => { const [as, af] = nameParts(a.name), [bs, bf] = nameParts(b.name);
+  return as.localeCompare(bs, 'en', {sensitivity: 'base'}) || af.localeCompare(bf, 'en', {sensitivity: 'base'}) || a.name.localeCompare(b.name); };
+const squadSorted = () => [...S.players].sort(bySurname);
 /* Positions a squad player plays, picked from a list: junior teams use the simpler one, adult teams split prop, back
    row, centre and wing. The team admin chooses which (groups/<id>.positions = 'junior' | 'senior', kept on the phone
    as z.positions; a phone that doesn't sync keeps its own as S.positions). Junior unless set. p.pos stays a plain
@@ -3207,7 +3211,7 @@ const fixTeam = code => fixTeams().find(z => z.group === code);
 const avKey = (evId, pid) => evId + '_' + pid;
 const statusOf = (evId, pid, z = S.sync) => { const a = fixData(z).avail[avKey(evId, pid)]; return a ? a.status : ''; };
 // squad names for availability: the coaches of the open group have its squad; otherwise the roster coaches publish
-const squadNames = (z = S.sync) => z === S.sync && !isViewer() ? S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p)})).sort((a, b) => a.name.localeCompare(b.name)) : (z.roster || []);
+const squadNames = (z = S.sync) => z === S.sync && !isViewer() ? S.players.filter(p => !p.localOnly || !syncing()).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p)})).sort(bySurname) : [...(z.roster || [])].sort(bySurname);
 const nameOfPlayer = (pid, z = S.sync) => (squadNames(z).find(p => p.id === pid) || {}).name || 'Unknown player';
 const kidsOf = z => (z.kids || []).filter(id => (z.roster || []).some(p => p.id === id));
 // the children an event is for: all of them, or those in its sub-squad
@@ -3326,7 +3330,7 @@ function showUpdates(){
 }
 // coaches: keep the published squad names in step with the squad (only when they change)
 async function publishRoster(){
-  const z = S.sync, json = JSON.stringify(S.players.filter(p => !p.localOnly).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p) || undefined})).sort((a, b) => a.name.localeCompare(b.name)));
+  const z = S.sync, json = JSON.stringify(S.players.filter(p => !p.localOnly).map(p => ({id: p.id, name: p.name, sub: subOfPlayer(p) || undefined})).sort(bySurname));
   if(z.rosterHash === hashStr(json)) return;
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/roster/all`), fields:{json:{stringValue: json}, at:{integerValue: String(Date.now())}}}}]});
   z.rosterHash = hashStr(json); save();
@@ -4045,7 +4049,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:07</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:51</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4534,7 +4538,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 10:07'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 10:51'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -5009,7 +5013,7 @@ function showRegister(e){
 function showAttendance(){
   const z = fixData(), taken = z.events.filter(e => Object.keys(z.attend || {}).some(k => k.startsWith(e.id + '_')));
   const rows = squadNames().map(p => { const mine = taken.filter(e => inSub(p, e.sub)), here = mine.filter(e => hereOf(e.id, p.id) === true).length;
-    return {p, here, of: mine.length}; }).sort((a, b) => a.p.name.localeCompare(b.p.name));
+    return {p, here, of: mine.length}; }).sort((a, b) => bySurname(a.p, b.p));
   openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>Attendance</h2>
     <p class="muted">${taken.length} event${taken.length === 1 ? '' : 's'} with a register taken.</p>
     ${rows.map(r => `<div class="mem"><div><b>${esc(r.p.name)}</b><small>${r.of ? `here at ${r.here} of ${r.of}` : 'no registers yet'}</small></div><span class="${r.of && r.here / r.of < .5 ? 'st-no' : 'st-yes'}">${r.of ? Math.round(100 * r.here / r.of) + '%' : ''}</span></div>`).join('')}
