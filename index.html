@@ -1055,23 +1055,36 @@ function showSlot(n){
       $('#slEdit', el).addEventListener('click', () => editSlot(n));
     });
 }
-function playerOptions(t, selectedId, forN, ev){
-  const opt = (p, note) => { const k = numberOf(t,p.id); note = typeof note === 'string' ? note : ''; return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}</option>`; };
-  const all = squadSorted(), own = t.sub && subById(t.sub) ? t.sub : '';
-  const sorted = own ? all.filter(p => subOfPlayer(p) === own) : all;
-  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id);
-    return ps.length ? `<optgroup label="Borrow ${sb.id ? 'from ' + esc(sb.name) : '· not in a sub-squad'}">${ps.map(p => { const st = p.available === false ? 'unavailable' : ev && statusOf(ev.id, p.id) ? AV.find(a => a[0] === statusOf(ev.id, p.id))[1].toLowerCase() : '';
-      return opt(p, st ? ' (' + st + ')' : ''); }).join('')}</optgroup>` : ''; }).join('') : '';
-  return playerOptionsOwn(t, sorted, opt, ev) + borrow;
+// the positions (from the squad's position picker) that suit each standard shirt; a shirt whose pair is missing from a
+// smaller format (e.g. one centre in 8-a-side) suits both of the pair. Replacements have none.
+const SHIRT_POS = {1: ['Loose head', 'Prop'], 2: ['Hooker'], 3: ['Tight head', 'Prop'], 4: ['Second row'], 5: ['Second row'],
+  6: ['Blindside', 'Back row'], 7: ['Openside', 'Back row'], 8: ['No.8', 'Back row'], 9: ['Scrum half'], 10: ['Fly half'],
+  11: ['Left wing', 'Wing'], 12: ['Inside centre', 'Centre'], 13: ['Outside centre', 'Centre'], 14: ['Right wing', 'Wing'], 15: ['Full back']};
+function shirtPositions(n, t = team()){
+  const slot = slotOf(n, t); if(!slot) return [];
+  const pr = PAIRS[slot], lone = pr && !FORMATS[teamSize(t)].includes(pr[0]);
+  return SHIRT_POS[slot].concat(lone ? SHIRT_POS[pr[0]] : []);
 }
-function playerOptionsOwn(t, sorted, opt, ev){
-  if(ev){ // grouped by what was said for the event; players marked unavailable in the squad go last whatever they said
-    const st = p => p.available === false ? 'off' : statusOf(ev.id, p.id) || 'none';
-    return `<option value="">— Not picked —</option>` + [['yes','Available'],['maybe','Maybe'],['none','No reply'],['no','Not available'],['off','Unavailable (squad)']]
-      .map(([k, l]) => { const ps = sorted.filter(p => st(p) === k); return ps.length ? `<optgroup label="${l}">${ps.map(opt).join('')}</optgroup>` : ''; }).join('');
-  }
-  const av = sorted.filter(p=>p.available!==false), un = sorted.filter(p=>p.available===false);
-  return `<option value="">— Not picked —</option>` + (av.length?`<optgroup label="Available">${av.map(opt).join('')}</optgroup>`:'') + (un.length?`<optgroup label="Unavailable">${un.map(opt).join('')}</optgroup>`:'');
+const playsFor = (p, want) => want.length && posList(p.pos).some(x => want.includes(x));
+// The shirt's drop-down: only players who can play (not marked unavailable in the squad, and not "no" for the event),
+// those who play the shirt's position first, then the others; for an event, Available before Maybe before No reply.
+// Whoever wears the shirt now stays in the list, whatever their availability, so the sheet doesn't change under you.
+function playerOptions(t, selectedId, forN, ev){
+  const said = p => ev ? statusOf(ev.id, p.id) || 'none' : 'yes', canPlay = p => p.available !== false && said(p) !== 'no';
+  const RANK = {yes: 0, maybe: 1, none: 2}, NOTE = {maybe: ' (maybe)', none: ' (no reply)'};
+  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (unavailable)' : ev ? NOTE[said(p)] || '' : '';
+    return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}</option>`; };
+  const group = (label, ps) => ps.length ? `<optgroup label="${esc(label)}">${ps.map(opt).join('')}</optgroup>` : '';
+  const want = forN ? shirtPositions(forN, t) : [], byStatus = ps => [...ps].sort((a, b) => RANK[said(a)] - RANK[said(b)]);
+  const all = squadSorted(), own = t.sub && subById(t.sub) ? t.sub : '', pool = all.filter(p => !own || subOfPlayer(p) === own);
+  const ok = pool.filter(canPlay), fits = ok.filter(p => playsFor(p, want)), rest = ok.filter(p => !playsFor(p, want));
+  const others = ev ? [['yes', 'Available'], ['maybe', 'Maybe'], ['none', 'No reply']].map(([k, l]) => group(fits.length ? l + ' · other positions' : l, rest.filter(p => said(p) === k))).join('')
+    : group(fits.length ? 'Other positions' : 'Available', rest);
+  const here = all.find(p => p.id === selectedId && !canPlay(p));
+  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p));
+    return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want))))); }).join('') : '';
+  return `<option value="">— Not picked —</option>` + (here ? group('Picked, now unavailable', [here]) : '')
+    + group('Plays ' + (want.filter(x => posOptions().includes(x)).join(' or ') || want[0]), byStatus(fits)) + others + borrow;
 }
 function editSlot(n){
   const t = team(), p = playerAt(t,n), col = colorOf(t,n);
@@ -4049,7 +4062,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:51</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:53</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4538,7 +4551,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 10:51'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 10:53'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
