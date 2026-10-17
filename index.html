@@ -249,7 +249,8 @@ textarea{resize:vertical;min-height:84px}
 .unpicked{margin-top:14px}.unpicked summary{cursor:pointer;list-style:none}.unpicked summary::-webkit-details-marker{display:none}
 .unpicked summary span::before{content:'+';display:inline-block;width:14px;color:var(--accent)}.unpicked[open] summary span::before{content:'-'}
 .unpicked .prow{cursor:default}.unpicked .prow.off b{color:var(--muted)}
-.chip.pubd{border-color:var(--ok);color:var(--ok)}
+.chip.pubd{border-color:var(--ok);color:var(--ok)}.chip.on.pubd{color:var(--accent-ink)}
+.daysels{margin:-2px 0 10px;align-items:center}.daysels .muted{font-size:13px;margin-right:2px}
 .selstats{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 10px;font-size:14px;color:var(--muted)}
 .selstats b{color:var(--ink);font-size:18px;margin-right:3px}
 .selstats .bor b{color:#8FB8FF}
@@ -1247,6 +1248,12 @@ function setSubPlayers(subId, pids){
 function newSub(name){ const subs = subsOf(); return {id: uid(), name, color: SUB_COLOURS[subs.length % SUB_COLOURS.length], order: subs.length}; }
 
 /* ---------- SQUAD TAB ---------- */
+// the next date with a match (not cancelled), its fixtures, and the team sheets picked for them; day '' without fixtures
+function nextMatchDay(){
+  const day = fixOn() && syncing() ? fixData().events.filter(e => e.type === 'match' && !e.cancelled && !evPast(e)).map(e => e.date).sort()[0] || '' : '';
+  const dayEvents = day ? fixData().events.filter(e => e.date === day && !e.cancelled) : [];
+  return {day, dayEvents, daySheets: day ? S.teams.filter(x => x.eventId && dayEvents.some(e => e.id === x.eventId)) : []};
+}
 function renderSquad(){
   const t = team(), el = $('#squadBody');
   const list = squadSorted();
@@ -1255,9 +1262,7 @@ function renderSquad(){
   const bySquad = subsOf().length > 0 && !S.ui.squadAll;
   // Shirts shown against each player: those on the team sheets for the next match day (one fixture or several that
   // day). Without fixtures, the open selection's, as before.
-  const day = fixOn() && syncing() ? fixData().events.filter(e => e.type === 'match' && !e.cancelled && !evPast(e)).map(e => e.date).sort()[0] : '';
-  const dayEvents = day ? fixData().events.filter(e => e.date === day && !e.cancelled) : [];
-  const daySheets = day ? S.teams.filter(x => x.eventId && dayEvents.some(e => e.id === x.eventId)) : [t];
+  const {day, dayEvents, daySheets: ds} = nextMatchDay(), daySheets = day ? ds : [t];
   const picksOf = pid => daySheets.map(x => ({x, n: numberOf(x, pid)})).filter(q => q.n);
   // a player not picked that day shows their reply for it: ✓ available, ? maybe, ✗ not (their own sub-squad's fixture first)
   const dayReply = p => { for(const e of [...dayEvents].sort((a, b) => inSub(p, b.sub) - inSub(p, a.sub))){ const k = statusOf(e.id, p.id); if(k) return k; } return ''; };
@@ -1346,7 +1351,10 @@ function renderSelect(){
   // the selection's own players not on this sheet: those who can play first, then the rest (folded away below the sheet)
   const unpicked = squadSorted().filter(p => (!own || subOfPlayer(p) === own) && !numberOf(t, p.id)).sort((a, b) => canPlay(b) - canPlay(a));
   const avail = S.players.filter(p => (!own || subOfPlayer(p) === own) && canPlay(p)).length, pickedAll = starters + bench, lent = allShirts(t).filter(n => { const p = playerAt(t,n); return p && isBorrowed(p); }).length;
-  el.innerHTML = `<div class="mact" style="margin-bottom:8px">${selChip()}</div>
+  // a button for each team sheet on the next match day, to move between them; the open one is lit
+  const nd = nextMatchDay(), dayBtns = nd.daySheets.length > 1 || (nd.daySheets.length && !nd.daySheets.includes(t))
+    ? `<div class="mact daysels"><span class="muted">${esc(evWhen(nd.dayEvents[0]).split(' · ')[0])}:</span>${nd.daySheets.map(x => `<button class="chip${x === t ? ' on' : ''}${x.forPlayers ? ' pubd' : ''}" data-daysel="${x.id}">${esc(x.name)}${x.forPlayers ? ' ✓' : ''}</button>`).join('')}</div>` : '';
+  el.innerHTML = `<div class="mact" style="margin-bottom:8px">${selChip()}</div>${dayBtns}
     <div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
     ${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
     ${t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
@@ -1365,6 +1373,7 @@ function renderSelect(){
   const un = $('#selUnpicked', el); if(un) un.addEventListener('toggle', () => { S.ui.showUnpicked = un.open; save(); });
   const so = $('#selOpen', el) || $('#selMake', el); if(so) so.addEventListener('click', () => pickFor(ev));
   // Publish: players and parents see the team sheet (and who is picked) from the next sync, which runs straight away
+  $$('[data-daysel]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.daysel === t.id) return; openSelection(b.dataset.daysel); ME.moveId = null; renderAll(); }));
   const pb = $('#pubSel', el); if(pb) pb.addEventListener('click', () => t.forPlayers
     ? askConfirm('Unpublish the team sheet?', 'Players and parents stop seeing it, and their fixture cards stop saying who is selected.', 'Unpublish', () => { delete t.forPlayers; save(); renderSelect(); runSync(null, true); toast('Team sheet unpublished'); })
     : askConfirm('Publish the team sheet?', `Players and parents see who is picked${linked ? ' for ' + evTitle(linked) : ''}, and picked players get an update. Changes you make afterwards reach them when you sync.`, 'Publish', () => { t.forPlayers = true; save(); renderSelect(); runSync(null, true); toast('Team sheet published'); }));
@@ -4182,7 +4191,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:53</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:57</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4676,7 +4685,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:53'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:57'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
