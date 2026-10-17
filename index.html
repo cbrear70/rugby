@@ -3568,6 +3568,9 @@ const fixtureList = (teams, past) => teams.flatMap(z => z.events.filter(e => pas
 // a child's line on a fixture: Yes / Maybe / No for a parent (or coach), just the answer for the child, and their shirt if picked
 // the team sheets for fixture e that players and parents see: the ones a coach has published
 const shownSheets = (e, z) => (z.sheets || []).filter(sh => sh.eventId === e.id);
+// of those, the ones this phone's player (or a parent's child) is picked on: only they show the team, the pitch and the
+// green TEAM SELECTED card. Someone not picked just sees the fixture as before.
+const mySheets = (e, z) => shownSheets(e, z).filter(sh => kidsOf(z).some(pid => sheetNum(sh, pid)));
 const sheetNum = (sh, pid) => +(Object.keys(sh.picks || {}).find(k => sh.picks[k] === pid) || 0);
 // a team sheet as players and parents see it: the pitch (not editable) with surnames, the bench below; mine = shirts to ring
 function sheetPitch(sh, z, mine = []){
@@ -3614,7 +3617,7 @@ function renderFixtures(){
     const d = evDate(e), m = d.toLocaleDateString('en-GB', {month: 'long', year: 'numeric'}), head = m !== month ? `<div class="section-h"><span>${m}</span></div>` : ''; month = m;
     const mine = z === S.sync && coach, ref = z.group + '|' + e.id;
     // a fixture whose team sheet is published stands out, for coaches and for players and parents alike
-    const pubd = !e.cancelled && (mine ? S.teams.some(t => t.eventId === e.id && t.forPlayers) : shownSheets(e, z).length > 0);
+    const pubd = !e.cancelled && (mine ? S.teams.some(t => t.eventId === e.id && t.forPlayers) : mySheets(e, z).length > 0);
     return `${head}<div class="evcard tapcard ev-${e.type}${e.cancelled ? ' cancelled' : ''}${pubd ? ' pubd' : ''}" data-ev="${e.id}"><div class="evdate"><small>${d.toLocaleDateString('en-GB', {weekday: 'short'})}</small><b>${d.getDate()}</b><small>${d.toLocaleDateString('en-GB', {month: 'short'})}</small></div>
       <div class="evbody">${pubd ? '<div class="evsel">Team selected</div>' : ''}${multi ? teamPill(z) : ''}<button class="evtitle" data-evopen="${ref}">${esc(evTitle(e))}</button>
         <div class="evmeta"><span class="evtag">${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}</span>${homeAwayText(e) ? ' · ' + homeAwayText(e) : ''}${e.sub && subById(e.sub, z) ? ' ' + subTag(e.sub, z) : ''}${e.time ? ' · ' + e.time + (e.end ? '–' + e.end : '') : ''}${e.location ? ' · ' + esc(e.location) : ''}</div>
@@ -3688,7 +3691,7 @@ function showEvent(ref){
   openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.sub && subById(e.sub, z) ? ' · ' + esc(subName(e.sub, z)) : ''}</div><h2>${esc(evTitle(e))}</h2>
     ${e.cancelled ? `<p class="warnbox">${esc(cancelText(e))}</p>` : ''}<p class="muted">${homeAwayText(e) ? homeAwayText(e) + ' · ' : ''}${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
     ${kids}
-    ${!coach ? shownSheets(e, z).map(sh => `<div class="section-h"><span>Team sheet${shownSheets(e, z).length > 1 ? ' · ' + esc(sh.name) : ''}</span></div>${sheetPitch(sh, z, kidsFor(e, z).concat(kidsOf(z)))}`).join('') : ''}
+    ${!coach ? mySheets(e, z).map(sh => `<div class="section-h"><span>Team sheet${mySheets(e, z).length > 1 ? ' · ' + esc(sh.name) : ''}</span></div>${sheetPitch(sh, z, kidsOf(z))}`).join('') : ''}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
       ${resultText(e) ? `<p class="result">${esc(resultText(e))}</p>` : ''}
       <div class="row-btns"><button class="btn" id="evPick">${linked ? `Open selection · ${pickedCount(linked)} picked` : 'Pick the team'}</button><button class="btn ghost" id="evReg">Register</button>${e.type === 'match' ? '<button class="btn ghost" id="evScore">Score</button>' : ''}<button class="btn ghost" id="evEdit">Edit</button></div>
@@ -4227,7 +4230,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 16:10</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 16:14</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4765,7 +4768,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 16:10'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 16:14'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
