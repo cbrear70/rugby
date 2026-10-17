@@ -239,6 +239,14 @@ textarea{resize:vertical;min-height:84px}
 .srow.open select{border-color:var(--accent);color:var(--muted)}
 .srow.open select option,.srow.open select optgroup{color:var(--ink)}
 .srow label small.tofill{color:var(--accent);font-weight:600}
+/* a player borrowed from another sub-squad: blue, apart from the yellow of an empty shirt and the red of unavailable */
+.srow.bor{background:color-mix(in srgb,var(--jog) 14%,transparent);box-shadow:inset 3px 0 0 var(--jog);padding-left:8px;padding-right:6px;border-radius:6px}
+.srow.bor select{border-color:color-mix(in srgb,var(--jog) 70%,transparent)}
+.srow.bor.unav select{border-color:color-mix(in srgb,var(--danger) 60%,transparent)}
+.srow .avtag.btag{color:#8FB8FF}
+.selstats{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 10px;font-size:14px;color:var(--muted)}
+.selstats b{color:var(--ink);font-size:18px;margin-right:3px}
+.selstats .bor b{color:#8FB8FF}
 
 /* moves */
 .mcard{display:grid;grid-template-columns:62px 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
@@ -1279,10 +1287,12 @@ function renderSelect(){
   const N = teamSize(t), B = benchSize(t), onPitch = pitchNums(t), subs = benchNums(t);
   const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
   const avTag = p => { const s = avOf(p); return s ? `<span class="avtag st-${s}">${AV.find(a => a[0] === s)[1]}</span>` : ev ? '<span class="avtag">No reply</span>' : ''; };
-  const own = t.sub && subById(t.sub) ? t.sub : '', borrowed = p => own && subOfPlayer(p) !== own ? `<span class="avtag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
-  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}${p?'':' open'}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
-  const linked = selEventOf(t);
+  const own = t.sub && subById(t.sub) ? t.sub : '', isBorrowed = p => own && subOfPlayer(p) !== own, borrowed = p => isBorrowed(p) ? `<span class="avtag btag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
+  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  const linked = selEventOf(t), canPlay = p => p.available !== false && avOf(p) !== 'no';
+  const avail = S.players.filter(p => (!own || subOfPlayer(p) === own) && canPlay(p)).length, pickedAll = starters + bench, lent = allShirts(t).filter(n => { const p = playerAt(t,n); return p && isBorrowed(p); }).length;
   el.innerHTML = `<div class="mact" style="margin-bottom:8px">${selChip()}</div>
+    <div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
     ${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
     ${t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
     : up.length ? `<div class="field"><label class="field-label" for="selEv">Availability for</label><select id="selEv"><option value=""${ev ? '' : ' selected'}>No event</option>${up.map(e => `<option value="${e.id}"${ev && ev.id === e.id ? ' selected' : ''}>${esc(evWhen(e).split(' · ')[0])} · ${esc(evTitle(e))}</option>`).join('')}</select>
@@ -4081,7 +4091,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 11:30</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 11:47</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4575,7 +4585,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 11:30'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 11:47'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
