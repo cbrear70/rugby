@@ -438,6 +438,9 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
       <span class="tn-wrap"><small class="gn" id="groupName" hidden></small><small class="testas" id="testAs" hidden></small><span class="tn" id="teamName">Team</span></span>
       <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
+    <button class="icon-btn help-btn" id="helpBtn" aria-label="Help for this screen" title="Help">
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M9.6 9.4a2.5 2.5 0 014.8.9c0 1.7-2.4 2-2.4 3.6" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/><circle cx="12" cy="17" r="1.15" fill="currentColor"/></svg>
+    </button>
     <button class="icon-btn sync-btn" id="syncBtn" aria-label="Sync with your team" title="Sync" hidden>
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18.5h10.5a4 4 0 00.6-7.95A5.5 5.5 0 007.4 9.1 4.7 4.7 0 007 18.5z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/><path class="arr" d="M9.6 13.6a2.6 2.6 0 014.5-1.5M14.4 14.4a2.6 2.6 0 01-4.5 1.5M14.3 10.9v1.4h-1.4M9.7 17.1v-1.4h1.4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
       <i class="dot-badge"></i>
@@ -3044,6 +3047,7 @@ function syncDot(){
 }
 const ago = t => { if(!t) return 'never'; const s = (Date.now()-t)/1000; return s < 60 ? 'just now' : s < 3600 ? Math.round(s/60)+' min ago' : s < 86400 ? Math.round(s/3600)+' h ago' : new Date(t).toLocaleDateString('en-GB'); };
 $('#syncBtn').addEventListener('click', () => syncing() ? runSync() : showGate(true));
+$('#helpBtn').addEventListener('click', () => showHelp());
 
 // A phone can belong to several groups. The active group's data lives in S.teams, S.moves, S.currentTeamId and S.sync
 // as before; the others wait in S.parked[joinCode] and are swapped in when you switch.
@@ -4223,7 +4227,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 16:01</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 16:10</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4644,60 +4648,104 @@ function renderAdminTab(){
   $('#gpInvA', el).addEventListener('click', () => invite($('#gpInvA', el), 'admin'));
 }
 
-/* Help: how-to answers for coaches and admins. Static text in the app, so nothing is sent anywhere, and players and
-   parents never see it (they have no way to ask questions or message anyone) */
+/* Help: how-to answers, static text in the app (nothing is sent anywhere). Each is [question, label, 'who|screens', answer]:
+   who is coach, admin (team admins only), parent, player or club; screens are the tabs it's about (* for any). The ? at
+   the top shows only what's for your role, this screen's answers first. Players and parents get no support contact:
+   they ask their coach or team admin in person. */
 const canHelp = () => hatsOnPhone().some(x => x.kind === 'coach' || x.kind === 'club');
 const HELP = [
-  ['Create a drill (a move)', '', `<ol><li>Open the <b>Drills</b> tab and pick <b>Forwards, Backs, Penalty or Skills</b>.</li>
+  ['Create a drill (a move)', '', 'coach|moves', `<ol><li>Open the <b>Drills</b> tab and pick <b>Forwards, Backs, Penalty or Skills</b>.</li>
     <li>Tap <b>New … drill</b> and tick the shirts involved (and the ball).</li>
     <li>Drag each shirt to where it starts. Tap a shirt to see its path, and drag the ring or dot at the end of the path to where it finishes.</li>
     <li>Double-tap a shirt for its Movement view: when it starts, how long the run takes, extra runs and speeds.</li>
     <li>Tap <b>Passes</b> to set who has the ball and when it’s passed. <b>Cones</b> adds cones.</li>
     <li>Tap the drill’s name to rename it, add a description or change its length. Press play to watch it.</li></ol>
     <p>New drills are <b>drafts</b>: only you can see them until you share them (see the next question).</p>`],
-  ['Share a drill with the coaches or players', '', `<ul><li><b>Share with coaches</b> (on the drill’s card) sends it to the other coaches when you sync. <b>Move to drafts</b> takes it back off their phones.</li>
+  ['Share a drill with the coaches or players', '', 'coach|moves', `<ul><li><b>Share with coaches</b> (on the drill’s card) sends it to the other coaches when you sync. <b>Move to drafts</b> takes it back off their phones.</li>
     <li><b>Share with players</b> lets players and parents watch it (they can’t change it). They get it after you sync.</li>
     <li><b>Send to another team</b> needs that team’s send code (on their Team tab).</li></ul>`],
-  ['Add a player to the squad', '', `<p>On the <b>Squad</b> tab, type the name and tap Add, then <b>Sync now</b> (Team tab). A child has to be in the squad before a parent can be linked to them.</p>`],
-  ['Link a parent to a child', 'Team admin', `<p><b>Admin → Unlinked</b>, then <b>Invite parent</b> next to the child. That sends the child’s code. When the parent enters it (tap the heading at the top → <b>Enter a code</b>), they join the team already linked to that child.</p>
+  ['Add a player to the squad', '', 'coach|squad', `<p>On the <b>Squad</b> tab, type the name and tap Add, then <b>Sync now</b> (Team tab). A child has to be in the squad before a parent can be linked to them.</p>`],
+  ['Link a parent to a child', 'Team admin', 'admin|admin team', `<p><b>Admin → Unlinked</b>, then <b>Invite parent</b> next to the child. That sends the child’s code. When the parent enters it (tap the heading at the top → <b>Enter a code</b>), they join the team already linked to that child.</p>
     <p>If the parent has already joined with the team’s parent code, they show under <b>Parents waiting to be linked</b>: pick their child from <b>Link to…</b>.</p>
     <p>A parent can also link themselves by entering the code shown on their child’s phone (Team tab).</p>`],
-  ['Remove a parent', 'Team admin', `<ul><li><b>Linked to the wrong child, but should stay in the team:</b> Admin → <b>Linked</b> → tap the child → <b>Remove link</b> next to that person. Their other children are left alone.</li>
+  ['Remove a parent', 'Team admin', 'admin|admin', `<ul><li><b>Linked to the wrong child, but should stay in the team:</b> Admin → <b>Linked</b> → tap the child → <b>Remove link</b> next to that person. Their other children are left alone.</li>
     <li><b>Out of the team altogether:</b> Admin → <b>People</b> → <b>Remove</b> (tap twice). They need a new code to come back.</li>
     <li>If they still have the child’s code, also tap <b>New code</b> next to the child so the old code can’t link them again. Parents already linked stay linked.</li></ul>`],
-  ['A child has a new phone', 'Team admin', `<ol><li>On the new phone, open the app. On an iPhone, add it to the home screen first and open it from there, not from a link in Messages.</li>
+  ['A child has a new phone', 'Team admin', 'admin|admin', `<ol><li>On the new phone, open the app. On an iPhone, add it to the home screen first and open it from there, not from a link in Messages.</li>
     <li>Tap <b>Enter a code</b> and type the team’s <b>player code</b> (Admin → Codes, or the coach’s Team tab).</li>
     <li>On your phone: Admin → <b>People</b>, find the new phone and tap <b>Which player?</b> to pick the child.</li>
     <li>Remove the old phone from <b>People</b> (tap Remove twice), especially if it has been passed on to someone else.</li></ol>
     <p>The child’s links to their parents belong to the child, not the phone, so the parents don’t need to do anything.</p>`],
-  ['A parent wants it on a phone and a laptop', '', `<p>Yes. Each device counts as its own person in the team, so link each one:</p>
+  ['A parent wants it on a phone and a laptop', '', 'coach|admin team', `<p>Yes. Each device counts as its own person in the team, so link each one:</p>
     <ol><li>On the laptop, open <b>${esc(location.origin + location.pathname)}</b> in a web browser.</li>
     <li>Tap <b>Enter a code</b> and type the child’s code (from you, or on the parent’s phone: Children tab, under the child). Use a name like “Sam (laptop)” so you can tell them apart.</li></ol>
     <p>Both devices then show the same child and can answer availability. Each one appears separately in Admin → People.</p>
     <p>On an iPhone, the home-screen app and Safari count as two different devices too. Parents should use the home-screen app.</p>`],
-  ['A parent has a second child', '', `<ul><li><b>Same team:</b> make sure the second child is in the squad, then send the parent that child’s code (Admin → Unlinked → <b>Invite parent</b>). They enter it from their Children tab → <b>Enter a code</b>. Or, as team admin: Admin → tap the child → <b>Link</b> next to the parent.</li>
+  ['A parent has a second child', '', 'coach|admin team', `<ul><li><b>Same team:</b> make sure the second child is in the squad, then send the parent that child’s code (Admin → Unlinked → <b>Invite parent</b>). They enter it from their Children tab → <b>Enter a code</b>. Or, as team admin: Admin → tap the child → <b>Link</b> next to the parent.</li>
     <li><b>Another team:</b> the parent needs that child’s code from the other team’s admin. If they joined with a club parent code, they can also join from their Children tab → <b>More teams at …</b> → <b>Join as parent</b>, then enter the child’s code.</li></ul>
     <p>Both children then appear together on the parent’s Children tab.</p>`],
-  ['Change teams', '', `<ul><li>Tap the heading at the top (it shows your role and team) to open <b>Your roles</b>, then tap the team you want. Each team keeps its own squad, selections and drills.</li>
+  ['Change teams', '', 'coach|*', `<ul><li>Tap the heading at the top (it shows your role and team) to open <b>Your roles</b>, then tap the team you want. Each team keeps its own squad, selections and drills.</li>
     <li>To join another team, tap <b>Enter a code</b> on the same screen and type the invite you were given.</li>
     <li>To switch between selections in the same team (e.g. Saxons and Vikings), use the chip at the top of the Pitch or Selection tab.</li></ul>`],
-  ['Add another coach or team admin', 'Team admin', `<p>Admin → <b>Invites</b> → <b>Invite a coach</b> or <b>Invite a team admin</b>, and send it. Each invite works once, on one phone. To make someone already in the team a coach, change their role in Admin → <b>People</b>.</p>`],
-  ['Someone says the app shows they were removed', '', `<p>Usually this is an iPhone that joined from a link: the link opened in Safari, but they’re using the home-screen app, which counts as another device. Ask them to open the home-screen app, tap <b>Enter a code</b> and type the code there. Then remove the extra Safari entry from Admin → People.</p>`],
+  ['Add another coach or team admin', 'Team admin', 'admin|admin team', `<p>Admin → <b>Invites</b> → <b>Invite a coach</b> or <b>Invite a team admin</b>, and send it. Each invite works once, on one phone. To make someone already in the team a coach, change their role in Admin → <b>People</b>.</p>`],
+  ['Someone says the app shows they were removed', '', 'coach|admin team', `<p>Usually this is an iPhone that joined from a link: the link opened in Safari, but they’re using the home-screen app, which counts as another device. Ask them to open the home-screen app, tap <b>Enter a code</b> and type the code there. Then remove the extra Safari entry from Admin → People.</p>`],
+  ['Pick the team for a fixture', '', 'coach|fix select', `<ol><li>On <b>Fixtures</b>, tap the fixture, then <b>Pick the team</b>.</li>
+    <li>A new team sheet fills itself from the players who said they’re <b>Available</b>: as many as possible in a position they play, the rest on the bench, then those who said <b>Maybe</b> at the end of the bench.</li>
+    <li>Change any shirt from its drop-down. The players who play that position are listed first. Picking someone who already has a shirt swaps the two.</li></ol>
+    <p>Empty shirts are yellow, borrowed players blue. <b>Not picked</b> at the bottom lists who is left.</p>`],
+  ['Publish a team sheet', '', 'coach|select fix', `<p>On the <b>Selection</b> tab, tap <b>Publish</b> next to Clear sheet. Until then players and parents see nothing about the team.</p>
+    <p>Once published, the fixture card turns green with <b>TEAM SELECTED</b>, picked players get an update, and tapping the card shows the team on the pitch. Changes you make afterwards reach them when you sync. Tap <b>Published ✓</b> to take it back.</p>`],
+  ['Borrow a player from another sub-squad', '', 'coach|select squad', `<p>In a shirt’s drop-down, players from the other sub-squads are listed under <b>Borrow from …</b>. Anyone already starting for another team sheet that day is listed last.</p>
+    <p>Borrowed players show in blue on the team sheet and in the fixture’s availability list. Their own team’s fixture lists them under <b>Playing elsewhere</b>.</p>`],
+  ['Mark a player available or not', '', 'coach|fix', `<p>Tap the fixture, then <b>✓ ? ✗</b> next to the player. Coaches can do this until the end of the day of the fixture, even after parents’ replies have closed.</p>
+    <p>Whether someone can play is set per fixture: there is no squad-wide “unavailable” any more. For an injury, mark them ✗ on each fixture.</p>`],
+  ['Set the positions a player plays', '', 'coach|squad', `<p>Tap the player on the <b>Squad</b> tab, open <b>Positions</b> and tick every position they play. They’re listed first in the drop-down for those shirts.</p>
+    <p>The team admin chooses <b>Junior</b> positions (prop, back row, centre, wing) or <b>Adult</b> ones (tight head, openside, inside centre…) at the bottom of the Squad tab.</p>`],
+  ['Sub-squads', '', 'coach|squad select', `<p><b>Squad → Sub-squads</b> splits the squad (e.g. Bulls and Bears). Each selection and fixture picks from one sub-squad and can borrow from the others.</p>
+    <p><b>By squad ⇄</b> on the Squad tab switches between the sub-squads and one list of everyone. Tap a player’s shirt there to open the team sheet they’re on.</p>`],
+  ['Delete a duplicate team sheet', 'Team admin', 'admin|select pitch', `<p>Tap the selection name at the top of the Selection or Pitch tab, then <b>Delete</b> next to the one to remove. It goes from every coach’s phone, and from players’ and parents’, when the app syncs (it does on its own when opened).</p>`],
+  ['Say whether your child can play', '', 'parent|fix', `<p>On <b>Fixtures</b>, tap <b>Yes</b>, <b>Maybe</b> or <b>No</b> under your child’s name. You can change it until replies close (the card says when). After that, tell the coach in person.</p>`],
+  ['See if your child has been picked', '', 'parent|fix', `<p>When the coach publishes the team, the fixture card turns green with <b>TEAM SELECTED</b>, and your child’s line says <b>Selected</b> with their shirt number and position. You also get an update.</p>
+    <p>Tap the card to see the whole team on the pitch, with your child’s shirt ringed in yellow.</p>`],
+  ['See if you’ve been picked', '', 'player|fix', `<p>When the coach publishes the team, the fixture card turns green with <b>TEAM SELECTED</b>, and your line says <b>Selected</b> with your shirt number and position. You also get an update.</p>
+    <p>Tap the card to see the whole team on the pitch, with your shirt ringed in yellow.</p>`],
+  ['Mark your child as there', '', 'parent|fix', `<p>On the day, tap <b>Mark as there</b> under your child on the fixture card. Tap again to undo it, until the coach takes the register.</p>`],
+  ['What’s new: updates', '', 'parent player|fix', `<p><b>Updates</b> on the Fixtures tab lists what has changed: new, moved or cancelled fixtures, and being picked. In the phone app these also come as notifications.</p>`],
+  ['Watch the drills', '', 'parent player|moves', `<p>The <b>Drills</b> tab has the drills your coaches have shared. Tap one and press play. You can’t change them.</p>`],
+  ['Link another child, or another team', '', 'parent|kids', `<p>On the <b>Children</b> tab, tap <b>Enter a code</b> and type the child’s code from their team admin. If you joined through a club, <b>More teams at …</b> lists the club’s other teams to join as a parent.</p>`],
+  ['Your child’s own phone', '', 'parent|kids', `<p>On the <b>Children</b> tab, tap <b>Invite … ’s phone</b> under your child and send them the code. Their phone joins as them. You can remove it from the same place.</p>`],
+  ['Use the app on another phone or laptop', '', 'parent|kids', `<p>Each device joins separately: on the other one, open the app and enter your child’s code (Children tab, under the child). On an iPhone, use the home-screen app rather than Safari: they count as two devices.</p>`],
+  ['Link your parents', '', 'player|team', `<p>Your <b>Team</b> tab shows your code for your parents or carers. When they enter it, the team admin (or a parent already linked to you) approves them.</p>`],
+  ['Switch team or role', '', 'parent player club|*', `<p>Tap the heading at the top to open <b>Your roles</b>, then tap the team or role you want. <b>Enter a code</b> there joins another team.</p>`],
+  ['Add a team to the club', '', 'club|cteams', `<p><b>Teams</b> → type the name under <b>New team</b> → <b>Create</b>. Tick <b>Youth team</b> for under-18s. Then tap <b>Invite admin</b> next to it and send the code to whoever runs the team.</p>`],
+  ['Youth teams and adult positions', '', 'club|cteams', `<p>On <b>Teams</b>, <b>Youth</b> means under-18s join through a parent, not with the player code. <b>Adult positions</b> gives the team tight head, openside, inside centre and so on instead of the junior prop, back row, centre and wing.</p>`],
+  ['The club parent code', '', 'club|cpeople', `<p>Parents who join with the club parent code can then join any of the club’s teams from their Children tab. <b>New code</b> stops the old one working for anyone new.</p>`],
+  ['Every team’s fixtures', '', 'club|ccal', `<p>The <b>Calendar</b> tab lists every team’s fixtures together, so clashes are easy to spot.</p>`],
 ];
+const HELP_ROLE = {coach: 'Coaches', parent: 'Parents', player: 'Players', club: 'Club admins'};
 function showHelp(){
-  const items = HELP.map(([q, who, a], i) => `<details data-h="${i}"><summary>${esc(q)}${who ? `<small>${who}</small>` : ''}</summary><div class="hbody">${a}</div></details>`).join('');
-  openSheet(`<div class="eyebrow">Coaches and admins</div><h2>Help</h2>
+  // whose help: the role in use (a phone that doesn't sync is a coach, and its own admin); team admin items only for them
+  const role = hatKind() || 'coach', admin = role === 'coach' && (!syncing() || isGroupAdmin()), staff = role === 'coach' || role === 'club';
+  const forMe = who => who.split(' ').some(w => w === role || (w === 'admin' && admin));
+  const mine = HELP.map((h, i) => [h, i]).filter(([h]) => forMe(h[2].split('|')[0]));
+  const here = ([h]) => { const t = h[2].split('|')[1].split(' '); return t.includes(TAB); };
+  const item = ([[q, who, , a], i]) => `<details data-h="${i}"><summary>${esc(q)}${who && admin ? `<small>${who}</small>` : ''}</summary><div class="hbody">${a}</div></details>`;
+  const now = mine.filter(here), rest = mine.filter(x => !here(x)), tabName = (($(`.tabbar [data-tab="${TAB}"]`) || {}).textContent || '').trim();
+  openSheet(`<div class="eyebrow">${HELP_ROLE[role] || 'Help'}${admin && syncing() ? ' and team admins' : ''}</div><h2>Help</h2>
     <input type="search" id="hlpQ" placeholder="Search, e.g. new phone" aria-label="Search help">
-    <div class="help">${items}</div><p class="hint" id="hlpNone" hidden>Nothing matches. Try another word.</p>
-    <p class="hint">Steps marked Team admin are on the Admin tab, which only team admins have. Ask yours if you don’t see it.</p>
-    <div class="field"><div class="field-label">Still stuck?</div>${supportPlaces().length
+    ${now.length ? `<div class="field-label">This screen${tabName ? ': ' + esc(tabName) : ''}</div><div class="help">${now.map(item).join('')}</div>` : ''}
+    ${rest.length ? `<div class="field-label">${now.length ? 'Everything else' : 'How do I…'}</div><div class="help">${rest.map(item).join('')}</div>` : ''}
+    <p class="hint" id="hlpNone" hidden>Nothing matches. Try another word.</p>
+    ${staff ? '' : '<p class="hint">Anything else? Ask your coach or team admin: the app has no messaging, by design.</p>'}
+    ${!staff ? '' : `<div class="field"><div class="field-label">Still stuck?</div>${supportPlaces().length
       ? '<button class="btn ghost wide" id="hlpSupport">Contact support</button>'
-      : '<p class="hint">Ask your team admin. Team admins in a club ask their club admin, who can contact support.</p>'}</div>
+      : '<p class="hint">Ask your team admin. Team admins in a club ask their club admin, who can contact support.</p>'}</div>`}
     <button class="btn ghost wide" data-close>Done</button>`,
     el => { const sp = $('#hlpSupport', el); if(sp) sp.addEventListener('click', () => showSupport());
       const q = $('#hlpQ', el); q.addEventListener('input', () => {
       const w = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean); let n = 0;
       $$('[data-h]', el).forEach(d => { const hit = w.every(x => d.textContent.toLowerCase().includes(x)); d.hidden = !hit; n += hit; d.open = !!w.length && hit && n === 1; });
+      $$('.help', el).forEach(h => { h.hidden = !$$('[data-h]', h).some(d => !d.hidden); const lab = h.previousElementSibling; if(lab && lab.classList.contains('field-label')) lab.hidden = h.hidden; });
       $('#hlpNone', el).hidden = n > 0; }); });
 }
 
@@ -4717,7 +4765,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 16:01'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 16:10'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
