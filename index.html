@@ -225,6 +225,8 @@ textarea{resize:vertical;min-height:84px}
 .prow small{color:var(--muted);font-size:13px}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--ok);flex:none}
 .dot.off{background:transparent;border:1.5px solid var(--muted)}
+.rmark{flex:none;min-width:34px;text-align:center;font:800 20px/1 var(--body)}
+.badge.sheetlink{cursor:pointer;border-color:var(--accent);color:var(--accent)}.badge.sheetlink+.badge{margin-left:4px}
 .badge{font:800 15px/1 var(--display);background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:4px 7px;min-width:34px;text-align:center;font-variant-numeric:tabular-nums}
 .muted{color:var(--muted)}
 .empty{padding:28px 12px;text-align:center;color:var(--muted);border:1px dashed var(--line);border-radius:12px}
@@ -1248,6 +1250,9 @@ function renderSquad(){
   const dayEvents = day ? fixData().events.filter(e => e.date === day && !e.cancelled) : [];
   const daySheets = day ? S.teams.filter(x => x.eventId && dayEvents.some(e => e.id === x.eventId)) : [t];
   const picksOf = pid => daySheets.map(x => ({x, n: numberOf(x, pid)})).filter(q => q.n);
+  // a player not picked that day shows their reply for it: ✓ available, ? maybe, ✗ not (their own sub-squad's fixture first)
+  const dayReply = p => { for(const e of [...dayEvents].sort((a, b) => inSub(p, b.sub) - inSub(p, a.sub))){ const k = statusOf(e.id, p.id); if(k) return k; } return ''; };
+  const replyMark = p => { const k = day && dayReply(p); return k ? `<span class="rmark st-${k}" title="${AV.find(a => a[0] === k)[1]}">${AV.find(a => a[0] === k)[2]}</span>` : ''; };
   const dayNote = day ? `<p class="hint" style="margin:-4px 0 8px">Shirts for the next match day, ${esc(evWhen(dayEvents[0]).split(' · ')[0])}: ${daySheets.length ? daySheets.map(x => esc(x.name)).join(', ') : 'no team sheets picked yet'}.</p>` : '';
   el.innerHTML = `
     <form class="add-row" id="addForm" autocomplete="off">
@@ -1259,8 +1264,8 @@ function renderSquad(){
     ${many || syncing() ? `<p class="hint" style="margin:-4px 0 8px">One squad for ${syncing() ? 'every selection in '+esc(S.sync.groupName) : 'all your selections'}. Each selection picks its own team sheet from it${subsOf().length ? ', usually from one sub-squad' : ''}.</p>` : ''}
     ${dayNote}
     ${phoneOnly ? `<div class="row-btns" style="margin-bottom:8px"><button class="btn ghost" id="sqShare">Share ${phoneOnly} phone-only player${phoneOnly>1?'s':''} with the other coaches</button></div>` : ''}
-    ${list.length ? (bySquad ? squadSections(list) : [['', list]]).map(([sid, ps]) => `${bySquad ? `<div class="section-h subhead">${sid ? `<span class="sdot" style="--sc:${subById(sid).color}"></span>` : ''}<span>${sid ? esc(subName(sid)) : 'Not in a sub-squad'} · ${ps.length}</span></div>` : ''}<div class="list">${ps.map(p => { const pk = picksOf(p.id), k = pk.map(q => q.n).join(' · '), where = daySheets.length > 1 ? pk.map(q => `${q.x.name} #${q.n}`) : day || !many ? [] : pickedIn(p.id).filter(w => !w.startsWith(t.name+' #'));
-      return `<button class="prow" data-pid="${p.id}"><span class="who"><b>${esc(p.name)}${!bySquad && subOfPlayer(p) ? ' ' + subTag(p.sub) : ''}</b><small>${esc(p.pos||'No position set')}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? (daySheets.length > 1 ? ' · ' : ' · also ') + esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`).join('')
+    ${list.length ? (bySquad ? squadSections(list) : [['', list]]).map(([sid, ps]) => `${bySquad ? `<div class="section-h subhead">${sid ? `<span class="sdot" style="--sc:${subById(sid).color}"></span>` : ''}<span>${sid ? esc(subName(sid)) : 'Not in a sub-squad'} · ${ps.length}</span></div>` : ''}<div class="list">${ps.map(p => { const pk = picksOf(p.id), where = daySheets.length > 1 ? pk.map(q => `${q.x.name} #${q.n}`) : day || !many ? [] : pickedIn(p.id).filter(w => !w.startsWith(t.name+' #'));
+      return `<button class="prow" data-pid="${p.id}"><span class="who"><b>${esc(p.name)}${!bySquad && subOfPlayer(p) ? ' ' + subTag(p.sub) : ''}</b><small>${esc(p.pos||'No position set')}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? (daySheets.length > 1 ? ' · ' : ' · also ') + esc(where.join(', ')) : ''}</small></span>${pk.length ? pk.map(q => `<span class="badge sheetlink" data-sheet="${q.x.id}" title="Open ${esc(q.x.name)}">${q.n}</span>`).join('') : replyMark(p)}</button>`; }).join('')}</div>`).join('')
       : `<div class="empty">No players yet. Add your squad above, then pick the team on the Selection tab.</div>`}
     <p class="hint" style="margin-top:12px">Tap a player to edit their details. Whether they can play is set per fixture, from their parents’ replies (or yours).</p>
     ${!syncing() || isGroupAdmin() ? `<div class="field" style="margin-top:12px"><div class="field-label">Positions to pick from</div><div class="cats" id="sqPosSet">${[['junior', 'Junior'], ['senior', 'Adult']].map(([v, l]) => `<button type="button" class="chip${posSet() === v ? ' on' : ''}" data-ps="${v}" aria-pressed="${posSet() === v}">${l}</button>`).join('')}</div>
@@ -1274,7 +1279,9 @@ function renderSquad(){
     const p = addPlayer($('#newName').value, newPos()); if(!p){ $('#newName').focus(); return; }
     renderSquad(); toast(p.name+' added'); $('#newName').focus();
   });
-  $$('.prow', el).forEach(b => b.addEventListener('click', () => editPlayer(b.dataset.pid)));
+  // the shirt number opens that team sheet; anywhere else on the row edits the player
+  $$('.prow', el).forEach(b => b.addEventListener('click', e => { const sh = e.target.closest('[data-sheet]');
+    if(sh){ openSelection(sh.dataset.sheet); ME.moveId = null; renderAll(); showTab('select'); } else editPlayer(b.dataset.pid); }));
   const ss = $('#sqSubs', el); if(ss) ss.addEventListener('click', manageSubs);
   const sv = $('#sqView', el); if(sv) sv.addEventListener('click', () => { S.ui.squadAll = bySquad; save(); renderSquad(); });
   const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { shareLocalPlayers(); renderSquad(); toast('Squad will be shared with the other coaches when you sync'); });
@@ -4148,7 +4155,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:28</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:31</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4642,7 +4649,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:31'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
