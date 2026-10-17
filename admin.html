@@ -114,7 +114,7 @@ input,select,textarea{width:100%;background:var(--panel2);color:var(--ink);borde
     <p class="hint">Codes are 10 letters or digits; capitals, spaces and dashes are sorted out for you. Random codes leave out I, O, 0 and 1 so they're easy to read out. Changing a join code copies the team's teams and moves to the new code and deletes the old one; coaches are asked for the new code on their next sync and keep everything. Changing a send code moves any waiting moves across; phones pick up the new send code on their next sync.</p>
     </section>
   </div>
-  <p class="hint" style="text-align:center">Version 9 Oct 2026, 23:05</p>
+  <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:07</p>
 </main>
 <script>
 (() => {
@@ -295,9 +295,10 @@ async function load(){
       const code = idOf(d), f = d.fields || {}, name = f.name?.stringValue || '(no name)', raw = f.mailbox?.stringValue || '', mail = norm(raw);
       const was = (f.formerly?.arrayValue?.values || []).map(v => v.stringValue);
       const el = document.createElement('section'); el.className = 'card';
-      const youth = !!f.youth?.booleanValue;
+      const youth = !!f.youth?.booleanValue, adult = f.positions?.stringValue === 'senior';
       el.innerHTML = `<h2>${esc(name)}</h2>
         <label class="sw"><input type="checkbox" data-youth${youth ? ' checked' : ''}> Youth team: under-18s join through a parent, not with the player code</label>
+        <label class="sw"><input type="checkbox" data-adult${adult ? ' checked' : ''}> Adult positions: tight head, openside, inside centre… (off: junior positions: prop, back row, centre, wing)</label>
         <div class="codes"><span>Join code</span><b>${fmt(code)}</b><span>Send code</span><b>${mail ? fmt(mail) : '<span class="muted" style="font:inherit;letter-spacing:0;text-transform:none">made on the first sync</span>'}</b></div>
         ${was.length ? `<p class="hint">Previous join codes: ${was.map(fmt).join(', ')}</p>` : ''}
         ${f.club?.stringValue ? `<p class="hint">Club: ${esc(clubs[f.club.stringValue] || 'missing club')} (billed through the club, on the Clubs tab)</p>` : billHtml(+(f.paidUntil?.integerValue || 0))}
@@ -310,6 +311,10 @@ async function load(){
       el.querySelector('[data-youth]').addEventListener('change', async e => { const on = e.target.checked; e.target.disabled = true;
         try { await commit([{update:{name: NAME('groups/' + code), fields:{youth:{booleanValue: on}}}, updateMask:{fieldPaths:['youth']}, currentDocument:{exists:true}}]);
           status(`${name} is ${on ? 'now a youth team' : 'no longer a youth team'}.`, 'ok'); }
+        catch(err){ e.target.checked = !on; status(err.message, 'err'); } finally { e.target.disabled = false; } });
+      el.querySelector('[data-adult]').addEventListener('change', async e => { const on = e.target.checked; e.target.disabled = true;
+        try { await commit([{update:{name: NAME('groups/' + code), fields:{positions:{stringValue: on ? 'senior' : 'junior'}}}, updateMask:{fieldPaths:['positions']}, currentDocument:{exists:true}}]);
+          status(`${name} now picks ${on ? 'adult' : 'junior'} positions.`, 'ok'); }
         catch(err){ e.target.checked = !on; status(err.message, 'err'); } finally { e.target.disabled = false; } });
       if(!f.club?.stringValue) billWire(el, 'groups/' + code, name, load);
       showMembers(code, el);

@@ -197,6 +197,18 @@ main{flex:1;min-height:0;position:relative}
 .section-h:first-child{margin-top:4px}
 .add-row{display:grid;grid-template-columns:1fr auto;gap:8px}
 .add-row .pos{grid-column:1}
+.pospick{display:flex;flex-direction:column;gap:6px;min-width:0}
+.posbtn{display:flex;align-items:center;gap:8px;width:100%;text-align:left;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px;color:var(--ink)}
+.posbtn span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.posbtn.none span{color:var(--muted)}
+.posbtn svg{flex:none;color:var(--muted);transition:transform .15s}
+.posbtn[aria-expanded=true]{border-color:var(--accent)}
+.posbtn[aria-expanded=true] svg{transform:rotate(180deg)}
+.posmenu{display:grid;grid-template-columns:1fr 1fr;gap:2px 8px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:6px}
+.posmenu[hidden]{display:none}
+.posopt{display:flex;align-items:center;gap:8px;padding:8px 6px;border-radius:8px;font-size:15px}
+.posopt:active{background:var(--panel)}
+.posopt input{width:18px;height:18px;margin:0;accent-color:var(--accent);flex:none}
 input[type=text],input[type=date],input[type=time],input[type=email],input[type=search],input:not([type]),select,textarea{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:16px}
 textarea{resize:vertical;min-height:84px}
 .btn{border:0;border-radius:10px;padding:11px 16px;background:var(--accent);color:var(--accent-ink);font:700 15px/1.1 var(--body)}
@@ -1084,6 +1096,47 @@ function editSlot(n){
    The squad's data changes, kept apart from the screens: each one changes S and saves, and never touches the page
    (no rendering, toasts or reading inputs). The screens below call them, then redraw. */
 const squadSorted = () => [...S.players].sort((a,b)=>a.name.localeCompare(b.name));
+/* Positions a squad player plays, picked from a list: junior teams use the simpler one, adult teams split prop, back
+   row, centre and wing. The team admin chooses which (groups/<id>.positions = 'junior' | 'senior', kept on the phone
+   as z.positions; a phone that doesn't sync keeps its own as S.positions). Junior unless set. p.pos stays a plain
+   string ("Prop, Hooker"), so older phones and shared team sheets read it as before. */
+const POS_JUNIOR = ['Prop', 'Hooker', 'Second row', 'Back row', 'Scrum half', 'Fly half', 'Centre', 'Wing', 'Full back'];
+const POS_SENIOR = ['Tight head', 'Loose head', 'Hooker', 'Second row', 'Openside', 'Blindside', 'No.8', 'Scrum half', 'Fly half', 'Inside centre', 'Outside centre', 'Left wing', 'Right wing', 'Full back'];
+const posSet = () => ((syncing() ? S.sync.positions : S.positions) === 'senior' ? 'senior' : 'junior');
+const posOptions = () => posSet() === 'senior' ? POS_SENIOR : POS_JUNIOR;
+// "prop / hooker, No 8" → ['Prop', 'Hooker', 'No.8']: known names are tidied, anything else is kept as typed
+function posList(s){
+  const known = POS_JUNIOR.concat(POS_SENIOR), key = x => x.toLowerCase().replace(/[^a-z0-9]/g, '');
+  const alias = {number8: 'No.8', no8: 'No.8', lock: 'Second row', flanker: 'Back row', looseheadprop: 'Loose head', tightheadprop: 'Tight head',
+    openside: 'Openside', opensideflanker: 'Openside', blindsideflanker: 'Blindside', winger: 'Wing', fullback: 'Full back'};
+  return [...new Set(String(s || '').split(/[,/;&+]/).map(x => x.trim()).filter(Boolean).map(x => known.find(k => key(k) === key(x)) || alias[key(x)] || x))];
+}
+// in the order of the team's list, then any others (from before, or from the other list)
+const posJoin = a => { const o = posOptions(), i = x => o.includes(x) ? o.indexOf(x) : o.length; return [...a].sort((x, y) => i(x) - i(y)).join(', '); };
+// a drop-down of tick boxes for a player's positions; returns () => the chosen ones as a string
+function posPicker(box, value, label = 'Positions'){
+  let picked = posList(value);
+  const extra = picked.filter(x => !posOptions().includes(x)), opts = posOptions().concat(extra);
+  box.classList.add('pospick');
+  box.innerHTML = `<button type="button" class="posbtn" aria-expanded="false" aria-label="${esc(label)}"><span></span><svg viewBox="0 0 12 8" width="12" height="8" aria-hidden="true"><path d="M1 1l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="posmenu" hidden>${opts.map(o => `<label class="posopt"><input type="checkbox" value="${esc(o)}"${picked.includes(o) ? ' checked' : ''}><span>${esc(o)}</span></label>`).join('')}</div>`;
+  const btn = $('.posbtn', box), menu = $('.posmenu', box), text = $('span', btn);
+  const show = () => { const v = posJoin(picked); text.textContent = v || 'Positions they play'; btn.classList.toggle('none', !v); };
+  const open = on => { menu.hidden = !on; btn.setAttribute('aria-expanded', on); };
+  btn.addEventListener('click', () => open(menu.hidden));
+  $$('input', menu).forEach(c => c.addEventListener('change', () => { picked = $$('input:checked', menu).map(x => x.value); show(); }));
+  const away = e => { if(!box.isConnected) return document.removeEventListener('click', away); if(!box.contains(e.target)) open(false); };
+  document.addEventListener('click', away);
+  show();
+  return () => posJoin(picked);
+}
+// the team admin (or a phone that doesn't sync) picks junior or adult positions for the whole team
+async function setPositions(v){
+  if(!syncing()){ S.positions = v; save(); return; }
+  const z = S.sync;
+  await fb('PATCH', `/groups/${z.group}?updateMask.fieldPaths=positions&currentDocument.exists=true`, {fields:{positions:{stringValue: v}}});
+  z.positions = v; save();
+}
 // a new squad player; null if the name is blank
 function addPlayer(name, pos){
   name = (name || '').trim(); if(!name) return null;
@@ -1124,7 +1177,7 @@ function renderSquad(){
     <form class="add-row" id="addForm" autocomplete="off">
       <input id="newName" type="text" placeholder="New player's name" aria-label="New player's name">
       <button class="btn" type="submit">Add</button>
-      <input id="newPos" class="pos" type="text" placeholder="Positions they play (optional)" aria-label="Positions">
+      <div id="newPos" class="pos"></div>
     </form>
     <div class="section-h"><span>Squad · ${list.length}</span><span>${av} available${syncing() ? ` · <button class="chip" id="sqSubs">Sub-squads${subsOf().length ? ' · ' + subsOf().length : ''}</button>` : ''}</span></div>
     ${many || syncing() ? `<p class="hint" style="margin:-4px 0 8px">One squad for ${syncing() ? 'every selection in '+esc(S.sync.groupName) : 'all your selections'}. Each selection picks its own team sheet from it${subsOf().length ? ', usually from one sub-squad' : ''}.</p>` : ''}
@@ -1132,10 +1185,16 @@ function renderSquad(){
     ${list.length ? squadSections(list).map(([sid, ps]) => `${subsOf().length ? `<div class="section-h subhead">${sid ? `<span class="sdot" style="--sc:${subById(sid).color}"></span>` : ''}<span>${sid ? esc(subName(sid)) : 'Not in a sub-squad'} · ${ps.length}</span></div>` : ''}<div class="list">${ps.map(p => { const k = numberOf(t,p.id), where = many ? pickedIn(p.id).filter(w => !w.startsWith(t.name+' #')) : [];
       return `<button class="prow" data-pid="${p.id}"><span class="dot${p.available===false?' off':''}" title="${p.available===false?'Unavailable':'Available'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos||'No position set')}${p.available===false?' · unavailable':''}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? ' · also '+esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`).join('')
       : `<div class="empty">No players yet. Add your squad above, then pick the team on the Selection tab.</div>`}
-    <p class="hint" style="margin-top:12px">Tap a player to edit their details or mark them unavailable.</p>`;
+    <p class="hint" style="margin-top:12px">Tap a player to edit their details or mark them unavailable.</p>
+    ${!syncing() || isGroupAdmin() ? `<div class="field" style="margin-top:12px"><div class="field-label">Positions to pick from</div><div class="cats" id="sqPosSet">${[['junior', 'Junior'], ['senior', 'Adult']].map(([v, l]) => `<button type="button" class="chip${posSet() === v ? ' on' : ''}" data-ps="${v}" aria-pressed="${posSet() === v}">${l}</button>`).join('')}</div>
+      <p class="hint">Junior: prop, back row, centre, wing. Adult splits them: tight head and loose head, openside, blindside and No.8, inside and outside centre, left and right wing.${syncing() ? ' For every coach in the team.' : ''}</p></div>` : ''}`;
+  const newPos = posPicker($('#newPos', el), '');
+  $$('[data-ps]', el).forEach(b => b.addEventListener('click', async () => { if(b.dataset.ps === posSet()) return; b.disabled = true;
+    try { await setPositions(b.dataset.ps); renderSquad(); toast(b.dataset.ps === 'senior' ? 'Adult positions' : 'Junior positions'); }
+    catch(e){ b.disabled = false; toast(niceErr(e)); } }));
   $('#addForm').addEventListener('submit', e => {
     e.preventDefault();
-    const p = addPlayer($('#newName').value, $('#newPos').value); if(!p){ $('#newName').focus(); return; }
+    const p = addPlayer($('#newName').value, newPos()); if(!p){ $('#newName').focus(); return; }
     renderSquad(); toast(p.name+' added'); $('#newName').focus();
   });
   $$('.prow', el).forEach(b => b.addEventListener('click', () => editPlayer(b.dataset.pid)));
@@ -1152,7 +1211,7 @@ function editPlayer(pid){
   const k = numberOf(t,pid), where = pickedIn(pid);
   openSheet(`<div class="eyebrow">${k?'Wearing #'+k+' · '+posName(k):'Squad player'}</div><h2>${esc(p.name)}</h2>
     <div class="field"><label class="field-label" for="epName">Name</label><input id="epName" type="text" value="${esc(p.name)}"></div>
-    <div class="field"><label class="field-label" for="epPos">Positions</label><input id="epPos" type="text" value="${esc(p.pos||'')}" placeholder="e.g. Centre, Wing"></div>
+    <div class="field"><div class="field-label">Positions</div><div id="epPos"></div></div>
     <div class="field"><label class="field-label" for="epNotes">Notes</label><textarea id="epNotes" placeholder="Injuries, kicking duties, anything useful">${esc(p.notes||'')}</textarea></div>
     ${subsOf().length ? `<div class="field"><div class="field-label">Sub-squad</div><div class="cats" id="epSub">${[{id: '', name: 'None'}].concat(subsOf()).map(sb => `<button type="button" class="chip${subOfPlayer(p) === sb.id ? ' on' : ''}" data-sub="${sb.id}">${esc(sb.name)}</button>`).join('')}</div></div>` : ''}
     ${where.length ? `<p class="hint">Picked for ${esc(where.join(', '))}</p>` : ''}
@@ -1160,10 +1219,10 @@ function editPlayer(pid){
     <div class="row-btns"><button class="btn" id="epSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn danger" id="epDel">Remove from squad</button>`,
     el => {
-      let sub = subOfPlayer(p);
+      let sub = subOfPlayer(p); const pos = posPicker($('#epPos', el), p.pos);
       $$('[data-sub]', el).forEach(b => b.addEventListener('click', () => { sub = b.dataset.sub; $$('[data-sub]', el).forEach(x => x.classList.toggle('on', x === b)); }));
       $('#epSave', el).addEventListener('click', () => {
-        updatePlayer(pid, {name: $('#epName', el).value, pos: $('#epPos', el).value, notes: $('#epNotes', el).value, available: $('#epAv', el).checked, sub});
+        updatePlayer(pid, {name: $('#epName', el).value, pos: pos(), notes: $('#epNotes', el).value, available: $('#epAv', el).checked, sub});
         closeSheet(); renderAll();
       });
       $('#epDel', el).addEventListener('click', () => askConfirm('Remove '+p.name+'?', where.length ? `They will also be taken off the team sheet: ${where.join(', ')}.` : 'They will be removed from the squad list.', 'Remove player', () => {
@@ -2352,7 +2411,7 @@ const niceErr = e => /fetch|network|load failed/i.test(e.message||'') ? 'No conn
 async function fetchGroup(code){
   const d = await fb('GET', '/groups/'+code); if(!d) return null;
   const f = d.fields || {}, was = f.formerly && f.formerly.arrayValue && f.formerly.arrayValue.values || [];
-  return {code, name: f.name.stringValue, formerly: was.map(v => v.stringValue), club: f.club ? f.club.stringValue : '', youth: !!(f.youth && f.youth.booleanValue)};
+  return {code, name: f.name.stringValue, formerly: was.map(v => v.stringValue), club: f.club ? f.club.stringValue : '', youth: !!(f.youth && f.youth.booleanValue), positions: f.positions ? f.positions.stringValue : ''};
 }
 async function listItems(code){
   const out = {}; let page = '';
@@ -3783,6 +3842,7 @@ async function refreshClub(z = S.sync){
   const g = await fb('GET', '/groups/' + z.group); if(!g) return;
   const c = g.fields && g.fields.club ? g.fields.club.stringValue : '';
   if(c !== (z.club || '')){ z.club = c; delete z.clubName; }
+  z.positions = g.fields && g.fields.positions ? g.fields.positions.stringValue : '';
   const cd = c ? await fb('GET', '/clubs/' + c) : null;
   if(c && !z.clubName) z.clubName = cd && cd.fields && cd.fields.name ? cd.fields.name.stringValue : '';
   // who pays: the club for a team in a club, otherwise the team itself (see BILLING)
@@ -3985,7 +4045,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 9 Oct 2026, 23:05</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:07</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4474,7 +4534,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Oct 2026, 23:05'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 10:07'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -4545,13 +4605,18 @@ function renderClubTab(which){
       const box = $('#clTeams', el);
       try {
         const ts = await clubTeams(c); if(!box.isConnected) return;
-        const youth = {}; await Promise.all(ts.map(t => fetchGroup(t.code).then(g => { youth[t.code] = !!(g && g.youth); }, () => {}))); if(!box.isConnected) return;
+        const youth = {}, adult = {}; await Promise.all(ts.map(t => fetchGroup(t.code).then(g => { youth[t.code] = !!(g && g.youth); adult[t.code] = !!g && g.positions === 'senior'; }, () => {}))); if(!box.isConnected) return;
         const mine = code => hatsOnPhone().find(x => (x.kind === 'coach' || x.kind === 'player') && x.id === code);
         box.innerHTML = ts.length ? ts.map(t => `<div class="mem"><span class="sdot" style="--sc:${groupColour(t.code)}"></span><div><b>${esc(t.name)}</b><small>${mine(t.code) ? 'You are ' + mine(t.code).role.toLowerCase() + ' here' : ''}</small></div>
-            ${mine(t.code) ? `<button class="chip" data-co="${t.code}">Open as ${mine(t.code).role.toLowerCase()}</button>` : ''}<button class="chip" data-ci="${t.code}">Invite admin</button><button class="chip${youth[t.code] ? ' on' : ''}" data-cy="${t.code}" aria-pressed="${!!youth[t.code]}">Youth</button></div>`).join('') : '<p class="hint">No teams in the club yet.</p>';
+            ${mine(t.code) ? `<button class="chip" data-co="${t.code}">Open as ${mine(t.code).role.toLowerCase()}</button>` : ''}<button class="chip" data-ci="${t.code}">Invite admin</button><button class="chip${youth[t.code] ? ' on' : ''}" data-cy="${t.code}" aria-pressed="${!!youth[t.code]}">Youth</button><button class="chip${adult[t.code] ? ' on' : ''}" data-cp="${t.code}" aria-pressed="${!!adult[t.code]}">Adult positions</button></div>`).join('') : '<p class="hint">No teams in the club yet.</p>';
         $$('[data-co]', box).forEach(b => b.addEventListener('click', () => setHat(mine(b.dataset.co))));
         $$('[data-cy]', box).forEach(b => b.addEventListener('click', async () => { const t = ts.find(x => x.code === b.dataset.cy), on = !youth[t.code]; b.disabled = true;
           try { await setYouth(t.code, on); toast(on ? `${t.name} is a youth team: under-18s join it through a parent` : `${t.name} is no longer a youth team`); loadTeams(); }
+          catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+        $$('[data-cp]', box).forEach(b => b.addEventListener('click', async () => { const t = ts.find(x => x.code === b.dataset.cp), on = !adult[t.code]; b.disabled = true;
+          try { await fb('PATCH', `/groups/${t.code}?updateMask.fieldPaths=positions&currentDocument.exists=true`, {fields:{positions:{stringValue: on ? 'senior' : 'junior'}}});
+            const z = teamsOnPhone().find(x => x.group === t.code); if(z){ z.positions = on ? 'senior' : 'junior'; save(); }
+            toast(on ? `${t.name} picks adult positions (tight head, openside, inside centre…)` : `${t.name} picks junior positions (prop, back row, centre, wing)`); loadTeams(); }
           catch(e){ b.disabled = false; toast(niceErr(e)); } }));
         $$('[data-ci]', box).forEach(b => b.addEventListener('click', async () => { b.disabled = true;
           const t = ts.find(x => x.code === b.dataset.ci); let code;
