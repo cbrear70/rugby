@@ -249,6 +249,7 @@ textarea{resize:vertical;min-height:84px}
 .unpicked{margin-top:14px}.unpicked summary{cursor:pointer;list-style:none}.unpicked summary::-webkit-details-marker{display:none}
 .unpicked summary span::before{content:'+';display:inline-block;width:14px;color:var(--accent)}.unpicked[open] summary span::before{content:'-'}
 .unpicked .prow{cursor:default}.unpicked .prow.off b{color:var(--muted)}
+.chip.pubd{border-color:var(--ok);color:var(--ok)}
 .selstats{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 10px;font-size:14px;color:var(--muted)}
 .selstats b{color:var(--ink);font-size:18px;margin-right:3px}
 .selstats .bor b{color:#8FB8FF}
@@ -293,7 +294,10 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .sreq .sreply{margin-top:6px;padding:8px 10px;border-left:3px solid var(--accent);background:var(--panel2);border-radius:0 8px 8px 0;white-space:pre-wrap}
 .warnbox{padding:10px 12px;border-radius:10px;border:1px solid color-mix(in srgb,var(--danger) 55%,var(--line));font-size:14px}
 .mem>div,.mem>.memlink{flex:1;min-width:0}.mem>.selstack{flex:none;display:flex;flex-direction:column;gap:4px;width:42%;max-width:190px}.selstack select{width:100%}.plpick{background:none;border:0;padding:6px 0;color:var(--ink);font:600 15px/1.2 var(--body);text-align:left;cursor:pointer;text-decoration:underline dotted var(--muted);text-underline-offset:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.memlink{text-align:left;background:none;border:0;padding:0;color:inherit;font:inherit;cursor:pointer}.memlink small u{text-decoration-color:var(--muted)}.mem b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.mem small{display:block;color:var(--muted);font-size:12px}
-.noshirt{flex:none;width:28px}.mem small.btag{display:block;color:#8FB8FF;font-weight:600}.mem.borrowed{box-shadow:inset 3px 0 0 var(--jog);padding-left:8px}
+.noshirt{flex:none;width:28px}
+.picked{display:inline-flex;align-items:center;gap:5px;margin-left:6px;padding:2px 8px 2px 4px;border-radius:999px;background:color-mix(in srgb,var(--ok) 18%,transparent);color:var(--ok);font-weight:700;font-size:13px;vertical-align:middle}
+.ropitch{height:320px;border-radius:12px;overflow:hidden;background:#1B4F27}.ropitch .pitch{touch-action:auto}.ropitch .tok{cursor:default}
+.robench{display:flex;flex-wrap:wrap;gap:6px 10px}.bshirt{display:flex;flex-direction:column;align-items:center;gap:2px;font-size:11px;color:var(--muted);min-width:44px}.bshirt.mine small{color:var(--accent);font-weight:700}.mem small.btag{display:block;color:#8FB8FF;font-weight:600}.mem.borrowed{box-shadow:inset 3px 0 0 var(--jog);padding-left:8px}
 .mem.elsewhere{opacity:.75}.mem small.awayas{display:block;color:#8FB8FF;font-weight:600}.st-away{color:#8FB8FF}.mem small.pickedas{display:block;color:var(--accent);font-weight:600}
 .mem select{width:auto;min-width:0;padding:6px 8px}.mem.req{background:color-mix(in srgb,var(--accent) 10%,transparent);border-radius:10px;padding:8px}
 .rcode{display:flex;align-items:center;gap:8px;margin:6px 0}.rcode .gcode{flex:1;font-size:18px}
@@ -1343,7 +1347,7 @@ function renderSelect(){
     ${t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
     : up.length ? `<div class="field"><label class="field-label" for="selEv">Availability for</label><select id="selEv"><option value=""${ev ? '' : ' selected'}>No event</option>${up.map(e => `<option value="${e.id}"${ev && ev.id === e.id ? ' selected' : ''}>${esc(evWhen(e).split(' · ')[0])} · ${esc(evTitle(e))}</option>`).join('')}</select>
       ${ev ? `<p class="hint">${avSummary(ev)}${selectionFor(ev) && selectionFor(ev) !== t ? ` · <button class="chip" id="selOpen">Open its team sheet</button>` : ` · <button class="chip" id="selMake">Make a team sheet for it</button>`}</p>` : ''}</div>` : ''}
-    <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><button class="chip" id="clearSel">Clear sheet</button></div>
+    <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><span>${t.eventId && syncing() ? `<button class="chip${t.forPlayers ? ' pubd' : ' on'}" id="pubSel">${t.forPlayers ? 'Published ✓' : 'Publish'}</button> ` : ''}<button class="chip" id="clearSel">Clear sheet</button></span></div>
     ${onPitch.map(row).join('')}
     ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
     ${unpicked.length ? `<details class="unpicked" id="selUnpicked"${S.ui.showUnpicked ? ' open' : ''}><summary class="section-h"><span>Not picked · ${unpicked.filter(canPlay).length} available${unpicked.some(p => !canPlay(p)) ? `, ${unpicked.filter(p => !canPlay(p)).length} not` : ''}</span></summary>
@@ -1355,6 +1359,10 @@ function renderSelect(){
   const se = $('#selEv', el); if(se) se.addEventListener('change', () => { S.ui.selEv = se.value; save(); renderSelect(); });
   const un = $('#selUnpicked', el); if(un) un.addEventListener('toggle', () => { S.ui.showUnpicked = un.open; save(); });
   const so = $('#selOpen', el) || $('#selMake', el); if(so) so.addEventListener('click', () => pickFor(ev));
+  // Publish: players and parents see the team sheet (and who is picked) from the next sync, which runs straight away
+  const pb = $('#pubSel', el); if(pb) pb.addEventListener('click', () => t.forPlayers
+    ? askConfirm('Unpublish the team sheet?', 'Players and parents stop seeing it, and their fixture cards stop saying who is selected.', 'Unpublish', () => { delete t.forPlayers; save(); renderSelect(); runSync(null, true); toast('Team sheet unpublished'); })
+    : askConfirm('Publish the team sheet?', `Players and parents see who is picked${linked ? ' for ' + evTitle(linked) : ''}, and picked players get an update. Changes you make afterwards reach them when you sync.`, 'Publish', () => { t.forPlayers = true; save(); renderSelect(); runSync(null, true); toast('Team sheet published'); }));
   $('#clearSel').addEventListener('click', () => askConfirm('Clear the team sheet?', `All ${shirtTotal(t)} shirts will be emptied.`+' Your squad list, shirt colours and positions stay.', 'Clear sheet', () => {
     clearSheet(t); renderSelect(); toast('Team sheet cleared');
   }));
@@ -2222,7 +2230,7 @@ function teamSettings(t, isNew){
     ${subsOf().length ? `<div class="field"><label class="field-label" for="tsSub">Picks from</label><select id="tsSub"><option value="">Whole squad</option>${subsOf().map(sb => `<option value="${sb.id}"${t.sub === sb.id ? ' selected' : ''}>${esc(sb.name)}</option>`).join('')}</select><p class="hint">Players from the rest of the squad can still be borrowed.</p></div>` : ''}
     <p class="hint" id="tsWarn"></p>
     ${syncing() ? `<label class="check"><input type="checkbox" id="tsPlayers"${t.forPlayers ? ' checked' : ''}> Show this team sheet to players and parents</label>
-      <p class="hint">They see who is picked and in which shirt (numbers and positions, for their own child), after you sync.</p>` : ''}
+      <p class="hint">They see who is picked and in which shirt, after you sync. For a fixture, this is the same as Publish on the Selection tab.</p>` : ''}
     <div class="row-btns"><button class="btn" id="tsSave">${isNew ? (S.players.length ? 'Save and pick the team' : 'Save and add squad') : 'Save'}</button><button class="btn ghost" data-close>${isNew ? 'Skip' : 'Cancel'}</button></div>
     ${isNew ? '' : `<button class="btn danger" id="tmDel">Delete “${esc(t.name)}”</button>`}`,
     el => {
@@ -3510,9 +3518,21 @@ const fixtureList = (teams, past) => teams.flatMap(z => z.events.filter(e => pas
 // the squad for event e grouped by reply: [{k, label, players}] for yes, maybe, no, then no reply ('')
 
 // a child's line on a fixture: Yes / Maybe / No for a parent (or coach), just the answer for the child, and their shirt if picked
+// the team sheets for fixture e that players and parents see: the ones a coach has published
+const shownSheets = (e, z) => (z.sheets || []).filter(sh => sh.eventId === e.id);
+const sheetNum = (sh, pid) => +(Object.keys(sh.picks || {}).find(k => sh.picks[k] === pid) || 0);
+// a team sheet as players and parents see it: the pitch (not editable) with surnames, the bench below; mine = shirts to ring
+function sheetPitch(sh, z, mine = []){
+  const t = {size: sh.size, bench: sh.bench}, col = n => (sh.colors || {})[n] || defaultColor(+n, t), who = n => sh.picks && sh.picks[n] ? surname(nameOfPlayer(sh.picks[n], z)) : '';
+  const at = n => (sh.xy || {})[n] || DEFAULT_POS[slotOf(n, t)] || [35, 60], nums = pitchNums(t), pts = nums.map(at);
+  const x0 = Math.min(...pts.map(p => p[0])) - 7, x1 = Math.max(...pts.map(p => p[0])) + 7, y0 = Math.min(...pts.map(p => p[1])) - 7, y1 = Math.max(...pts.map(p => p[1])) + 9;
+  const shirts = nums.map(n => { const [x, y] = at(n); return shirtSVG({x, y, n, color: col(n), label: who(n), sel: mine.includes(sh.picks && sh.picks[n])}); }).join('');
+  const bench = benchNums(t).map(n => `<span class="bshirt${mine.includes(sh.picks && sh.picks[n]) ? ' mine' : ''}">${miniShirt(n, col(n), 30)}<small>${esc(who(n) || '—')}</small></span>`).join('');
+  return `<div class="ropitch"><svg class="pitch" viewBox="${x0} ${y0} ${x1 - x0} ${y1 - y0}" preserveAspectRatio="xMidYMid meet" aria-label="${esc(sh.name)} team sheet">${pitchLines().replace('<g class="layer"></g>', '')}${shirts}</svg></div>${bench ? `<div class="robench">${bench}</div>` : ''}`;
+}
 function kidRow(e, z, pid){
-  const st = statusOf(e.id, pid, z), sh = (z.sheets || []).find(x => x.eventId === e.id), n = sh && Object.keys(sh.picks || {}).find(k => sh.picks[k] === pid);
-  const pick = n ? ` <span class="pick"><b>No. ${n}</b> ${esc(posName(+n, {size: sh.size, bench: sh.bench}))}</span>` : '';
+  const st = statusOf(e.id, pid, z), sh = shownSheets(e, z).find(x => sheetNum(x, pid)), n = sh && sheetNum(sh, pid);
+  const pick = n ? ` <span class="picked">${miniShirt(n, (sh.colors || {})[n] || defaultColor(n, {size: sh.size, bench: sh.bench}), 22)} Selected · No. ${n} ${esc(posName(n, {size: sh.size, bench: sh.bench}))}</span>` : '';
   const here = hereOf(e.id, pid, z); let there = here === true ? '<span class="st-yes">✓ There</span>' : here === false ? '<span class="st-no">Away</span>' : '';
   // a parent marks their child as there, and can tap again to undo it (not after a coach marks them away)
   const toggle = here !== false && canMarkHere(e) && hatKind() === 'parent';
@@ -3617,6 +3637,7 @@ function showEvent(ref){
   openSheet(`<div class="eyebrow">${esc(z.groupName)} · ${(EV_TYPES.find(t => t[0] === e.type) || EV_TYPES[2])[1]}${e.sub && subById(e.sub, z) ? ' · ' + esc(subName(e.sub, z)) : ''}</div><h2>${esc(evTitle(e))}</h2>
     ${e.cancelled ? `<p class="warnbox">${esc(cancelText(e))}</p>` : ''}<p class="muted">${homeAwayText(e) ? homeAwayText(e) + ' · ' : ''}${evWhen(e)}${e.location ? '<br>' + esc(e.location) : ''}</p>${e.notes ? `<p>${esc(e.notes).replace(/\n/g, '<br>')}</p>` : ''}
     ${kids}
+    ${!coach ? shownSheets(e, z).map(sh => `<div class="section-h"><span>Team sheet${shownSheets(e, z).length > 1 ? ' · ' + esc(sh.name) : ''}</span></div>${sheetPitch(sh, z, kidsFor(e, z).concat(kidsOf(z)))}`).join('') : ''}
     ${coach ? `<p class="avsum">${avSummary(e)}</p>
       ${resultText(e) ? `<p class="result">${esc(resultText(e))}</p>` : ''}
       <div class="row-btns"><button class="btn" id="evPick">${linked ? `Open selection · ${pickedCount(linked)} picked` : 'Pick the team'}</button><button class="btn ghost" id="evReg">Register</button>${e.type === 'match' ? '<button class="btn ghost" id="evScore">Score</button>' : ''}<button class="btn ghost" id="evEdit">Edit</button></div>
@@ -4155,7 +4176,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:34</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:41</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4649,7 +4670,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:34'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:41'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -4876,13 +4897,16 @@ async function unlinkKid(z, pid){
     {delete: DOCNAME(`groups/${z.group}/links/${pid}/who/${uid}`)}]});
   z.kids = kids; save(); return off;
 }
-// team sheets shown to players and parents: [{id, name, eventId, size, bench, picks: {shirt: player id}}]
+// team sheets shown to players and parents: [{id, name, eventId, size, bench, picks: {shirt: player id}, colors, xy}].
+// Only sheets a coach has published (t.forPlayers: Publish on the Selection tab, or the tick in its settings) go to
+// them; until then a player's fixture card shows nothing about the team.
 async function publishSheets(){
   const z = S.sync, have = {}, want = {}, writes = [];
   for(const d of await listDocs(`/groups/${z.group}/sheets`)) have[d.name.split('/').pop()] = d.fields && d.fields.json ? d.fields.json.stringValue : '';
   for(const t of S.teams) if(t.forPlayers && !t.localOnly && !t.placeholder){
-    const picks = {}; for(const n in t.selection || {}) if(t.selection[n] && t.selection[n].playerId) picks[n] = t.selection[n].playerId;
-    want[t.id] = JSON.stringify({id: t.id, name: t.name, eventId: t.eventId || '', size: teamSize(t), bench: benchSize(t), picks});
+    const picks = {}, colors = {}, xy = {};
+    for(const n in t.selection || {}){ const sl = t.selection[n]; if(!sl) continue; if(sl.playerId) picks[n] = sl.playerId; if(sl.color) colors[n] = sl.color; if(sl.x != null) xy[n] = [+sl.x.toFixed(1), +sl.y.toFixed(1)]; }
+    want[t.id] = JSON.stringify({id: t.id, name: t.name, eventId: t.eventId || '', size: teamSize(t), bench: benchSize(t), picks, colors, xy});
   }
   for(const id in want) if(have[id] !== want[id]) writes.push({update:{name: DOCNAME(`groups/${z.group}/sheets/${id}`), fields:{json:{stringValue: want[id]}}}});
   for(const id in have) if(!(id in want)) writes.push({delete: DOCNAME(`groups/${z.group}/sheets/${id}`)});
