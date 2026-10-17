@@ -234,6 +234,11 @@ textarea{resize:vertical;min-height:84px}
 .srow label small{display:block;color:var(--muted);font-weight:500;font-size:12px}
 .srow select{padding:8px 10px;font-size:15px}
 .srow.unav select{border-color:color-mix(in srgb,var(--danger) 60%,transparent)}
+/* a shirt with nobody in it stands out, so gaps in the team sheet are easy to spot */
+.srow.open{background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 3px 0 0 var(--accent);padding-left:8px;padding-right:6px;border-radius:6px}
+.srow.open select{border-color:var(--accent);color:var(--muted)}
+.srow.open select option,.srow.open select optgroup{color:var(--ink)}
+.srow label small.tofill{color:var(--accent);font-weight:600}
 
 /* moves */
 .mcard{display:grid;grid-template-columns:62px 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
@@ -375,6 +380,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .trow{display:flex;gap:8px;align-items:center}
 .trow .btn{flex:1;text-align:left}
 .trow .btn.cur{outline:2px solid var(--accent)}
+.trow .chip.del{color:var(--danger);border-color:color-mix(in srgb,var(--danger) 50%,var(--line))}
 .sync-btn{position:relative}
 .sync-btn .dot-badge{display:none;position:absolute;top:8px;right:7px;width:9px;height:9px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 2px var(--bg)}
 .sync-btn.dirty .dot-badge{display:block}
@@ -700,10 +706,10 @@ function updateSelection(t, f){
 function openSelection(tid){ S.currentTeamId = tid; save(); }
 // a new empty selection, opened
 function createSelection(name){ const nt = newTeam((name || '').trim() || 'New selection'); S.teams.push(nt); S.currentTeamId = nt.id; save(); return nt; }
-// delete a selection (there's always one left) and open the first
+// delete a selection (there's always one left); if it was the open one, open the first
 function deleteSelection(tid){
   S.teams = S.teams.filter(x => x.id !== tid); if(!S.teams.length) S.teams.push(newTeam('Main selection'));
-  S.currentTeamId = S.teams[0].id; save();
+  if(!S.teams.some(x => x.id === S.currentTeamId)) S.currentTeamId = S.teams[0].id; save();
 }
 // the selection for fixture e, opened: its own if it has one, else a new one copied from the standing selection for
 // the same sub-squad. Returns {t, base}: base is what a new one was copied from (null if it already existed).
@@ -1070,21 +1076,30 @@ const playsFor = (p, want) => want.length && posList(p.pos).some(x => want.inclu
 // those who play the shirt's position first, then the others; for an event, Available before Maybe before No reply.
 // Whoever wears the shirt now stays in the list, whatever their availability, so the sheet doesn't change under you.
 function playerOptions(t, selectedId, forN, ev){
+  const all = squadSorted(), own = t.sub && subById(t.sub) ? t.sub : '';
   const said = p => ev ? statusOf(ev.id, p.id) || 'none' : 'yes', canPlay = p => p.available !== false && said(p) !== 'no';
   const RANK = {yes: 0, maybe: 1, none: 2}, NOTE = {maybe: ' (maybe)', none: ' (no reply)'};
-  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (unavailable)' : ev ? NOTE[said(p)] || '' : '';
-    return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}</option>`; };
+  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (unavailable)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p);
+    return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}${far ? ' · ' + esc(far) : ''}</option>`; };
+  // a borrowed player wearing a starting shirt in another selection that's still to come (on the same day as this
+  // one's fixture, when both have one) goes last; one on another bench, or not picked, is as free as anyone
+  const today = ymd(new Date()), mine = selEventOf(t);
+  const startsIn = p => { if(!own || subOfPlayer(p) === own) return '';
+    for(const x of S.teams){ if(x === t) continue; const k = numberOf(x, p.id), e = selEventOf(x);
+      if(k && pitchNums(x).includes(k) && !(e && e.date < today) && !(e && mine && e.date !== mine.date)) return `${x.name} #${k}`; }
+    return ''; };
   const group = (label, ps) => ps.length ? `<optgroup label="${esc(label)}">${ps.map(opt).join('')}</optgroup>` : '';
   const want = forN ? shirtPositions(forN, t) : [], byStatus = ps => [...ps].sort((a, b) => RANK[said(a)] - RANK[said(b)]);
-  const all = squadSorted(), own = t.sub && subById(t.sub) ? t.sub : '', pool = all.filter(p => !own || subOfPlayer(p) === own);
+  const pool = all.filter(p => !own || subOfPlayer(p) === own);
   const ok = pool.filter(canPlay), fits = ok.filter(p => playsFor(p, want)), rest = ok.filter(p => !playsFor(p, want));
   const others = ev ? [['yes', 'Available'], ['maybe', 'Maybe'], ['none', 'No reply']].map(([k, l]) => group(fits.length ? l + ' · other positions' : l, rest.filter(p => said(p) === k))).join('')
     : group(fits.length ? 'Other positions' : 'Available', rest);
   const here = all.find(p => p.id === selectedId && !canPlay(p));
-  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p));
+  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p) && !startsIn(p));
     return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want))))); }).join('') : '';
   return `<option value="">— Not picked —</option>` + (here ? group('Picked, now unavailable', [here]) : '')
-    + group('Plays ' + (want.filter(x => posOptions().includes(x)).join(' or ') || want[0]), byStatus(fits)) + others + borrow;
+    + group('Plays ' + (want.filter(x => posOptions().includes(x)).join(' or ') || want[0]), byStatus(fits)) + others + borrow
+    + group('Borrow · starting in another selection', (ps => byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want)))))(all.filter(p => canPlay(p) && startsIn(p))));
 }
 function editSlot(n){
   const t = team(), p = playerAt(t,n), col = colorOf(t,n);
@@ -1265,7 +1280,7 @@ function renderSelect(){
   const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
   const avTag = p => { const s = avOf(p); return s ? `<span class="avtag st-${s}">${AV.find(a => a[0] === s)[1]}</span>` : ev ? '<span class="avtag">No reply</span>' : ''; };
   const own = t.sub && subById(t.sub) ? t.sub : '', borrowed = p => own && subOfPlayer(p) !== own ? `<span class="avtag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
-  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}${p?'':' open'}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
   const linked = selEventOf(t);
   el.innerHTML = `<div class="mact" style="margin-bottom:8px">${selChip()}</div>
     ${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
@@ -4062,7 +4077,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 10:53</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 11:19</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4073,10 +4088,11 @@ function showHats(){
 const selChip = () => `<button class="chip selchip" data-selpick>${esc(team().name)} ▾</button>`;
 document.addEventListener('click', e => { if(e.target.closest('[data-selpick]')) showSelections(); });
 function showSelections(){
+  const canDel = !syncing() || isGroupAdmin(), dupes = x => { const n = x.eventId ? S.teams.filter(y => y.eventId === x.eventId).length : 0; return n > 1 ? n : 0; }; // the team admin tidies up selections (e.g. duplicates) from the list
   const t = team(), gc = syncing() ? groupColour(S.sync.group) : 'var(--accent)';
   openSheet(`<div class="teams-in" style="--gc:${gc}">
     <div class="eyebrow" style="color:${gc}">${syncing() ? 'Selections in '+esc(S.sync.groupName) : 'Selections on this phone'}</div><h2>Switch selection</h2>
-    <div class="tlist">${menuTeams(t).map(x=>typeof x === 'string' ? x : `<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${x.sub && subById(x.sub) ? subTag(x.sub) + ' ' : ''}${esc(x.name)} <span class="muted" style="font-weight:500">· ${pickedCount(x)} picked</span>${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with coaches</button>` : ''}</div>`).join('')}</div>
+    <div class="tlist">${menuTeams(t).map(x=>typeof x === 'string' ? x : `<div class="trow"><button class="btn ghost${x.id===t.id?' cur':''}" data-sw="${x.id}">${x.sub && subById(x.sub) ? subTag(x.sub) + ' ' : ''}${esc(x.name)} <span class="muted" style="font-weight:500">· ${pickedCount(x)} picked</span>${dupes(x) ? ` <span class="lo">· ${dupes(x)} sheets for this fixture</span>` : ''}${syncing() && x.localOnly ? ' <span class="lo">· this phone only</span>' : ''}</button>${syncing() && x.localOnly ? `<button class="chip" data-togroup="${x.id}">Share with coaches</button>` : ''}${canDel && S.teams.length > 1 ? `<button class="chip del" data-del="${x.id}" aria-label="Delete ${esc(x.name)}">Delete</button>` : ''}</div>`).join('')}</div>
     <button class="btn ghost" id="tmSettings">Selection settings for ${esc(t.name)} · ${teamSize(t)}-a-side</button>
     <div class="field"><label class="field-label" for="tmNew">New selection${syncing() ? ' in '+esc(S.sync.groupName) : ''}</label><div class="add-row"><input id="tmNew" type="text" placeholder="e.g. Saxons, Cup side"><button class="btn" id="tmCreate">Create</button></div></div>
     </div>
@@ -4084,6 +4100,9 @@ function showSelections(){
     el => {
       $$('[data-sw]', el).forEach(b => b.addEventListener('click', () => { openSelection(b.dataset.sw); ME.moveId = null; ME.editing = null; closeSheet(); renderAll(); }));
       $$('[data-togroup]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id===b.dataset.togroup); x.localOnly = false; save(); closeSheet(); toast(x.name+' will go to the other coaches when you sync'); }));
+      $$('[data-del]', el).forEach(b => b.addEventListener('click', () => { const x = S.teams.find(y => y.id === b.dataset.del); if(!x) return;
+        askConfirm('Delete ' + x.name + '?', `${pickedCount(x)} picked. ` + (syncing() && !x.localOnly ? 'Its team sheet will be deleted from this phone, and from the other coaches’ phones when you sync. The squad and drills are kept.' : 'Its team sheet will be deleted from this phone. The squad and drills are kept.'), 'Delete selection', () => {
+          deleteSelection(x.id); ME.moveId = null; renderAll(); showSelections(); toast(x.name + ' deleted'); }); }));
       $('#tmSettings', el).addEventListener('click', () => teamSettings(t));
       $('#tmCreate', el).addEventListener('click', () => { const nt = createSelection($('#tmNew', el).value); ME.moveId = null; renderAll(); teamSettings(nt, true); });
       const j = $('#tmJoin', el); if(j) j.addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4551,7 +4570,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 10:53'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 11:19'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
