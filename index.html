@@ -306,7 +306,8 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .tapcard{cursor:pointer}
 .evcard{display:flex;gap:12px;background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--muted);border-radius:14px;padding:12px;margin-bottom:10px}
 .evcard.ev-match{border-left-color:var(--accent)}
-.evcard.pubd{background:color-mix(in srgb,var(--ok) 13%,var(--panel));border-color:color-mix(in srgb,var(--ok) 45%,var(--line));border-left-color:var(--ok)}
+.evcard.pubd{background:color-mix(in srgb,var(--ok) 28%,var(--panel));border-color:color-mix(in srgb,var(--ok) 60%,var(--line));border-left-color:var(--ok)}
+.evcard.pubd .evsel{color:#9FE8B2}.evcard.pubd .evdate{background:color-mix(in srgb,var(--ok) 18%,var(--panel2))}
 .evsel{font:800 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;color:var(--ok);margin-bottom:5px}.evcard.ev-training{border-left-color:var(--jog)}
 .evdate{flex:none;width:50px;text-align:center;border-radius:10px;background:var(--panel2);padding:6px 0;align-self:flex-start}
 .evdate small{display:block;font:700 11px/1.2 var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
@@ -4179,7 +4180,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:47</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:50</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4673,7 +4674,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:47'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:50'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
