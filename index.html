@@ -989,11 +989,16 @@ function openSheet(html, mount, onClose){
 }
 function closeSheet(){ sheetEl.hidden = true; backdrop.hidden = true; sheetEl.innerHTML = ''; const f = sheetOnClose; sheetOnClose = null; f && f(); }
 backdrop.addEventListener('click', closeSheet);
-// a fixture or drill card opens from a tap anywhere on it, not just its title; its own buttons and chips still do their own thing
-document.addEventListener('click', e => {
-  const card = e.target.closest('.tapcard'); if(!card || e.target.closest('button, a, input, select, textarea, label, summary')) return;
-  const main = card.querySelector('[data-evopen], [data-open]'); if(main) main.click();
-});
+// A card (fixture, drill, sub-squad, club team, child) opens from a tap anywhere on it, not just its title: the tap
+// goes to its main button ([data-main], else the one that opens it). Its other buttons and chips still do their own
+// thing. Each card gets its own listener as it appears (iPhone Safari is more reliable with these than one on the page).
+const cardTap = e => {
+  if(e.target.closest('button, a, input, select, textarea, label, summary')) return;
+  const main = e.currentTarget.querySelector('[data-main]') || e.currentTarget.querySelector('[data-evopen], [data-open]'); if(main) main.click();
+};
+const wireCards = root => root.querySelectorAll && root.querySelectorAll('.tapcard:not([data-wired])').forEach(c => { c.dataset.wired = '1'; c.addEventListener('click', cardTap); });
+new MutationObserver(ms => { for(const m of ms) for(const n of m.addedNodes) if(n.nodeType === 1){ if(n.matches('.tapcard')) wireCards(n.parentNode); else wireCards(n); } })
+  .observe(document.body, {childList: true, subtree: true});
 function askConfirm(title, msg, okLabel, onOk){
   openSheet(`<h2>${esc(title)}</h2><p class="muted">${esc(msg)}</p><div class="row-btns"><button class="btn danger" id="cfOk">${esc(okLabel)}</button><button class="btn ghost" data-close>Cancel</button></div>`,
     el => $('#cfOk', el).addEventListener('click', () => { closeSheet(); onOk(); }));
@@ -3842,7 +3847,7 @@ function manageSubs(){
   const z = S.sync, subs = subsOf(), count = id => S.players.filter(p => subOfPlayer(p) === id).length;
   openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>Sub-squads</h2>
     <p class="muted">Split the squad into smaller squads, e.g. Saxons, Vikings and Exiles. Each selection picks from one sub-squad and can borrow players from the others. With none, the team has one squad.</p>
-    ${subs.map(s => `<div class="mem"><span class="sdot" style="--sc:${s.color}"></span><div><b>${esc(s.name)}</b><small>${count(s.id)} player${count(s.id) === 1 ? '' : 's'}</small></div><button class="chip" data-sp="${s.id}">Players</button><button class="chip" data-se="${s.id}">Edit</button></div>`).join('')}
+    ${subs.map(s => `<div class="mem tapcard"><span class="sdot" style="--sc:${s.color}"></span><div><b>${esc(s.name)}</b><small>${count(s.id)} player${count(s.id) === 1 ? '' : 's'}</small></div><button class="chip" data-sp="${s.id}">Players</button><button class="chip" data-se="${s.id}" data-main>Edit</button></div>`).join('')}
     ${subs.length ? `<p class="hint">${S.players.filter(p => !subOfPlayer(p)).length} not in a sub-squad.</p>` : ''}
     <div class="field"><label class="field-label" for="sbNew">New sub-squad</label><div class="add-row"><input id="sbNew" type="text" placeholder="e.g. Saxons"><button class="btn" id="sbAdd">Add</button></div></div>
     <button class="btn ghost wide" data-close>Done</button>`,
@@ -4114,7 +4119,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 14:57</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:01</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4608,7 +4613,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 14:57'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:01'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -4681,8 +4686,8 @@ function renderClubTab(which){
         const ts = await clubTeams(c); if(!box.isConnected) return;
         const youth = {}, adult = {}; await Promise.all(ts.map(t => fetchGroup(t.code).then(g => { youth[t.code] = !!(g && g.youth); adult[t.code] = !!g && g.positions === 'senior'; }, () => {}))); if(!box.isConnected) return;
         const mine = code => hatsOnPhone().find(x => (x.kind === 'coach' || x.kind === 'player') && x.id === code);
-        box.innerHTML = ts.length ? ts.map(t => `<div class="mem"><span class="sdot" style="--sc:${groupColour(t.code)}"></span><div><b>${esc(t.name)}</b><small>${mine(t.code) ? 'You are ' + mine(t.code).role.toLowerCase() + ' here' : ''}</small></div>
-            ${mine(t.code) ? `<button class="chip" data-co="${t.code}">Open as ${mine(t.code).role.toLowerCase()}</button>` : ''}<button class="chip" data-ci="${t.code}">Invite admin</button><button class="chip${youth[t.code] ? ' on' : ''}" data-cy="${t.code}" aria-pressed="${!!youth[t.code]}">Youth</button><button class="chip${adult[t.code] ? ' on' : ''}" data-cp="${t.code}" aria-pressed="${!!adult[t.code]}">Adult positions</button></div>`).join('') : '<p class="hint">No teams in the club yet.</p>';
+        box.innerHTML = ts.length ? ts.map(t => `<div class="mem${mine(t.code) ? ' tapcard' : ''}"><span class="sdot" style="--sc:${groupColour(t.code)}"></span><div><b>${esc(t.name)}</b><small>${mine(t.code) ? 'You are ' + mine(t.code).role.toLowerCase() + ' here' : ''}</small></div>
+            ${mine(t.code) ? `<button class="chip" data-co="${t.code}" data-main>Open as ${mine(t.code).role.toLowerCase()}</button>` : ''}<button class="chip" data-ci="${t.code}">Invite admin</button><button class="chip${youth[t.code] ? ' on' : ''}" data-cy="${t.code}" aria-pressed="${!!youth[t.code]}">Youth</button><button class="chip${adult[t.code] ? ' on' : ''}" data-cp="${t.code}" aria-pressed="${!!adult[t.code]}">Adult positions</button></div>`).join('') : '<p class="hint">No teams in the club yet.</p>';
         $$('[data-co]', box).forEach(b => b.addEventListener('click', () => setHat(mine(b.dataset.co))));
         $$('[data-cy]', box).forEach(b => b.addEventListener('click', async () => { const t = ts.find(x => x.code === b.dataset.cy), on = !youth[t.code]; b.disabled = true;
           try { await setYouth(t.code, on); toast(on ? `${t.name} is a youth team: under-18s join it through a parent` : `${t.name} is no longer a youth team`); loadTeams(); }
@@ -4985,7 +4990,7 @@ async function loadKidsAdmin(box){
     const names = squadNames(), {linkedTo: count, none, linked, waiting} = kidsOverview(ms, names);
     const row = p => { const ls = count(p.id), parents = ls.filter(m => m.role !== 'player').length, phone = ls.some(m => m.role === 'player');
       const info = `<b>${esc(p.name)}</b><small>${parents ? parents + ' parent' + (parents > 1 ? 's' : '') + ' linked' : 'no parent linked'}${phone ? ' · own phone' : ''} · <u>${ls.length ? 'see who' : 'link a parent'}</u></small>`;
-      return `<div class="mem${parents ? '' : ' req'}"><button class="memlink" data-kwho="${p.id}">${info}</button><button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
+      return `<div class="mem tapcard${parents ? '' : ' req'}"><button class="memlink" data-kwho="${p.id}" data-main>${info}</button><button class="chip${parents ? '' : ' on'}" data-kinv="${p.id}">${parents ? 'Share code' : 'Invite parent'}</button><button class="chip" data-knew="${p.id}">New code</button></div>`; };
     const cnt = $('#adCnt-unlinked'); if(cnt) cnt.textContent = none.length || '';
     // two admin tabs: Unlinked (children with no parent; parents waiting are under Waiting) and Linked
     box.innerHTML = !names.length ? '<p class="hint" data-sec="unlinked">Add the squad first (Squad tab), then sync.</p><p class="hint" data-sec="linked">Add the squad first (Squad tab), then sync.</p>'
