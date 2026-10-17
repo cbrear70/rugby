@@ -239,7 +239,7 @@ textarea{resize:vertical;min-height:84px}
 .srow.open select{border-color:var(--accent);color:var(--muted)}
 .srow.open select option,.srow.open select optgroup{color:var(--ink)}
 .srow label small.tofill{color:var(--accent);font-weight:600}
-/* a player borrowed from another sub-squad: blue, apart from the yellow of an empty shirt and the red of unavailable */
+/* a player borrowed from another sub-squad: blue, apart from the yellow of an empty shirt and the red of a player who said no */
 .srow.bor{background:color-mix(in srgb,var(--jog) 14%,transparent);box-shadow:inset 3px 0 0 var(--jog);padding-left:8px;padding-right:6px;border-radius:6px}
 .srow.bor select{border-color:color-mix(in srgb,var(--jog) 70%,transparent)}
 .srow.bor.unav select{border-color:color-mix(in srgb,var(--danger) 60%,transparent)}
@@ -745,9 +745,9 @@ function selectionForEvent(e){
 const SAMPLE_NAMES = new Set(['Tom Hadley','Rhys Palmer','Sam Okafor','Jack Whitmore','Luke Brennan','Owen Fisher','Dan Mercer','Callum Reid','Ben Ashworth','Harry Lowe','Josh Keane','Matt Doyle','Will Carrick','Alfie Brooks','Ethan Price','Joe Tanner','Finn Gallagher','Nathan Cole','Ollie Stroud','Kieran Walsh','George Pym','Aaron Vail','Liam Hext','Max Rowley','Ryan Dunne','Isaac Burnell']);
 function seed(){
   const names = [['Tom Hadley','Prop'],['Rhys Palmer','Hooker'],['Sam Okafor','Prop'],['Jack Whitmore','Lock'],['Luke Brennan','Lock'],['Owen Fisher','Flanker'],['Dan Mercer','Flanker'],['Callum Reid','Number 8, Flanker'],['Ben Ashworth','Scrum-half'],['Harry Lowe','Fly-half'],['Josh Keane','Wing'],['Matt Doyle','Centre'],['Will Carrick','Centre'],['Alfie Brooks','Wing'],['Ethan Price','Full-back, Wing'],['Joe Tanner','Hooker'],['Finn Gallagher','Prop'],['Nathan Cole','Prop'],['Ollie Stroud','Lock, Flanker'],['Kieran Walsh','Flanker'],['George Pym','Scrum-half'],['Aaron Vail','Fly-half, Centre'],['Liam Hext','Wing, Full-back'],['Max Rowley','Centre'],['Ryan Dunne','Prop'],['Isaac Burnell','Lock']];
-  const players = names.map(([name,pos]) => ({id:uid(), name, pos, notes:'', available:true}));
-  players[24].available = false; players[24].notes = 'Away this weekend';
-  players[25].available = false; players[25].notes = 'Hamstring, back in two weeks';
+  const players = names.map(([name,pos]) => ({id:uid(), name, pos, notes:''}));
+  players[24].notes = 'Away this weekend';
+  players[25].notes = 'Hamstring, back in two weeks';
   players[9].notes = 'Goal kicker';
   const t = {id:uid(), name:'Example RFC (sample)', selection:{}};
   for(let n=1;n<=23;n++) t.selection[n] = {playerId: players[n-1].id};
@@ -1086,7 +1086,7 @@ function bigShirt(n,color){ return miniShirt(n,color,64); }
 function showSlot(n){
   const t = team(), p = playerAt(t,n), col = colorOf(t,n);
   openSheet(`<div class="det-head">${bigShirt(n,col)}<div class="who"><div class="eyebrow">#${n} · ${posName(n)}</div><h2>${p?esc(p.name):'Not picked'}</h2>
-      ${p&&p.pos?`<div class="muted">Plays ${esc(p.pos)}</div>`:''}${p&&!p.available?'<div><span class="pill warn">Marked unavailable</span></div>':''}</div></div>
+      ${p&&p.pos?`<div class="muted">Plays ${esc(p.pos)}</div>`:''}</div></div>
     ${p&&p.notes?`<p class="notes">${esc(p.notes)}</p>`:''}
     <div class="field"><div class="field-label">Shirt colour</div>${swatchRow((t.selection[n]||{}).color, defaultColor(n))}</div>
     <div class="row-btns"><button class="btn" id="slEdit">Edit</button><button class="btn ghost" data-close>Close</button></div>
@@ -1107,14 +1107,14 @@ function shirtPositions(n, t = team()){
   return SHIRT_POS[slot].concat(lone ? SHIRT_POS[pr[0]] : []);
 }
 const playsFor = (p, want) => want.length && posList(p.pos).some(x => want.includes(x));
-// The shirt's drop-down: only players who can play (not marked unavailable in the squad, and not "no" for the event),
+// The shirt's drop-down: only players who can play (not "no" for the event),
 // those who play the shirt's position first, then the others; for an event, Available before Maybe before No reply.
 // Whoever wears the shirt now stays in the list, whatever their availability, so the sheet doesn't change under you.
 function playerOptions(t, selectedId, forN, ev){
   const all = squadSorted(), own = t.sub && subById(t.sub) ? t.sub : '';
-  const said = p => ev ? statusOf(ev.id, p.id) || 'none' : 'yes', canPlay = p => p.available !== false && said(p) !== 'no';
+  const said = p => ev ? statusOf(ev.id, p.id) || 'none' : 'yes', canPlay = p => said(p) !== 'no';
   const RANK = {yes: 0, maybe: 1, none: 2}, NOTE = {maybe: ' (maybe)', none: ' (no reply)'};
-  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (unavailable)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p);
+  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (said no)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p);
     return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}${far ? ' · ' + esc(far) : ''}</option>`; };
   // a borrowed player wearing a starting shirt in another selection that's still to come (on the same day as this
   // one's fixture, when both have one) goes last; one on another bench, or not picked, is as free as anyone
@@ -1132,7 +1132,7 @@ function playerOptions(t, selectedId, forN, ev){
   const here = all.find(p => p.id === selectedId && !canPlay(p));
   const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p) && !startsIn(p));
     return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want))))); }).join('') : '';
-  return `<option value="">— Not picked —</option>` + (here ? group('Picked, now unavailable', [here]) : '')
+  return `<option value="">— Not picked —</option>` + (here ? group('Picked, now said no', [here]) : '')
     + group('Plays ' + (want.filter(x => posOptions().includes(x)).join(' or ') || want[0]), byStatus(fits)) + others + borrow
     + group('Borrow · starting in another selection', (ps => byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want)))))(all.filter(p => canPlay(p) && startsIn(p))));
 }
@@ -1207,14 +1207,14 @@ async function setPositions(v){
 // a new squad player; null if the name is blank
 function addPlayer(name, pos){
   name = (name || '').trim(); if(!name) return null;
-  const p = {id:uid(), name, pos:(pos || '').trim(), notes:'', available:true};
+  const p = {id:uid(), name, pos:(pos || '').trim(), notes:''};
   S.players.push(p); save(); return p;
 }
-// f: {name, pos, notes, available, sub}; a blank name keeps the old one, sub '' takes them out of their sub-squad
+// f: {name, pos, notes, sub}; a blank name keeps the old one, sub '' takes them out of their sub-squad
 function updatePlayer(pid, f){
   const p = S.players.find(x => x.id === pid); if(!p) return null;
   if(f.sub) p.sub = f.sub; else delete p.sub;
-  p.name = (f.name || '').trim() || p.name; p.pos = (f.pos || '').trim(); p.notes = (f.notes || '').trim(); p.available = !!f.available;
+  p.name = (f.name || '').trim() || p.name; p.pos = (f.pos || '').trim(); p.notes = (f.notes || '').trim(); delete p.available; // the old squad-wide "available" switch is gone: availability is per fixture
   save(); return p;
 }
 // off the squad, and off every team sheet they were picked for
@@ -1239,20 +1239,22 @@ function newSub(name){ const subs = subsOf(); return {id: uid(), name, color: SU
 function renderSquad(){
   const t = team(), el = $('#squadBody');
   const list = squadSorted();
-  const av = list.filter(p=>p.available!==false).length, many = S.teams.length > 1, phoneOnly = syncing() ? list.filter(p => p.localOnly).length : 0;
+  const many = S.teams.length > 1, phoneOnly = syncing() ? list.filter(p => p.localOnly).length : 0;
+  // with sub-squads, the list is grouped by sub-squad or shown as one list of everyone (the view chip switches)
+  const bySquad = subsOf().length > 0 && !S.ui.squadAll;
   el.innerHTML = `
     <form class="add-row" id="addForm" autocomplete="off">
       <input id="newName" type="text" placeholder="New player's name" aria-label="New player's name">
       <button class="btn" type="submit">Add</button>
       <div id="newPos" class="pos"></div>
     </form>
-    <div class="section-h"><span>Squad · ${list.length}</span><span>${av} available${syncing() ? ` · <button class="chip" id="sqSubs">Sub-squads${subsOf().length ? ' · ' + subsOf().length : ''}</button>` : ''}</span></div>
+    <div class="section-h"><span>Squad · ${list.length}</span><span>${syncing() ? (subsOf().length ? `<button class="chip on" id="sqView" aria-label="Switch view">${bySquad ? 'By squad' : 'All players'} ⇄</button> <button class="chip" id="sqSubs">Sub-squads · ${subsOf().length}</button>` : '<button class="chip" id="sqSubs">Sub-squads</button>') : ''}</span></div>
     ${many || syncing() ? `<p class="hint" style="margin:-4px 0 8px">One squad for ${syncing() ? 'every selection in '+esc(S.sync.groupName) : 'all your selections'}. Each selection picks its own team sheet from it${subsOf().length ? ', usually from one sub-squad' : ''}.</p>` : ''}
     ${phoneOnly ? `<div class="row-btns" style="margin-bottom:8px"><button class="btn ghost" id="sqShare">Share ${phoneOnly} phone-only player${phoneOnly>1?'s':''} with the other coaches</button></div>` : ''}
-    ${list.length ? squadSections(list).map(([sid, ps]) => `${subsOf().length ? `<div class="section-h subhead">${sid ? `<span class="sdot" style="--sc:${subById(sid).color}"></span>` : ''}<span>${sid ? esc(subName(sid)) : 'Not in a sub-squad'} · ${ps.length}</span></div>` : ''}<div class="list">${ps.map(p => { const k = numberOf(t,p.id), where = many ? pickedIn(p.id).filter(w => !w.startsWith(t.name+' #')) : [];
-      return `<button class="prow" data-pid="${p.id}"><span class="dot${p.available===false?' off':''}" title="${p.available===false?'Unavailable':'Available'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos||'No position set')}${p.available===false?' · unavailable':''}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? ' · also '+esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`).join('')
+    ${list.length ? (bySquad ? squadSections(list) : [['', list]]).map(([sid, ps]) => `${bySquad ? `<div class="section-h subhead">${sid ? `<span class="sdot" style="--sc:${subById(sid).color}"></span>` : ''}<span>${sid ? esc(subName(sid)) : 'Not in a sub-squad'} · ${ps.length}</span></div>` : ''}<div class="list">${ps.map(p => { const k = numberOf(t,p.id), where = many ? pickedIn(p.id).filter(w => !w.startsWith(t.name+' #')) : [];
+      return `<button class="prow" data-pid="${p.id}"><span class="who"><b>${esc(p.name)}${!bySquad && subOfPlayer(p) ? ' ' + subTag(p.sub) : ''}</b><small>${esc(p.pos||'No position set')}${syncing() && p.localOnly ? ' · this phone only' : ''}${where.length ? ' · also '+esc(where.join(', ')) : ''}</small></span>${k?`<span class="badge">${k}</span>`:''}</button>`; }).join('')}</div>`).join('')
       : `<div class="empty">No players yet. Add your squad above, then pick the team on the Selection tab.</div>`}
-    <p class="hint" style="margin-top:12px">Tap a player to edit their details or mark them unavailable.</p>
+    <p class="hint" style="margin-top:12px">Tap a player to edit their details. Whether they can play is set per fixture, from their parents’ replies (or yours).</p>
     ${!syncing() || isGroupAdmin() ? `<div class="field" style="margin-top:12px"><div class="field-label">Positions to pick from</div><div class="cats" id="sqPosSet">${[['junior', 'Junior'], ['senior', 'Adult']].map(([v, l]) => `<button type="button" class="chip${posSet() === v ? ' on' : ''}" data-ps="${v}" aria-pressed="${posSet() === v}">${l}</button>`).join('')}</div>
       <p class="hint">Junior: prop, back row, centre, wing. Adult splits them: tight head and loose head, openside, blindside and No.8, inside and outside centre, left and right wing.${syncing() ? ' For every coach in the team.' : ''}</p></div>` : ''}`;
   const newPos = posPicker($('#newPos', el), '');
@@ -1266,6 +1268,7 @@ function renderSquad(){
   });
   $$('.prow', el).forEach(b => b.addEventListener('click', () => editPlayer(b.dataset.pid)));
   const ss = $('#sqSubs', el); if(ss) ss.addEventListener('click', manageSubs);
+  const sv = $('#sqView', el); if(sv) sv.addEventListener('click', () => { S.ui.squadAll = bySquad; save(); renderSquad(); });
   const sq = $('#sqShare', el); if(sq) sq.addEventListener('click', () => { shareLocalPlayers(); renderSquad(); toast('Squad will be shared with the other coaches when you sync'); });
 }
 // the squad split into its sub-squads (in order), then those in none; one section when there are no sub-squads
@@ -1282,14 +1285,13 @@ function editPlayer(pid){
     <div class="field"><label class="field-label" for="epNotes">Notes</label><textarea id="epNotes" placeholder="Injuries, kicking duties, anything useful">${esc(p.notes||'')}</textarea></div>
     ${subsOf().length ? `<div class="field"><div class="field-label">Sub-squad</div><div class="cats" id="epSub">${[{id: '', name: 'None'}].concat(subsOf()).map(sb => `<button type="button" class="chip${subOfPlayer(p) === sb.id ? ' on' : ''}" data-sub="${sb.id}">${esc(sb.name)}</button>`).join('')}</div></div>` : ''}
     ${where.length ? `<p class="hint">Picked for ${esc(where.join(', '))}</p>` : ''}
-    <label class="check"><input type="checkbox" id="epAv"${p.available!==false?' checked':''}> Available for selection</label>
     <div class="row-btns"><button class="btn" id="epSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     <button class="btn danger" id="epDel">Remove from squad</button>`,
     el => {
       let sub = subOfPlayer(p); const pos = posPicker($('#epPos', el), p.pos);
       $$('[data-sub]', el).forEach(b => b.addEventListener('click', () => { sub = b.dataset.sub; $$('[data-sub]', el).forEach(x => x.classList.toggle('on', x === b)); }));
       $('#epSave', el).addEventListener('click', () => {
-        updatePlayer(pid, {name: $('#epName', el).value, pos: pos(), notes: $('#epNotes', el).value, available: $('#epAv', el).checked, sub});
+        updatePlayer(pid, {name: $('#epName', el).value, pos: pos(), notes: $('#epNotes', el).value, sub});
         closeSheet(); renderAll();
       });
       $('#epDel', el).addEventListener('click', () => askConfirm('Remove '+p.name+'?', where.length ? `They will also be taken off the team sheet: ${where.join(', ')}.` : 'They will be removed from the squad list.', 'Remove player', () => {
@@ -1315,8 +1317,8 @@ function renderSelect(){
   const starters = onPitch.filter(picked).length, bench = subs.filter(picked).length;
   const avTag = p => { const s = avOf(p); return s ? `<span class="avtag st-${s}">${AV.find(a => a[0] === s)[1]}</span>` : ev ? '<span class="avtag">No reply</span>' : ''; };
   const own = t.sub && subById(t.sub) ? t.sub : '', isBorrowed = p => own && subOfPlayer(p) !== own, borrowed = p => isBorrowed(p) ? `<span class="avtag btag">Borrowed${subOfPlayer(p) ? ' from ' + esc(subName(p.sub)) : ''}</span>` : '';
-  const row = n => { const p = playerAt(t,n), bad = p && (p.available===false || avOf(p) === 'no'); return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p&&p.available===false?'<small>Marked unavailable</small>':''}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
-  const linked = selEventOf(t), canPlay = p => p.available !== false && avOf(p) !== 'no';
+  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no'; return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}</label><select id="sel-${n}" data-n="${n}">${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  const linked = selEventOf(t), canPlay = p => avOf(p) !== 'no';
   // the selection's own players not on this sheet: those who can play first, then the rest (folded away below the sheet)
   const unpicked = squadSorted().filter(p => (!own || subOfPlayer(p) === own) && !numberOf(t, p.id)).sort((a, b) => canPlay(b) - canPlay(a));
   const avail = S.players.filter(p => (!own || subOfPlayer(p) === own) && canPlay(p)).length, pickedAll = starters + bench, lent = allShirts(t).filter(n => { const p = playerAt(t,n); return p && isBorrowed(p); }).length;
@@ -1330,7 +1332,7 @@ function renderSelect(){
     ${onPitch.map(row).join('')}
     ${B ? `<div class="section-h"><span>Replacements · ${bench}/${B}</span></div>${subs.map(row).join('')}` : ''}
     ${unpicked.length ? `<details class="unpicked" id="selUnpicked"${S.ui.showUnpicked ? ' open' : ''}><summary class="section-h"><span>Not picked · ${unpicked.filter(canPlay).length} available${unpicked.some(p => !canPlay(p)) ? `, ${unpicked.filter(p => !canPlay(p)).length} not` : ''}</span></summary>
-      <div class="list">${unpicked.map(p => `<div class="prow${canPlay(p) ? '' : ' off'}"><span class="dot${canPlay(p) ? '' : ' off'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos || 'No position set')}${p.available === false ? ' · unavailable' : ev && avOf(p) ? ' · ' + AV.find(a => a[0] === avOf(p))[1].toLowerCase() : ev ? ' · no reply' : ''}${(w => w.length ? ' · ' + esc(w.join(', ')) : '')(pickedIn(p.id))}</small></span></div>`).join('')}</div></details>` : ''}
+      <div class="list">${unpicked.map(p => `<div class="prow${canPlay(p) ? '' : ' off'}"><span class="dot${canPlay(p) ? '' : ' off'}"></span><span class="who"><b>${esc(p.name)}</b><small>${esc(p.pos || 'No position set')}${ev && avOf(p) ? ' · ' + AV.find(a => a[0] === avOf(p))[1].toLowerCase() : ev ? ' · no reply' : ''}${(w => w.length ? ' · ' + esc(w.join(', ')) : '')(pickedIn(p.id))}</small></span></div>`).join('')}</div></details>` : ''}
     <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Selection settings (tap the selection name).</p>
     ${S.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
@@ -2333,7 +2335,7 @@ function importSelection(d, existing){
 function applyLineup(d, t){
   if(d.size) t.size = d.size; if(d.bench != null) t.bench = d.bench;
   for(const n in d.selection){ const s = d.selection[n]; let pid = null;
-    if(s.name){ let p = S.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:'', available:true}; S.players.push(p); } pid = p.id; }
+    if(s.name){ let p = S.players.find(x=>x.name.toLowerCase()===s.name.toLowerCase()); if(!p){ const src = d.players.find(x=>x.name===s.name)||{}; p = {id:uid(), name:s.name, pos:src.pos||'', notes:''}; S.players.push(p); } pid = p.id; }
     t.selection[n] = {playerId:pid, color:s.color||null}; if(s.x!=null){ t.selection[n].x = s.x; t.selection[n].y = s.y; } }
   save();
 }
@@ -4138,7 +4140,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:14</p>`,
+    <p class="hint" style="text-align:center">Version 17 Oct 2026, 15:24</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4632,7 +4634,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:14'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 15:24'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
