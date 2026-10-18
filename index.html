@@ -1254,6 +1254,16 @@ function playerOptions(t, selectedId, forN, ev){
     return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(free.filter(p => playsFor(p, want))).concat(byStatus(free.filter(p => !playsFor(p, want))), byStatus(busy))); }).join('') : '';
   const benchFree = benchNums(t).some(k => !playerAt(t, k)), benchOpt = forN && selectedId && benchSize(t) && pitchNums(t).includes(+forN)
     ? `<option value="bench"${benchFree ? '' : ' disabled'}>↓ Put on the bench${benchFree ? '' : ' (bench full)'}</option>` : '';
+  // match day: only the players ticked off as there (on any fixture's register that day), those in the shirt's position
+  // first; at the bottom, those picked (here or on another team that day) who aren't there yet
+  if(md){
+    const day = fixData().events.filter(v => v.date === md.date), isThere = p => day.some(v => hereOf(v.id, p.id) === true);
+    const there = all.filter(isThere), waiting = all.filter(p => !isThere(p) && (numberOf(t, p.id) || onOther(p)));
+    return benchOpt + `<option value="">— Not picked —</option>`
+      + group(`There · plays ${want.filter(x => posOptions().includes(x)).join(' or ') || want[0]}`, there.filter(p => playsFor(p, want)))
+      + group(there.some(p => playsFor(p, want)) ? 'There · other positions' : 'There', there.filter(p => !playsFor(p, want)))
+      + group('Picked, not there yet', waiting);
+  }
   return benchOpt + `<option value="">— Not picked —</option>` + (here ? group('Picked, now said no', [here]) : '')
     + group('Plays ' + (want.filter(x => posOptions().includes(x)).join(' or ') || want[0]), byStatus(fits)) + others + borrow
     + group('Borrow · starting in another selection', (ps => byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want)))))(all.filter(p => canPlay(p) && startsIn(p))));
@@ -4510,7 +4520,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:42</p>`,
+    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:54</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5058,7 +5068,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:42'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:54'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
