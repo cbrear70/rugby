@@ -239,7 +239,8 @@ textarea{resize:vertical;min-height:84px}
 /* a shirt with nobody in it stands out, so gaps in the team sheet are easy to spot */
 .srow.open{background:color-mix(in srgb,var(--accent) 10%,transparent);box-shadow:inset 3px 0 0 var(--accent);padding-left:8px;padding-right:6px;border-radius:6px}
 .srow.open select{border-color:var(--accent);color:var(--muted)}
-.srow.open select option,.srow.open select optgroup{color:var(--ink)}
+/* the player list: names in white, the group headings (There, Plays Prop…) in the accent colour, on every row */
+.srow select option{background:var(--panel);color:var(--ink);font-style:normal}.srow select optgroup{background:var(--panel);color:var(--accent);font-style:normal;font-weight:700}
 .srow label small.tofill{color:var(--accent);font-weight:600}
 /* a player borrowed from another sub-squad: blue, apart from the yellow of an empty shirt and the red of a player who said no */
 .srow.bor{background:color-mix(in srgb,var(--jog) 14%,transparent);box-shadow:inset 3px 0 0 var(--jog);padding-left:8px;padding-right:6px;border-radius:6px}
@@ -1235,8 +1236,8 @@ function playerOptions(t, selectedId, forN, ev){
   // match day: a player on another team sheet that day says which (picking them takes them off it)
   const md = matchDay(t), onOther = p => { if(!md || numberOf(t, p.id)) return '';
     const x = sheets().find(x => x !== t && numberOf(x, p.id) && (v => v && v.date === md.date)(selEventOf(x))); return x ? `${x.name} #${numberOf(x, p.id)}` : ''; };
-  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (said no)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p) || onOther(p);
-    return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}${far ? ' · ' + esc(far) : ''}</option>`; };
+  const opt = (p, mark = '') => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (said no)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p) || onOther(p);
+    return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${mark}${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}${far ? ' · ' + esc(far) : ''}</option>`; };
   // a borrowed player wearing a starting shirt in another selection that's still to come (on the same day as this
   // one's fixture, when both have one) goes last; one on another bench, or not picked, is as free as anyone
   const today = ymd(new Date()), mine = selEventOf(draftOf(t) || t);
@@ -1244,7 +1245,9 @@ function playerOptions(t, selectedId, forN, ev){
     for(const x of sheets()){ if(x === t || x === draftOf(t)) continue; const k = numberOf(x, p.id), e = selEventOf(x);
       if(k && pitchNums(x).includes(k) && !(e && e.date < today) && !(e && mine && e.date !== mine.date)) return `${x.name} #${k}`; }
     return ''; };
-  const group = (label, ps) => ps.length ? `<optgroup label="${esc(label)}">${ps.map(opt).join('')}</optgroup>` : '';
+  // mark: a symbol before the name (iPhone pickers ignore colours, so it's the only way to make a player stand out);
+  // not on the player in the shirt now, so the box itself just shows their name
+  const group = (label, ps, mark) => ps.length ? `<optgroup label="${esc(label)}">${ps.map(p => opt(p, mark && p.id !== selectedId ? mark(p) : '')).join('')}</optgroup>` : '';
   const want = forN ? shirtPositions(forN, t) : [], byStatus = ps => [...ps].sort((a, b) => RANK[said(a)] - RANK[said(b)]);
   const pool = all.filter(p => !own || subOfPlayer(p) === own);
   const ok = pool.filter(canPlay), fits = ok.filter(p => playsFor(p, want)), rest = ok.filter(p => !playsFor(p, want));
@@ -1257,18 +1260,28 @@ function playerOptions(t, selectedId, forN, ev){
     return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(free.filter(p => playsFor(p, want))).concat(byStatus(free.filter(p => !playsFor(p, want))), byStatus(busy))); }).join('') : '';
   const benchFree = benchNums(t).some(k => !playerAt(t, k)), benchOpt = forN && selectedId && benchSize(t) && pitchNums(t).includes(+forN)
     ? `<option value="bench"${benchFree ? '' : ' disabled'}>↓ Put on the bench${benchFree ? '' : ' (bench full)'}</option>` : '';
-  // match day: only the players ticked off as there (on any fixture's register that day): first those not starting (no
-  // shirt, or a bench shirt, on any team sheet that day), then the starters, each with the shirt's position first; at
-  // the bottom, those picked (here or on another team that day) who aren't there yet
+  // match day: only the players ticked off as there (on any fixture's register that day), in groups:
+  //  - this team's not picked (🟢): bench shirts first, then no shirt
+  //  - this team's starters
+  //  - other teams' players (on another team sheet that day, or from another sub-squad): their bench and unpicked (🟢)
+  //    first, then their starters
+  //  - at the bottom, those picked (here or on another team that day) who aren't there yet
+  // each with the shirt's position first
   if(md){
     const day = fixData().events.filter(v => v.date === md.date), isThere = p => day.some(v => hereOf(v.id, p.id) === true);
-    const daySheets = sheets().filter(x => (v => v && v.date === md.date)(selEventOf(x)));
-    const starting = p => daySheets.some(x => pitchNums(x).includes(numberOf(x, p.id)));
+    const other = sheets().filter(x => x !== t && (v => v && v.date === md.date)(selEventOf(x))), sheetOf = p => other.find(x => numberOf(x, p.id));
+    const isOther = p => !numberOf(t, p.id) && (!!sheetOf(p) || (own && subOfPlayer(p) !== own));
+    const startsOn = (x, p) => pitchNums(x).includes(numberOf(x, p.id));
     const there = all.filter(isThere), waiting = all.filter(p => !isThere(p) && (numberOf(t, p.id) || onOther(p)));
     const fitsFirst = ps => ps.filter(p => playsFor(p, want)).concat(ps.filter(p => !playsFor(p, want)));
+    const byShirt = (ps, num) => ps.filter(num).sort((a, b) => num(a) - num(b)).concat(fitsFirst(ps.filter(p => !num(p))));
+    const mine = there.filter(p => !isOther(p)), theirs = there.filter(isOther), green = () => '🟢 ';
+    const theirNum = p => { const x = sheetOf(p); return x ? numberOf(x, p.id) : 0; };
     return benchOpt + `<option value="">— Not picked —</option>`
-      + group('Not picked · there', fitsFirst(there.filter(p => !starting(p))))
-      + group('Starting · there', fitsFirst(there.filter(starting)))
+      + group('Not picked · there', byShirt(mine.filter(p => !startsOn(t, p)), p => numberOf(t, p.id)), green)
+      + group('Starting · this team', fitsFirst(mine.filter(p => startsOn(t, p))))
+      + group('Other team players · there', byShirt(theirs.filter(p => !(sheetOf(p) && startsOn(sheetOf(p), p))), theirNum), green)
+      + group('Other team players · starting', fitsFirst(theirs.filter(p => sheetOf(p) && startsOn(sheetOf(p), p))))
       + group('Picked, not there yet', waiting);
   }
   return benchOpt + `<option value="">— Not picked —</option>` + (here ? group('Picked, now said no', [here]) : '')
@@ -4535,7 +4548,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 18 Oct 2026, 14:28</p>`,
+    <p class="hint" style="text-align:center">Version 18 Oct 2026, 15:02</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5083,7 +5096,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 14:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 15:02'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
