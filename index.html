@@ -1463,11 +1463,13 @@ function renderSelect(){
   // the selection's own players not on this sheet: those who can play first, then the rest (folded away below the sheet)
   const unpicked = squadSorted().filter(p => (!own || subOfPlayer(p) === own) && !numberOf(t, p.id)).sort((a, b) => canPlay(b) - canPlay(a));
   const avail = S.players.filter(p => (!own || subOfPlayer(p) === own) && canPlay(p)).length, pickedAll = starters + bench, lent = allShirts(t).filter(n => { const p = playerAt(t,n); return p && isBorrowed(p); }).length;
-  // the coming fixtures (matches, and any event that has a team sheet), the open one lit. Tapping one opens its team
-  // sheet (made the first time), so the Pitch tab shows the same one. The last chip opens the other selections.
-  const fixList = up.filter(e => !e.cancelled && (e.type === 'match' || selectionFor(e))).slice(0, 6);
-  if(linked && !fixList.includes(linked)) fixList.push(linked);
-  const fixRow = fixList.length ? `<div class="mact fixsels">${fixList.map(e => { const s = selectionFor(e); return `<button class="chip${linked === e ? ' on' : ''}${s && s.forPlayers ? ' pubd' : ''}" data-fixsel="${e.id}"><b>${esc(evWhen(e).split(' · ')[0])}</b> ${esc(evTitle(e))}${s && s.forPlayers ? ' ✓' : ''}</button>`; }).join('')}<button class="chip selchip${linked ? '' : ' on'}" data-selpick>${linked ? 'Other ▾' : esc(t.name) + ' ▾'}</button></div>`
+  // the next match day's fixtures (today's, if there are any; matches, and any event that has a team sheet), at most
+  // two, the open one lit. Tapping one opens its team sheet (made the first time), so the Pitch tab shows the same one.
+  // The last chip opens the other selections, and names the open one when it isn't in the row.
+  const coming = up.filter(e => !e.cancelled && (e.type === 'match' || selectionFor(e)));
+  const fixList = coming.filter(e => e.date === (coming[0] || {}).date).slice(0, 2);
+  const lastChip = linked && fixList.includes(linked) ? 'Other ▾' : esc(t.name) + ' ▾';
+  const fixRow = fixList.length ? `<div class="mact fixsels">${fixList.map(e => { const s = selectionFor(e); return `<button class="chip${linked === e ? ' on' : ''}${s && s.forPlayers ? ' pubd' : ''}" data-fixsel="${e.id}"><b>${esc(evWhen(e).split(' · ')[0])}</b> ${esc(evTitle(e))}${s && s.forPlayers ? ' ✓' : ''}</button>`; }).join('')}<button class="chip selchip${lastChip === 'Other ▾' ? '' : ' on'}" data-selpick>${lastChip}</button></div>`
     : `<div class="mact" style="margin-bottom:8px">${selChip()}</div>`;
   el.innerHTML = `${fixRow}
     <div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
@@ -4486,7 +4488,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:26</p>`,
+    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:30</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5034,7 +5036,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:26'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:30'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
