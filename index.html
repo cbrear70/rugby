@@ -755,6 +755,14 @@ function assign(t,n,pid){
 // move the player in shirt n to the first empty bench shirt; false if there's nobody there or the bench is full
 function toBench(t, n){ const p = playerAt(t, n), free = benchNums(t).find(k => !playerAt(t, k));
   if(!p || !free || readOnlySheet(t)) return false; setSel(t, free, {playerId: p.id}); setSel(t, n, {playerId: null}); return true; }
+// Match day: a player put on published sheet t comes off any other team sheet for a fixture that day (they can't play
+// for two teams). Returns the sheets they came off.
+function offOtherSheets(t, pid){
+  const e = matchDay(t); if(!e || !pid) return [];
+  const others = sheets().filter(x => x !== t && numberOf(x, pid) && (v => v && v.date === e.date)(selEventOf(x)));
+  for(const x of others) setSel(x, numberOf(x, pid), {playerId: null});
+  return others;
+}
 function newTeam(name){ return {id:uid(), name:name||'New selection', selection:{}}; }
 
 /* ---------- SELECTION ACTIONS ----------
@@ -1087,6 +1095,8 @@ function fitAboveTabs(){
   sheetEl.classList.toggle('overtabs', !!(r && r.height));
 }
 window.addEventListener('resize', () => { if(!sheetEl.hidden) fitAboveTabs(); });
+// redraw the open sheet without losing the place in it (an action on one row redraws the whole list)
+function keepPlace(redraw){ const top = sheetEl.scrollTop; redraw(); sheetEl.scrollTop = top; }
 function openSheet(html, mount, onClose){
   fitAboveTabs();
   sheetEl.innerHTML = '<div class="grab"></div><button type="button" class="sheetx" data-close aria-label="Close">×</button>' + html;
@@ -1218,7 +1228,10 @@ function playerOptions(t, selectedId, forN, ev){
   const all = squadSorted(), own = t.sub && subById(t.sub) ? t.sub : '';
   const said = p => ev ? statusOf(ev.id, p.id) || 'none' : 'yes', canPlay = p => said(p) !== 'no';
   const RANK = {yes: 0, maybe: 1, none: 2}, NOTE = {maybe: ' (maybe)', none: ' (no reply)'};
-  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (said no)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p);
+  // match day: a player on another team sheet that day says which (picking them takes them off it)
+  const md = matchDay(t), onOther = p => { if(!md || numberOf(t, p.id)) return '';
+    const x = sheets().find(x => x !== t && numberOf(x, p.id) && (v => v && v.date === md.date)(selEventOf(x))); return x ? `${x.name} #${numberOf(x, p.id)}` : ''; };
+  const opt = p => { const k = numberOf(t,p.id), note = !canPlay(p) ? ' (said no)' : ev ? NOTE[said(p)] || '' : '', far = startsIn(p) || onOther(p);
     return `<option value="${p.id}"${p.id===selectedId?' selected':''}>${esc(p.name)}${note}${k && k!==forN ? ' · #'+k : ''}${far ? ' · ' + esc(far) : ''}</option>`; };
   // a borrowed player wearing a starting shirt in another selection that's still to come (on the same day as this
   // one's fixture, when both have one) goes last; one on another bench, or not picked, is as free as anyone
@@ -1234,8 +1247,10 @@ function playerOptions(t, selectedId, forN, ev){
   const others = ev ? [['yes', 'Available'], ['maybe', 'Maybe'], ['none', 'No reply']].map(([k, l]) => group(fits.length ? l + ' · other positions' : l, rest.filter(p => said(p) === k))).join('')
     : group(fits.length ? 'Other positions' : 'Available', rest);
   const here = all.find(p => p.id === selectedId && !canPlay(p));
-  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p) && !startsIn(p));
-    return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want))))); }).join('') : '';
+  // on match day, players starting for another team that day can be borrowed too (they come off that sheet), listed last
+  const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p) && (md || !startsIn(p)));
+    const free = ps.filter(p => !startsIn(p)), busy = ps.filter(p => startsIn(p));
+    return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(free.filter(p => playsFor(p, want))).concat(byStatus(free.filter(p => !playsFor(p, want))), byStatus(busy))); }).join('') : '';
   const benchFree = benchNums(t).some(k => !playerAt(t, k)), benchOpt = forN && selectedId && benchSize(t) && pitchNums(t).includes(+forN)
     ? `<option value="bench"${benchFree ? '' : ' disabled'}>↓ Put on the bench${benchFree ? '' : ' (bench full)'}</option>` : '';
   return benchOpt + `<option value="">— Not picked —</option>` + (here ? group('Picked, now said no', [here]) : '')
@@ -1487,7 +1502,12 @@ function renderSelect(){
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => {
     if(s.value === 'bench'){ const p = playerAt(t, +s.dataset.n); if(toBench(t, +s.dataset.n)) toast(`${p.name} is on the bench`); }
-    else assign(t, +s.dataset.n, s.value || null);
+    else { const pid = s.value || null; assign(t, +s.dataset.n, pid);
+      // match day: they come off the other team's sheet that day, and a tick on its register comes with them
+      const off = offOtherSheets(t, pid);
+      if(off.length){ const p = playerById(t, pid); toast(`${p ? p.name : 'Player'} taken off ${off.map(x => x.name).join(' and ')}`);
+        const was = off.map(selEventOf).find(v => v && hereOf(v.id, pid) === true);
+        if(was) setHere(md.id, pid, true).then(() => clearHere(was.id, pid)).then(() => renderSelect(), err => toast(niceErr(err))); } }
     renderSelect(); }));
   // match day register: tap a shirt to mark the player here, again to clear it
   $$('[data-reg]', el).forEach(b => b.addEventListener('click', async () => { const pid = b.dataset.reg; b.disabled = true;
@@ -4488,7 +4508,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:30</p>`,
+    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:36</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5036,7 +5056,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:30'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:36'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -5446,13 +5466,13 @@ function showKidLinks(pid, ms, onChange){
     <p class="hint">Link adds ${esc(name)} to a parent already in the team: they then see the team’s drills and ${esc(name.split(' ')[0])}’s fixtures and team sheets. Remove link unlinks ${esc(name)} from that person only: they stay in the team and keep any other children. To take someone out of the team altogether, use the People tab.</p>
     <button class="btn ghost wide" data-close>Done</button>`,
     el => { $$('[data-kadd]', el).forEach(b => b.addEventListener('click', async () => { const m = ms.find(x => x.uid === b.dataset.kadd); b.disabled = true;
-      try { await linkParent(m, pid); toast(`${m.who || 'They'} ${m.who ? 'is' : 'are'} now linked to ${name}`); onChange && onChange(); showKidLinks(pid, ms, onChange); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+      try { await linkParent(m, pid); toast(`${m.who || 'They'} ${m.who ? 'is' : 'are'} now linked to ${name}`); onChange && onChange(); keepPlace(() => showKidLinks(pid, ms, onChange)); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
     $$('[data-kul]', el).forEach(b => b.addEventListener('click', async () => {
       if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
       const m = ms.find(x => x.uid === b.dataset.kul); b.disabled = true;
       try {
         const n = await unlinkChild(m, pid, ms); toast(`${m.who || 'They'} ${m.role === 'player' ? 'is no longer set as' : 'is no longer linked to'} ${name}.${offNote(n)}`);
-        onChange && onChange(); showKidLinks(pid, ms, onChange);
+        onChange && onChange(); keepPlace(() => showKidLinks(pid, ms, onChange));
       } catch(e){ b.disabled = false; toast(niceErr(e)); }
     })); });
 }
@@ -5493,12 +5513,13 @@ async function clearHere(evId, pid, z = S.sync){
   await fb('DELETE', `/groups/${z.group}/attend/${k}`);
   if(z.attend) delete z.attend[k]; save();
 }
-// the register for an event (coaches)
+// the register for an event (coaches): the squad, less anyone who said they can't come (unless they've been marked)
 function showRegister(e){
-  const z = S.sync, names = squadNames().filter(p => inSub(p, e.sub)), h = p => hereOf(e.id, p.id);
+  const z = S.sync, h = p => hereOf(e.id, p.id), squad = squadNames().filter(p => inSub(p, e.sub));
+  const names = squad.filter(p => statusOf(e.id, p.id) !== 'no' || h(p) !== null), out = squad.length - names.length;
   const count = v => names.filter(p => h(p) === v).length;
   openSheet(`<div class="eyebrow">Register · ${esc(evWhen(e))}</div><h2>${esc(evTitle(e))}</h2>
-    <p class="muted"><span class="st-yes">${count(true)} here</span> · <span class="st-no">${count(false)} away</span> · ${count(null)} not marked</p>
+    <p class="muted"><span class="st-yes">${count(true)} here</span> · <span class="st-no">${count(false)} away</span> · ${count(null)} not marked${out ? ` · ${out} said they can’t come (not listed)` : ''}</p>
     ${names.map(p => { const st = statusOf(e.id, p.id), a = (z.attend || {})[avKey(e.id, p.id)];
       return `<div class="mem"><div><b>${esc(p.name)}</b><small>${st ? AV.find(x => x[0] === st)[1] : 'No reply'}${a && a.who ? ' · marked by ' + esc(a.who) : ''}</small></div>
         <button class="avb yes${h(p) === true ? ' on' : ''}" data-rh="${p.id}|1">Here</button><button class="avb no${h(p) === false ? ' on' : ''}" data-rh="${p.id}|0">Away</button></div>`; }).join('')
@@ -5506,14 +5527,14 @@ function showRegister(e){
     <button class="btn ghost wide" id="rgBack">Back to the event</button>`,
     el => {
       $$('[data-rh]', el).forEach(b => b.addEventListener('click', async () => { const [pid, v] = b.dataset.rh.split('|'); b.disabled = true;
-        try { await setHere(e.id, pid, v === '1'); showRegister(e); } catch(err){ b.disabled = false; toast(niceErr(err)); } }));
+        try { await setHere(e.id, pid, v === '1'); keepPlace(() => showRegister(e)); } catch(err){ b.disabled = false; toast(niceErr(err)); } }));
       $('#rgBack', el).addEventListener('click', () => showEvent(S.sync.group + '|' + e.id));
     });
 }
-// attendance across the events a register was taken for (coaches)
+// attendance across the events a register was taken for (coaches); one a player said they couldn't come to doesn't count
 function showAttendance(){
   const z = fixData(), taken = z.events.filter(e => Object.keys(z.attend || {}).some(k => k.startsWith(e.id + '_')));
-  const rows = squadNames().map(p => { const mine = taken.filter(e => inSub(p, e.sub)), here = mine.filter(e => hereOf(e.id, p.id) === true).length;
+  const rows = squadNames().map(p => { const mine = taken.filter(e => inSub(p, e.sub) && (statusOf(e.id, p.id) !== 'no' || hereOf(e.id, p.id) !== null)), here = mine.filter(e => hereOf(e.id, p.id) === true).length;
     return {p, here, of: mine.length}; }).sort((a, b) => bySurname(a.p, b.p));
   openSheet(`<div class="eyebrow">${esc(z.groupName)}</div><h2>Attendance</h2>
     <p class="muted">${taken.length} event${taken.length === 1 ? '' : 's'} with a register taken.</p>
