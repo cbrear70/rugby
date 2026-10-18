@@ -254,6 +254,9 @@ textarea{resize:vertical;min-height:84px}
 .srow.chg-new,.srow.chg-moved{background:color-mix(in srgb,#B98CF5 16%,transparent);box-shadow:inset 3px 0 0 #B98CF5;padding-left:8px;padding-right:6px;border-radius:6px}
 .srow.chg-new select,.srow.chg-moved select{border-color:#B98CF5}.srow .avtag.chgtag{color:#CDB2FA}
 .vnote{border-color:color-mix(in srgb,#B98CF5 55%,var(--line));background:color-mix(in srgb,#B98CF5 12%,var(--panel2))}
+.srow .regshirt{position:relative;padding:0;border:0;background:none;cursor:pointer;width:34px;height:34px;display:grid;place-items:center}
+.srow .regshirt .tick{position:absolute;inset:-3px;opacity:0;pointer-events:none}.srow .regshirt.here .tick{opacity:1}.srow .regshirt.here .mini{opacity:.55}
+.srow.here{box-shadow:inset 3px 0 0 var(--ok)}
 .srow select:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink)}.chip.on.pubd{color:var(--accent-ink)}
 .fixsels{margin:0 0 10px}.fixsels .chip b{font-weight:700;margin-right:2px}
 .selstats{display:flex;flex-wrap:wrap;gap:6px 16px;margin:0 0 10px;font-size:14px;color:var(--muted)}
@@ -702,7 +705,8 @@ function pooledMoves(d){
   return d;
 }
 let saveT; function save(){ clearTimeout(saveT); saveT = setTimeout(()=>{ try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} syncDot(); scheduleAutoSend(); }, 250); }
-const team = () => S.teams.find(t => t.id === S.currentTeamId) || S.teams[0];
+// a coach's version of a published team sheet is hidden: the phone shows the published one instead
+const team = () => { const t = S.teams.find(t => t.id === S.currentTeamId) || S.teams[0], d = isVersion(t) && draftOf(t); return d && d.forPlayers ? d : t; };
 const playerById = (t,id) => S.players.find(p => p.id === id);
 // which teams have picked this player, e.g. "U13 A #10 · U13 B #22"
 const pickedCount = t => Object.values(t.selection || {}).filter(sl => sl && sl.playerId && playerById(t, sl.playerId)).length;
@@ -714,7 +718,8 @@ function numberOf(t,pid){ for(const k in t.selection) if(t.selection[k] && t.sel
 /* Coach versions: each coach can make their own version of a team sheet (t.variantOf = the draft's id, t.by = their
    name, t.byKey = this phone's key), changing players or shirts. They sync like any selection, so every coach sees
    them, but only their coach can change one, and they're never published or counted as a team sheet: the draft (the
-   one that gets published) lists them, with how many players and positions differ from it. */
+   one that gets published) lists them, with how many players and positions differ from it. Once the draft is
+   published they're hidden (kept, and back if it's unpublished). */
 const isVersion = t => !!(t && t.variantOf);
 const sheets = () => S.teams.filter(t => !isVersion(t)); // the real team sheets, without coach versions
 const myKey = () => { if(!S.me){ S.me = uid(); save(); } return S.me; };
@@ -747,6 +752,9 @@ function assign(t,n,pid){
   if(pid){ for(const k in t.selection){ if(+k!==+n && t.selection[k] && t.selection[k].playerId===pid){ t.selection[k].playerId = cur; } } }
   setSel(t,n,{playerId: pid||null});
 }
+// move the player in shirt n to the first empty bench shirt; false if there's nobody there or the bench is full
+function toBench(t, n){ const p = playerAt(t, n), free = benchNums(t).find(k => !playerAt(t, k));
+  if(!p || !free || readOnlySheet(t)) return false; setSel(t, free, {playerId: p.id}); setSel(t, n, {playerId: null}); return true; }
 function newTeam(name){ return {id:uid(), name:name||'New selection', selection:{}}; }
 
 /* ---------- SELECTION ACTIONS ----------
@@ -1228,7 +1236,9 @@ function playerOptions(t, selectedId, forN, ev){
   const here = all.find(p => p.id === selectedId && !canPlay(p));
   const borrow = own ? [{id: ''}].concat(subsOf()).filter(sb => sb.id !== own).map(sb => { const ps = all.filter(p => subOfPlayer(p) === sb.id && canPlay(p) && !startsIn(p));
     return group(`Borrow ${sb.id ? 'from ' + sb.name : '· not in a sub-squad'}`, byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want))))); }).join('') : '';
-  return `<option value="">— Not picked —</option>` + (here ? group('Picked, now said no', [here]) : '')
+  const benchFree = benchNums(t).some(k => !playerAt(t, k)), benchOpt = forN && selectedId && benchSize(t) && pitchNums(t).includes(+forN)
+    ? `<option value="bench"${benchFree ? '' : ' disabled'}>↓ Put on the bench${benchFree ? '' : ' (bench full)'}</option>` : '';
+  return benchOpt + `<option value="">— Not picked —</option>` + (here ? group('Picked, now said no', [here]) : '')
     + group('Plays ' + (want.filter(x => posOptions().includes(x)).join(' or ') || want[0]), byStatus(fits)) + others + borrow
     + group('Borrow · starting in another selection', (ps => byStatus(ps.filter(p => playsFor(p, want))).concat(byStatus(ps.filter(p => !playsFor(p, want)))))(all.filter(p => canPlay(p) && startsIn(p))));
 }
@@ -1437,11 +1447,15 @@ function renderSelect(){
     if(p && was !== +n) return {cls: ' chg-moved', tag: `Moved from #${was}`};
     if(!p && had) return {cls: ' chg-new', tag: `${esc(surname(had.name))} taken off`};
     return null; };
-  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no', c = chg(n); return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}${c ? c.cls : ''}">${miniShirt(n, colorOf(t,n), 34)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}${c ? `<span class="avtag chgtag">${c.tag}</span>` : ''}</label><select id="sel-${n}" data-n="${n}"${ro ? ' disabled' : ''}>${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  // match day: a picked player's shirt is a button; ticked = here
+  const md = matchDay(t), here = p => !!md && hereOf(md.id, p.id) === true;
+  const shirtOf = (n, p) => md && p ? `<button class="regshirt${here(p) ? ' here' : ''}" data-reg="${p.id}" aria-pressed="${here(p)}" aria-label="${esc(p.name)}: ${here(p) ? 'here, tap to undo' : 'tap when here'}">${miniShirt(n, colorOf(t,n), 34)}<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6" fill="none" stroke="var(--ok)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : miniShirt(n, colorOf(t,n), 34);
+  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no', c = chg(n); return `<div class="srow${bad?' unav':''}${p?'':' open'}${p && isBorrowed(p)?' bor':''}${p && here(p) ? ' here' : ''}${c ? c.cls : ''}">${shirtOf(n, p)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}${c ? `<span class="avtag chgtag">${c.tag}</span>` : ''}</label><select id="sel-${n}" data-n="${n}"${ro ? ' disabled' : ''}>${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
   const linked = selEventOf(draftOf(t) || t), canPlay = p => avOf(p) !== 'no';
   // coach versions (only in a team): the draft has Publish and My version; a version says whose it is and what changed
-  const draft = draftOf(t) || t, vers = syncing() ? versionsOf(draft) : [], ro = readOnlySheet(t);
-  const verBtns = !syncing() ? '' : isVersion(t)
+  // once the draft is published the versions are hidden (team() shows the draft in place of one)
+  const draft = draftOf(t) || t, vers = syncing() && !draft.forPlayers ? versionsOf(draft) : [], ro = readOnlySheet(t);
+  const verBtns = !syncing() || draft.forPlayers ? '' : isVersion(t)
     ? `<button class="chip" data-ver="${draft.id}">Draft</button>${isMyVersion(t) ? ' <button class="chip" id="delVer">Delete mine</button>' : ''}`
     : ` <button class="chip" id="myVer">My version</button>`;
   const verNote = isVersion(t) ? `<div class="evnote vnote"><b>${esc(t.by || 'A coach')}’s version</b> of ${esc(draft.name)} · ${changesText(t)}<p class="hint">${ro ? 'Only ' + esc(t.by || 'that coach') + ' can change it.' : 'Only you can change it. It can’t be published: the draft is the one players see.'}</p></div>` : '';
@@ -1458,6 +1472,7 @@ function renderSelect(){
   el.innerHTML = `${fixRow}
     <div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
     ${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
+    ${md ? (ps => `<div class="evnote mdnote"><b>Match day · register</b> · <span class="st-yes">${ps.filter(here).length} of ${ps.length} here</span><p class="hint">Tap a shirt to tick the player off when they arrive. Tap again to undo.</p><button class="chip" id="mdEvent">Fixture details</button></div>`)(allShirts(t).map(n => playerAt(t, n)).filter(Boolean)) : ''}
     ${t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
     : ev ? `<p class="hint">Not a fixture’s team sheet. Availability shown is for <b>${esc(evTitle(ev))}</b> · ${esc(evWhen(ev).split(' · ')[0])}: tap a fixture above to pick its team.</p>` : ''}
     <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><span>${t.eventId && syncing() && !isVersion(t) ? `<button class="chip${t.forPlayers ? ' pubd' : ' on'}" id="pubSel">${t.forPlayers ? 'Published ✓' : 'Publish'}</button> ` : ''}${verBtns}</span></div>${verNote}${verList}
@@ -1468,7 +1483,15 @@ function renderSelect(){
     <p class="hint" style="margin-top:10px">${N}-a-side with ${B} replacement${B===1?'':'s'}. Change this in Selection settings (the ▾ chip at the top).</p>
     ${S.players.length ? '' : '<p class="empty" style="margin-top:14px">Add players on the Squad tab first.</p>'}
     <p class="hint" style="margin-top:12px">Picking a player who already has a shirt swaps the two shirts.</p>`;
-  $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => { assign(t, +s.dataset.n, s.value || null); renderSelect(); }));
+  $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => {
+    if(s.value === 'bench'){ const p = playerAt(t, +s.dataset.n); if(toBench(t, +s.dataset.n)) toast(`${p.name} is on the bench`); }
+    else assign(t, +s.dataset.n, s.value || null);
+    renderSelect(); }));
+  // match day register: tap a shirt to mark the player here, again to clear it
+  $$('[data-reg]', el).forEach(b => b.addEventListener('click', async () => { const pid = b.dataset.reg; b.disabled = true;
+    try { if(hereOf(md.id, pid) === true) await clearHere(md.id, pid); else await setHere(md.id, pid, true); } catch(err){ toast(niceErr(err)); }
+    renderSelect(); }));
+  const mde = $('#mdEvent', el); if(mde) mde.addEventListener('click', () => showEvent(S.sync.group + '|' + md.id));
   const un = $('#selUnpicked', el); if(un) un.addEventListener('toggle', () => { S.ui.showUnpicked = un.open; save(); });
   $$('[data-fixsel]', el).forEach(b => b.addEventListener('click', () => { const e = up.find(x => x.id === b.dataset.fixsel) || linked; if(e && e !== linked) pickFor(e); }));
   // Publish: players and parents see the team sheet (and who is picked) from the next sync, which runs straight away
@@ -3733,7 +3756,7 @@ function renderFixtures(){
       : hatKind() === 'player' && !kidsOf(S.sync).length ? '<p class="hint">Ask your team admin to set which player this phone is, to see your availability and team sheets here.</p>' : ''}
     ${due.length ? `<div class="evnote"><b>Replies due</b>${due.slice(0, 6).map(({z, pid, e}) => `<button class="memlink" data-evopen="${z.group}|${e.id}"><small><b>${esc(first(pid, z))}</b>: ${esc(evTitle(e))}, ${esc(evWhen(e).split(' · ')[0])} · say by end of ${esc(dayName(closeDay(e)))}</small></button>`).join('')}${due.length > 6 ? `<small class="muted">and ${due.length - 6} more</small>` : ''}</div>` : ''}
     ${list.length ? list.map(card).join('') : !coach && teams.every(z => waitText(z)) ? '' : `<div class="empty">${past ? 'No past events.' : coach && !only ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. The coaches add fixtures and training here.'}</div>`}`;
-  $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => showEvent(b.dataset.evopen)));
+  $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => openFixture(b.dataset.evopen)));
   $$('[data-ft]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixTeam = b.dataset.ft; save(); renderFixtures(); }));
   $$('[data-fk]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixKid = b.dataset.fk; save(); renderFixtures(); }));
   $$('[data-here]', el).forEach(b => b.addEventListener('click', async () => {
@@ -4235,6 +4258,13 @@ function editSub(sub){
    starting from the standing selection for the same sub-squad, so there's a team sheet for every match. */
 const selectionFor = e => S.teams.find(t => t.eventId === e.id);
 const selEventOf = t => t && t.eventId && syncing() ? fixData().events.find(e => e.id === t.eventId) || null : null;
+// Match day: a published team sheet, on its fixture's day, doubles as the register (tap a shirt to tick the player off)
+const matchDay = t => { const e = t && !isVersion(t) && t.forPlayers && selEventOf(t); return e && !e.cancelled && e.date === ymd(new Date()) ? e : null; };
+// tapping a fixture: on match day, a coach goes straight to its published team sheet; otherwise the fixture's details
+function openFixture(ref){
+  const [g, id] = ref.split('|'), z = fixTeam(g), e = z && z.events.find(x => x.id === id), t = e && z === S.sync && hatKind() === 'coach' && selectionFor(e);
+  if(t && matchDay(t)){ openSelection(t.id); ME.moveId = null; closeSheet(); showTab('select'); } else showEvent(ref);
+}
 function pickFor(e){
   const {base, auto: a} = selectionForEvent(e);
   if(base && a) toast(a.from || a.maybe ? `Team picked from ${a.from} available: ${a.starters} starting (${a.fits} in their position), ${a.bench} on the bench${a.maybe ? ` (${a.maybe} said maybe)` : ''}${a.left ? `, ${a.left} left over` : ''}. Check it and adjust.` : `New team sheet for ${evTitle(e)}. No one has said they’re available yet.`);
@@ -4456,7 +4486,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 17 Oct 2026, 21:02</p>`,
+    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:26</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4926,7 +4956,10 @@ const HELP = [
   ['Publish a team sheet', '', 'coach|select fix', `<p>On the <b>Selection</b> tab, tap <b>Publish</b> next to My version. Until then players and parents see nothing about the team.</p>
     <p>Once published, the fixture card turns green with <b>TEAM SELECTED</b>, picked players get an update, and tapping the card shows the team on the pitch. Changes you make afterwards are sent on their own shortly after you make them; players and parents see them the next time they open the app. Tap <b>Published ✓</b> to take it back.</p>`],
   ['Make your own version of a team sheet', '', 'coach|select', `<p>On a team sheet, tap <b>My version</b>. You get your own copy to change, players or shirts, without touching the draft. Every coach can see it, but only you can change it.</p>
-    <p>The draft lists everyone’s versions under <b>Versions</b>, with how many players and positions differ from it. Tap one to look at it, <b>Draft</b> to go back. Versions can’t be published: only the draft goes to players and parents.</p>`],
+    <p>The draft lists everyone’s versions under <b>Versions</b>, with how many players and positions differ from it. Tap one to look at it, <b>Draft</b> to go back. Versions can’t be published: only the draft goes to players and parents.</p>
+    <p>Once the draft is published, the versions are hidden. Unpublish it to see them again.</p>`],
+  ['Take the register on match day', '', 'coach|select fix', `<p>On the day of a fixture whose team sheet is published, tapping the fixture opens its team sheet, which is also the register. Tap a player’s shirt to tick them off when they arrive; tap again to undo. <b>Fixture details</b> at the top opens the fixture as usual.</p>
+    <p>To move a starter to the bench, pick <b>Put on the bench</b> at the top of their shirt’s drop-down: they go to the first empty bench shirt.</p>`],
   ['Borrow a player from another sub-squad', '', 'coach|select squad', `<p>In a shirt’s drop-down, players from the other sub-squads are listed under <b>Borrow from …</b>. Anyone already starting for another team sheet that day is listed last.</p>
     <p>Borrowed players show in blue on the team sheet and in the fixture’s availability list. Their own team’s fixture lists them under <b>Playing elsewhere</b>.</p>`],
   ['Plan a training session', '', 'coach|fix', `<p>Tap the training session on <b>Fixtures</b>, then <b>Make the training plan</b>. It starts from your team’s template: blocks such as Warm-up and Skills, each with its minutes and start time.</p>
@@ -5001,7 +5034,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('17 Oct 2026, 21:02'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:26'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
