@@ -256,6 +256,7 @@ textarea{resize:vertical;min-height:84px}
 .vnote{border-color:color-mix(in srgb,#B98CF5 55%,var(--line));background:color-mix(in srgb,#B98CF5 12%,var(--panel2))}
 .srow .regshirt{position:relative;padding:0;border:0;background:none;cursor:pointer;width:34px;height:34px;display:grid;place-items:center}
 .srow .regshirt .tick{position:absolute;inset:-3px;opacity:0;pointer-events:none}.srow .regshirt.here .tick{opacity:1}.srow .regshirt.here .mini{opacity:.55}
+.mdnote{margin:0 0 6px;font-size:14px}
 .srow.here{box-shadow:inset 3px 0 0 var(--ok)}
 .srow select:disabled{opacity:1;color:var(--ink);-webkit-text-fill-color:var(--ink)}.chip.on.pubd{color:var(--accent-ink)}
 .fixsels{margin:0 0 10px}.fixsels .chip b{font-weight:700;margin-right:2px}
@@ -1486,11 +1487,12 @@ function renderSelect(){
   const lastChip = linked && fixList.includes(linked) ? 'Other ▾' : esc(t.name) + ' ▾';
   const fixRow = fixList.length ? `<div class="mact fixsels">${fixList.map(e => { const s = selectionFor(e); return `<button class="chip${linked === e ? ' on' : ''}${s && s.forPlayers ? ' pubd' : ''}" data-fixsel="${e.id}"><b>${esc(evWhen(e).split(' · ')[0])}</b> ${esc(evTitle(e))}${s && s.forPlayers ? ' ✓' : ''}</button>`; }).join('')}<button class="chip selchip${lastChip === 'Other ▾' ? '' : ' on'}" data-selpick>${lastChip}</button></div>`
     : `<div class="mact" style="margin-bottom:8px">${selChip()}</div>`;
+  // match day: just the register line above the sheet (no counts, no fixture card: they're on the touchline)
   el.innerHTML = `${fixRow}
-    <div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
-    ${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}
-    ${md ? (ps => `<div class="evnote mdnote"><b>Match day · register</b> · <span class="st-yes">${ps.filter(here).length} of ${ps.length} here</span><p class="hint">Tap a shirt to tick the player off when they arrive. Tap again to undo.</p><button class="chip" id="mdEvent">Fixture details</button></div>`)(allShirts(t).map(n => playerAt(t, n)).filter(Boolean)) : ''}
-    ${t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
+    ${md ? '' : `<div class="selstats"><span><b>${avail}</b> available${own ? ' in ' + esc(subName(own)) : ''}</span><span><b>${pickedAll}</b> picked</span>${lent ? `<span class="bor"><b>${lent}</b> borrowed</span>` : ''}</div>
+    ${own ? `<p class="hint">${subTag(own)} Picks from ${esc(subName(own))} · ${S.players.filter(p => subOfPlayer(p) === own).length} players. Others are listed below them to borrow.</p>` : ''}`}
+    ${md ? (ps => `<p class="mdnote"><b>Register</b> · <span class="st-yes">${ps.filter(here).length} of ${ps.length} here</span> · <span class="muted">tap a shirt when they arrive</span></p>`)(allShirts(t).map(n => playerAt(t, n)).filter(Boolean))
+    : t.eventId && fixOn() ? `<div class="evnote">${linked ? `Team sheet for <b>${esc(evTitle(linked))}</b> · ${esc(evWhen(linked))}<p class="hint">${avSummary(linked)}</p>` : 'The fixture this team sheet was for has been deleted.'}</div>`
     : ev ? `<p class="hint">Not a fixture’s team sheet. Availability shown is for <b>${esc(evTitle(ev))}</b> · ${esc(evWhen(ev).split(' · ')[0])}: tap a fixture above to pick its team.</p>` : ''}
     <div class="section-h"><span>${startersLabel(t)} · ${starters}/${N}</span><span>${t.eventId && syncing() && !isVersion(t) ? `<button class="chip${t.forPlayers ? ' pubd' : ' on'}" id="pubSel">${t.forPlayers ? 'Published ✓' : 'Publish'}</button> ` : ''}${verBtns}</span></div>${verNote}${verList}
     ${onPitch.map(row).join('')}
@@ -1513,7 +1515,6 @@ function renderSelect(){
   $$('[data-reg]', el).forEach(b => b.addEventListener('click', async () => { const pid = b.dataset.reg; b.disabled = true;
     try { if(hereOf(md.id, pid) === true) await clearHere(md.id, pid); else await setHere(md.id, pid, true); } catch(err){ toast(niceErr(err)); }
     renderSelect(); }));
-  const mde = $('#mdEvent', el); if(mde) mde.addEventListener('click', () => showEvent(S.sync.group + '|' + md.id));
   const un = $('#selUnpicked', el); if(un) un.addEventListener('toggle', () => { S.ui.showUnpicked = un.open; save(); });
   $$('[data-fixsel]', el).forEach(b => b.addEventListener('click', () => { const e = up.find(x => x.id === b.dataset.fixsel) || linked; if(e && e !== linked) pickFor(e); }));
   // Publish: players and parents see the team sheet (and who is picked) from the next sync, which runs straight away
@@ -3778,7 +3779,8 @@ function renderFixtures(){
       : hatKind() === 'player' && !kidsOf(S.sync).length ? '<p class="hint">Ask your team admin to set which player this phone is, to see your availability and team sheets here.</p>' : ''}
     ${due.length ? `<div class="evnote"><b>Replies due</b>${due.slice(0, 6).map(({z, pid, e}) => `<button class="memlink" data-evopen="${z.group}|${e.id}"><small><b>${esc(first(pid, z))}</b>: ${esc(evTitle(e))}, ${esc(evWhen(e).split(' · ')[0])} · say by end of ${esc(dayName(closeDay(e)))}</small></button>`).join('')}${due.length > 6 ? `<small class="muted">and ${due.length - 6} more</small>` : ''}</div>` : ''}
     ${list.length ? list.map(card).join('') : !coach && teams.every(z => waitText(z)) ? '' : `<div class="empty">${past ? 'No past events.' : coach && !only ? 'Nothing coming up. Tap Add for a fixture or training session, or Import to bring in a calendar or spreadsheet (from Spond, the RFU GMS, Google Calendar and so on).' : 'Nothing coming up yet. The coaches add fixtures and training here.'}</div>`}`;
-  $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => openFixture(b.dataset.evopen)));
+  // the availability line always opens the fixture's details (on match day the title opens the team sheet)
+  $$('[data-evopen]', el).forEach(b => b.addEventListener('click', () => b.matches('.avsum') ? showEvent(b.dataset.evopen) : openFixture(b.dataset.evopen)));
   $$('[data-ft]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixTeam = b.dataset.ft; save(); renderFixtures(); }));
   $$('[data-fk]', el).forEach(b => b.addEventListener('click', () => { S.ui.fixKid = b.dataset.fk; save(); renderFixtures(); }));
   $$('[data-here]', el).forEach(b => b.addEventListener('click', async () => {
@@ -4508,7 +4510,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:36</p>`,
+    <p class="hint" style="text-align:center">Version 18 Oct 2026, 13:42</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -4980,7 +4982,7 @@ const HELP = [
   ['Make your own version of a team sheet', '', 'coach|select', `<p>On a team sheet, tap <b>My version</b>. You get your own copy to change, players or shirts, without touching the draft. Every coach can see it, but only you can change it.</p>
     <p>The draft lists everyone’s versions under <b>Versions</b>, with how many players and positions differ from it. Tap one to look at it, <b>Draft</b> to go back. Versions can’t be published: only the draft goes to players and parents.</p>
     <p>Once the draft is published, the versions are hidden. Unpublish it to see them again.</p>`],
-  ['Take the register on match day', '', 'coach|select fix', `<p>On the day of a fixture whose team sheet is published, tapping the fixture opens its team sheet, which is also the register. Tap a player’s shirt to tick them off when they arrive; tap again to undo. <b>Fixture details</b> at the top opens the fixture as usual.</p>
+  ['Take the register on match day', '', 'coach|select fix', `<p>On the day of a fixture whose team sheet is published, tapping the fixture opens its team sheet, which is also the register. Tap a player’s shirt to tick them off when they arrive; tap again to undo. For the fixture’s details (score, edit and so on), tap its availability line on the <b>Fixtures</b> tab.</p>
     <p>To move a starter to the bench, pick <b>Put on the bench</b> at the top of their shirt’s drop-down: they go to the first empty bench shirt.</p>`],
   ['Borrow a player from another sub-squad', '', 'coach|select squad', `<p>In a shirt’s drop-down, players from the other sub-squads are listed under <b>Borrow from …</b>. Anyone already starting for another team sheet that day is listed last.</p>
     <p>Borrowed players show in blue on the team sheet and in the fixture’s availability list. Their own team’s fixture lists them under <b>Playing elsewhere</b>.</p>`],
@@ -5056,7 +5058,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:36'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 13:42'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
