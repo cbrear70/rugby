@@ -830,8 +830,8 @@ function selectionForEvent(e){
 }
 // A new fixture's team sheet, filled from the players who said they're available: each starting shirt gets someone who
 // plays its position where possible (the most players placed in their positions, the players with fewest positions
-// first), the shirts left get the rest, and everyone else goes on the bench (made longer if needed, up to 12), with the
-// players who said maybe after them (never starting).
+// first), the shirts left get the rest, and everyone else goes on the bench (its size stays as set: whoever doesn't fit
+// is left unpicked, and the toast says how many), with the players who said maybe after them (never starting).
 // Players on another team sheet that day are left for that one. Colours and shirt spots stay as copied.
 // Returns {starters, bench, fits, left} for the toast.
 function autoPick(t, e){
@@ -852,7 +852,7 @@ function autoPick(t, e){
   // empty starting shirts: players with no position set first, then anyone left
   const rest = pool.filter(p => !placed.has(p.id)).sort((a, b) => !!posList(a.pos).length - !!posList(b.pos).length);
   for(const n of shirts) if(!owner[n] && rest.length) owner[n] = rest.shift();
-  const bench = rest.concat(maybes); if(bench.length > benchSize(t)) t.bench = Math.min(12, bench.length);
+  const bench = rest.concat(maybes);
   benchNums(t).forEach((n, i) => { if(bench[i]) owner[n] = bench[i]; });
   for(const n in owner) t.selection[n] = Object.assign({}, t.selection[n] || {}, {playerId: owner[n].id});
   const onBench = benchNums(t).filter(n => owner[n]).length;
@@ -4548,7 +4548,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 18 Oct 2026, 15:02</p>`,
+    <p class="hint" style="text-align:center">Version 5 Nov 2026, 20:33</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5096,7 +5096,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('18 Oct 2026, 15:02'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 20:33'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
