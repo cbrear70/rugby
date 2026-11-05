@@ -187,6 +187,12 @@ main{flex:1;min-height:0;position:relative}
 .bench .bl{font:700 11px/1 var(--body);color:var(--muted);text-transform:uppercase;letter-spacing:.08em;writing-mode:vertical-rl;transform:rotate(180deg);align-self:center;padding:0 2px}
 .bench button{flex:0 0 auto;width:52px;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 0;border-radius:8px}
 .bench button:active{background:var(--panel2)}
+.bench button[data-n]{touch-action:pan-x}
+.bench .ring{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;border:2.5px solid transparent}
+.bench button.played .ring{border-color:var(--accent)}
+.halfbtn{display:block;width:calc(100% - 24px);margin:0 12px 8px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:800 20px/1 var(--display);letter-spacing:.1em;text-transform:uppercase}
+.halfbtn.h2{background:var(--accent);border-color:var(--accent);color:#111}
+.benchghost{position:fixed;z-index:999;pointer-events:none;transform:translate(-50%,-60%) scale(1.25);filter:drop-shadow(0 4px 8px rgba(0,0,0,.5))}
 .bench small{font:600 10.5px/1.1 var(--body);color:var(--muted);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
 .mini{display:block}
@@ -482,8 +488,10 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
         <button class="chip" id="namesChip">Names</button>
         <button class="chip" id="fitChip">Whole pitch</button>
         <span class="spacer"></span>
+        <button class="chip" id="undoSubsChip" hidden>Undo subs</button>
         <button class="chip" id="resetPosChip">Reset positions</button>
       </div>
+      <button type="button" class="halfbtn" id="halfBtn">First half</button>
       <div class="pitch-wrap">
         <svg class="pitch" id="teamPitch" preserveAspectRatio="xMidYMid meet" aria-label="Rugby pitch with team shirts"></svg>
         <div class="zoomhint">Pinch to zoom · drag grass to pan</div>
@@ -724,9 +732,9 @@ const colorOf = (t,n) => (t.selection[n] && t.selection[n].color) || benchColour
 // position, and under 12-a-side (where every shirt is black).
 const POS_KIND = {'Prop':'f', 'Hooker':'f', 'Second row':'f', 'Back row':'f', 'Loose head':'f', 'Tight head':'f', 'Openside':'f', 'Blindside':'f', 'No.8':'f',
   'Scrum half':'sh', 'Fly half':'fh', 'Centre':'b', 'Wing':'b', 'Full back':'b', 'Inside centre':'b', 'Outside centre':'b', 'Left wing':'b', 'Right wing':'b'};
-function benchColour(t, n){
+function benchColour(t, n, p = playerAt(t, n)){
   if(teamSize(t) < 12 || !benchNums(t).includes(+n)) return null;
-  const p = playerAt(t, n), kinds = p ? posList(p.pos).map(x => POS_KIND[x]).filter(Boolean) : [];
+  const kinds = p ? posList(p.pos).map(x => POS_KIND[x]).filter(Boolean) : [];
   const half = kinds.find(k => k === 'sh' || k === 'fh'); if(half) return half === 'sh' ? YELLOW : BLUE;
   const f = kinds.filter(k => k === 'f').length, b = kinds.filter(k => k === 'b').length;
   return !kinds.length ? null : f > b ? BLACK : b > f ? RED : kinds[0] === 'f' ? BLACK : RED;
@@ -829,6 +837,31 @@ function removeBenchSlot(t, n){
   delete t.selection[nums[nums.length - 1]];
   t.bench = nums.length - 1; save(); return was;
 }
+// First half / Second half on the Pitch tab (S.ui.half, this phone's view). The second half is the first half's team
+// with the subs made since: t.half2 = [[a, b], ...], shirts whose players swapped, in order, so a later change to the
+// team sheet carries into it. Only the Pitch tab shows it; the team sheet, Selection tab and published sheet are the
+// first half's.
+const onHalf2 = () => S.ui.half === 2;
+function halfPick(t, n){
+  if(!onHalf2()) return (t.selection[n] || {}).playerId || null;
+  const m = {}; for(const k of allShirts(t)) m[k] = (t.selection[k] || {}).playerId || null;
+  for(const [a, b] of t.half2 || []) if(a in m && b in m) [m[a], m[b]] = [m[b], m[a]];
+  return m[n] || null;
+}
+const halfPlayer = (t, n) => { const pid = halfPick(t, n); return pid ? playerById(t, pid) : null; };
+const halfColour = (t, n) => (t.selection[n] && t.selection[n].color) || benchColour(t, n, halfPlayer(t, n)) || defaultColor(n, t);
+// swap the players in shirts a and b (dragged between the bench and the pitch): on the team sheet in the first half,
+// as a sub in the second. False if nothing changed.
+function swapShirts(t, a, b){
+  a = +a; b = +b;
+  if(readOnlySheet(t) || a === b || (!halfPick(t, a) && !halfPick(t, b))) return false;
+  if(onHalf2()){ const hs = t.half2 || [], l = hs[hs.length - 1];
+    // swapping straight back undoes the last sub
+    t.half2 = l && ((l[0] === a && l[1] === b) || (l[0] === b && l[1] === a)) ? hs.slice(0, -1) : hs.concat([[a, b]]); save(); return true; }
+  const pa = (t.selection[a] || {}).playerId || null, pb = (t.selection[b] || {}).playerId || null;
+  setSel(t, a, {playerId: pb}); setSel(t, b, {playerId: pa}); return true;
+}
+function undoSubs(t){ if(readOnlySheet(t)) return; delete t.half2; save(); }
 // open another selection
 function openSelection(tid){ S.currentTeamId = tid; save(); }
 // a new empty selection, opened
@@ -1092,7 +1125,7 @@ function PitchCtl(svg, h){
     if(!g || e.pointerId !== g.pid) return;
     const cur = g; g = null;
     if(cur.kind === 'icon'){
-      if(cur.dragging) h.dragEnd && h.dragEnd(cur.id);
+      if(cur.dragging) h.dragEnd && h.dragEnd(cur.id, cancelled ? null : e);
       else if(!cancelled) tap(cur.id);
     } else if(!cur.dragging && !cancelled){
       const now = performance.now();
@@ -1105,7 +1138,7 @@ function PitchCtl(svg, h){
   svg.addEventListener('lostpointercapture', e => up(e,true)); // the browser stopped tracking this finger
   function toggleZoom(at){ const fz = fitZ(); if(view.z > fz*1.3){ view.z = fz; } else { view.z = fz*2.4; view.cx = at[0]; view.cy = at[1]; } apply(); }
   return {
-    layer, refresh: apply,
+    layer, refresh: apply, toSvg,
     fit(){ view.z = fitZ(); view.cx = 35; view.cy = 60; apply(); },
     isFit(){ return !view.z || view.z <= fitZ()*1.05; },
     focusBox(x0,y0,x1,y1){ const [W,H] = size(); if(!W) return false; const fz = fitZ(); view.z = clamp(Math.min(W/(x1-x0), H/(y1-y0)), fz, fz*3.2); view.cx = (x0+x1)/2; view.cy = (y0+y1)/2; apply(); return true; },
@@ -1196,24 +1229,91 @@ function renderAll(){
 }
 
 /* ---------- PITCH TAB ---------- */
+// a shirt dragged on the pitch moves it; let go over the bench, it goes back to its spot and its player swaps with that
+// bench shirt's (an empty one: they go to the bench)
+let pitchDrag = null;
 const teamCtl = PitchCtl($('#teamPitch'), {
   tap: id => showSlot(+id.split(':')[1]),
-  doubleTap: id => editSlot(+id.split(':')[1]),
+  doubleTap: id => onHalf2() ? half2Note() : editSlot(+id.split(':')[1]),
+  dragStart: id => { const n = +id.split(':')[1], s = team().selection[n] || {}; pitchDrag = {n, x: s.x, y: s.y}; },
   drag: (id, x, y) => { const n = +id.split(':')[1]; setSel(team(), n, {x, y}); renderTeamPitch(); },
+  dragEnd: (id, e) => {
+    const d = pitchDrag; pitchDrag = null; if(!d || !e) return;
+    const hit = document.elementFromPoint(e.clientX, e.clientY), onBench = hit && hit.closest('#bench'), b = onBench && hit.closest('button[data-n]');
+    const t = team();
+    // second half: let go on another pitch shirt, the two players swap (and this shirt goes back to its spot)
+    if(!onBench && onHalf2()){
+      const [sx, sy] = teamCtl.toSvg(e.clientX, e.clientY), near = pitchNums(t).filter(k => k !== d.n).map(k => { const [x, y] = teamPos(t, k); return [Math.hypot(x - sx, y - sy), k]; }).sort((a, b) => a[0] - b[0])[0];
+      if(!near || near[0] > 5) return;
+      setSel(t, d.n, {x: d.x, y: d.y}); subToast(t, d.n, near[1]); renderTeamPitch(); return;
+    }
+    if(!onBench) return;
+    setSel(t, d.n, {x: d.x, y: d.y});
+    if(b) subToast(t, d.n, +b.dataset.n);
+    renderTeamPitch(); renderBench();
+  },
 });
+// swap shirts a and b and say what happened: who came on, who went off
+function subToast(t, a, b){
+  const pa = halfPlayer(t, a), pb = halfPlayer(t, b), first = a => pitchNums(t).includes(a);
+  if(!swapShirts(t, a, b)) return;
+  if(!first(a) && !first(b)){ toast(`Bench shirts ${a} and ${b} swapped`); return; }
+  if(first(a) && first(b)){ toast(pa && pb ? `${pa.name} and ${pb.name} swapped` : `${(pa || pb).name} moved to ${pa ? b : a}`); return; }
+  const on = first(a) ? pb : pa, off = first(a) ? pa : pb;
+  toast(on && off ? `${on.name} on, ${off.name} off` : on ? `${on.name} on` : off ? `${off.name} to the bench` : 'Swapped');
+}
+const half2Note = () => toast('Second half: drag players between the bench and the pitch. Switch to First half to change the team sheet.');
 function renderTeamPitch(){
   const t = team(); let out = '';
-  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = playerAt(t,n); out += shirtSVG({x, y, n, color: colorOf(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n}); }
+  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = halfPlayer(t,n); out += shirtSVG({x, y, n, color: halfColour(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n}); }
   teamCtl.layer.innerHTML = out;
   $('#namesChip').classList.toggle('on', S.ui.names!==false);
+  const hb = $('#halfBtn'); hb.textContent = onHalf2() ? 'Second half' : 'First half'; hb.classList.toggle('h2', onHalf2()); hb.hidden = !benchSize(t);
+  $('#undoSubsChip').hidden = !(onHalf2() && (t.half2 || []).length);
 }
+$('#halfBtn').addEventListener('click', () => { S.ui.half = onHalf2() ? 1 : 2; save(); renderTeamPitch(); renderBench();
+  if(onHalf2()) toast('Second half: drag subs from the bench onto the pitch. The team sheet stays as picked.'); });
+$('#undoSubsChip').addEventListener('click', () => askConfirm('Undo the subs?', 'The second half goes back to the first half’s team.', 'Undo subs', () => {
+  undoSubs(team()); renderTeamPitch(); renderBench(); toast('Subs undone'); }));
 function dualTap(onTap, onDouble){ let last={id:null,t:0}, timer; return id => { const now=performance.now(); if(last.id===id && now-last.t<330){ clearTimeout(timer); last={id:null,t:0}; onDouble(id); } else { last={id,t:now}; clearTimeout(timer); timer=setTimeout(()=>{ last={id:null,t:0}; onTap(id); },300); } }; }
-const benchTap = dualTap(n => showSlot(n), n => editSlot(n));
+const benchTap = dualTap(n => showSlot(n), n => onHalf2() ? half2Note() : editSlot(n));
 function renderBench(){
   const t = team(); let h = `<span class="bl">Bench</span>`;
-  for(const n of benchNums(t)){ const p = playerAt(t,n); h += `<button data-n="${n}" aria-label="Shirt ${n}${p?', '+esc(p.name):''}">${miniShirt(n, colorOf(t,n), 34)}<small>${p?esc(surname(p.name)):'—'}</small></button>`; }
+  // second half: a player on the bench who started the first half is circled (they've played)
+  const started = new Set(onHalf2() ? pitchNums(t).map(k => (t.selection[k] || {}).playerId).filter(Boolean) : []);
+  for(const n of benchNums(t)){ const p = halfPlayer(t,n), played = p && started.has(p.id); h += `<button data-n="${n}"${played ? ' class="played"' : ''} aria-label="Shirt ${n}${p?', '+esc(p.name):''}${played ? ', played first half' : ''}"><span class="ring">${miniShirt(n, halfColour(t,n), 34)}</span><small>${p?esc(surname(p.name)):'—'}</small></button>`; }
   const b = $('#bench'); b.innerHTML = h; b.hidden = !benchSize(t);
-  $$('button', b).forEach(x => x.addEventListener('click', () => benchTap(+x.dataset.n)));
+  $$('button', b).forEach(x => { benchDrag(x); x.addEventListener('click', () => { if(performance.now() - (+x.dataset.dragged || 0) < 500) return; benchTap(+x.dataset.n); }); });
+}
+// drag a bench shirt up onto a pitch shirt to swap them (or onto another bench shirt). Sideways swipes still scroll the
+// bench (touch-action: pan-x), so a drag starts with an upward move.
+function benchDrag(btn){
+  let st = null;
+  const end = () => { if(st && st.ghost) st.ghost.remove(); st = null; };
+  // held from the start, so a mouse moving off the shirt still drags it (a finger is held anyway)
+  btn.addEventListener('pointerdown', e => { if(e.button) return; st = {x: e.clientX, y: e.clientY, id: e.pointerId, on: false}; try { btn.setPointerCapture(e.pointerId); } catch(_){} });
+  btn.addEventListener('pointermove', e => {
+    if(!st || e.pointerId !== st.id) return;
+    if(!st.on){ if(Math.hypot(e.clientX - st.x, e.clientY - st.y) < 8) return;
+      const n = +btn.dataset.n, t = team(); if(!halfPick(t, n)){ end(); return; } // an empty shirt has nobody to bring on
+      st.on = true;
+      st.ghost = document.createElement('div'); st.ghost.className = 'benchghost'; st.ghost.innerHTML = miniShirt(n, halfColour(t, n), 40); document.body.appendChild(st.ghost); }
+    e.preventDefault(); st.ghost.style.left = e.clientX + 'px'; st.ghost.style.top = e.clientY + 'px';
+  });
+  btn.addEventListener('pointerup', e => {
+    if(!st || !st.on){ end(); return; }
+    end(); btn.dataset.dragged = performance.now();
+    const t = team(), n = +btn.dataset.n, hit = document.elementFromPoint(e.clientX, e.clientY);
+    const other = hit && hit.closest('#bench button[data-n]');
+    if(other){ subToast(t, n, +other.dataset.n); renderBench(); return; }
+    const r = $('#teamPitch').getBoundingClientRect();
+    if(e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) return;
+    // the nearest pitch shirt to where it was let go, if it's close
+    const [sx, sy] = teamCtl.toSvg(e.clientX, e.clientY), near = pitchNums(t).map(k => { const [x, y] = teamPos(t, k); return [Math.hypot(x - sx, y - sy), k]; }).sort((a, b) => a[0] - b[0])[0];
+    if(!near || near[0] > 8){ toast('Drop them on a shirt on the pitch'); return; }
+    subToast(t, near[1], n); renderTeamPitch(); renderBench();
+  });
+  btn.addEventListener('pointercancel', end);
 }
 $('#namesChip').addEventListener('click', () => { S.ui.names = S.ui.names===false; save(); renderTeamPitch(); });
 function teamBox(){ const t = team(); let xs=[], ys=[]; for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); xs.push(x); ys.push(y); } return [Math.min(...xs)-6, Math.min(...ys)-6, Math.max(...xs)+6, Math.max(...ys)+8]; }
@@ -1228,16 +1328,16 @@ $('#resetPosChip').addEventListener('click', () => askConfirm('Reset positions?'
 
 function bigShirt(n,color){ return miniShirt(n,color,64); }
 function showSlot(n){
-  const t = team(), p = playerAt(t,n), col = colorOf(t,n);
+  const t = team(), p = halfPlayer(t,n), col = halfColour(t,n);
   openSheet(`<div class="det-head">${bigShirt(n,col)}<div class="who"><div class="eyebrow">#${n} · ${posName(n)}</div><h2>${p?esc(p.name):'Not picked'}</h2>
       ${p&&p.pos?`<div class="muted">Plays ${esc(p.pos)}</div>`:''}</div></div>
     ${p&&p.notes?`<p class="notes">${esc(p.notes)}</p>`:''}
     <div class="field"><div class="field-label">Shirt colour</div>${swatchRow((t.selection[n]||{}).color, defaultColor(n))}</div>
-    <div class="row-btns"><button class="btn" id="slEdit">Edit</button><button class="btn ghost" data-close>Close</button></div>
-    <p class="hint">Double-tap a shirt to edit it straight away. Drag a shirt to move it.</p>`,
+    <div class="row-btns">${onHalf2() ? '' : '<button class="btn" id="slEdit">Edit</button>'}<button class="btn ghost" data-close>Close</button></div>
+    <p class="hint">${onHalf2() ? 'Second half: drag players between the bench and the pitch to make subs.' : 'Double-tap a shirt to edit it straight away. Drag a shirt to move it, or onto the bench.'}</p>`,
     el => {
       wireSwatches(el, c => { setSel(t,n,{color:c}); renderTeamPitch(); renderBench(); });
-      $('#slEdit', el).addEventListener('click', () => editSlot(n));
+      const ed = $('#slEdit', el); if(ed) ed.addEventListener('click', () => editSlot(n));
     });
 }
 // the positions (from the squad's position picker) that suit each standard shirt; a shirt whose pair is missing from a
@@ -4576,7 +4676,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 5 Nov 2026, 20:49</p>`,
+    <p class="hint" style="text-align:center">Version 5 Nov 2026, 21:07</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5124,7 +5224,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 20:49'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 21:07'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
