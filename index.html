@@ -804,6 +804,18 @@ function updateSelection(t, f){
     if(resized){ delete sl.x; delete sl.y; } }
   save(); return {resized};
 }
+// take bench shirt n off the sheet (a tournament with a smaller squad): the bench shirts after it move down one number,
+// each keeping its player and colour, and the bench is one shorter. Returns the player who was in it (now not picked).
+function removeBenchSlot(t, n){
+  const nums = benchNums(t); if(readOnlySheet(t) || !nums.includes(+n)) return null;
+  const was = playerAt(t, n);
+  for(let i = nums.indexOf(+n); i < nums.length - 1; i++){
+    const next = t.selection[nums[i + 1]];
+    if(next) t.selection[nums[i]] = Object.assign({}, next); else delete t.selection[nums[i]];
+  }
+  delete t.selection[nums[nums.length - 1]];
+  t.bench = nums.length - 1; save(); return was;
+}
 // open another selection
 function openSelection(tid){ S.currentTeamId = tid; save(); }
 // a new empty selection, opened
@@ -1496,7 +1508,7 @@ function renderSelect(){
   // match day: a picked player's shirt is a button; ticked = here
   const md = matchDay(t), here = p => !!md && hereOf(md.id, p.id) === true;
   const shirtOf = (n, p) => md && p ? `<button class="regshirt${here(p) ? ' here' : ''}" data-reg="${p.id}" aria-pressed="${here(p)}" aria-label="${esc(p.name)}: ${here(p) ? 'here, tap to undo' : 'tap when here'}">${miniShirt(n, colorOf(t,n), 34)}<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12.5l5 5L20 6" fill="none" stroke="var(--ok)" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/></svg></button>` : miniShirt(n, colorOf(t,n), 34);
-  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no', c = chg(n); return `<div class="srow${bad?' unav':''}${p?'':' open'}${!p && md ? ' lit' : ''}${p && isBorrowed(p)?' bor':''}${p && here(p) ? ' here' : ''}${c ? c.cls : ''}">${shirtOf(n, p)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}${c ? `<span class="avtag chgtag">${c.tag}</span>` : ''}</label><select id="sel-${n}" data-n="${n}"${ro ? ' disabled' : ''}>${playerOptions(t, p?p.id:'', n, ev)}</select></div>`; };
+  const row = n => { const p = playerAt(t,n), bad = p && avOf(p) === 'no', c = chg(n); return `<div class="srow${bad?' unav':''}${p?'':' open'}${!p && md ? ' lit' : ''}${p && isBorrowed(p)?' bor':''}${p && here(p) ? ' here' : ''}${c ? c.cls : ''}">${shirtOf(n, p)}<label for="sel-${n}">${posName(n)}${p ? '' : '<small class="tofill">Nobody picked</small>'}${p ? avTag(p) + borrowed(p) : ''}${c ? `<span class="avtag chgtag">${c.tag}</span>` : ''}</label><select id="sel-${n}" data-n="${n}"${ro ? ' disabled' : ''}>${playerOptions(t, p?p.id:'', n, ev)}${subs.includes(n) ? '<option value="remove">-- Remove Slot --</option>' : ''}</select></div>`; };
   const linked = selEventOf(draftOf(t) || t), canPlay = p => avOf(p) !== 'no';
   // coach versions (only in a team): the draft has Publish and My version; a version says whose it is and what changed
   // once the draft is published the versions are hidden (team() shows the draft in place of one)
@@ -1539,6 +1551,9 @@ function renderSelect(){
   $$('select[data-n]', el).forEach(s => s.addEventListener('change', () => {
     const n = +s.dataset.n, cur = playerAt(t, n);
     if(s.value === 'bench'){ if(toBench(t, n)) toast(`${cur.name} is on the bench`); }
+    // a bench shirt taken off the sheet altogether: the bench is one shorter
+    else if(s.value === 'remove'){ const was = removeBenchSlot(t, n);
+      toast(`Shirt ${n} removed: ${benchSize(t)} replacement${benchSize(t) === 1 ? '' : 's'}${was ? `. ${was.name} is not picked` : ''}`); }
     // a published sheet: a starter taken off goes to the bench, so they aren't forgotten (unless the bench is full)
     else if(!s.value && cur && t.forPlayers && pitchNums(t).includes(n)){
       if(toBench(t, n)) toast(`${cur.name} is on the bench`); else { assign(t, n, null); toast(`The bench is full: ${cur.name} is not picked`); } }
@@ -4548,7 +4563,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 5 Nov 2026, 20:33</p>`,
+    <p class="hint" style="text-align:center">Version 5 Nov 2026, 20:37</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5096,7 +5111,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 20:33'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 20:37'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
