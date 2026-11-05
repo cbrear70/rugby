@@ -717,7 +717,20 @@ const playerById = (t,id) => S.players.find(p => p.id === id);
 const pickedCount = t => Object.values(t.selection || {}).filter(sl => sl && sl.playerId && playerById(t, sl.playerId)).length;
 const pickedIn = pid => sheets().map(x => { const k = numberOf(x, pid); return k ? `${x.name} #${k}` : ''; }).filter(Boolean);
 const playerAt = (t,n) => { const s=t.selection[n]; return s && s.playerId ? playerById(t, s.playerId) : null; };
-const colorOf = (t,n) => (t.selection[n] && t.selection[n].color) || defaultColor(n, t);
+const colorOf = (t,n) => (t.selection[n] && t.selection[n].color) || benchColour(t, n) || defaultColor(n, t);
+// A bench shirt with nobody's colour set on it takes its player's: scrum half yellow and fly half blue (whichever they
+// list first) over anything else, otherwise black if most of their positions are forwards (1-8), red if most are 11-15
+// (a tie goes with the first one listed). Null when the shirt isn't on the bench, is empty, or its player has no known
+// position, and under 12-a-side (where every shirt is black).
+const POS_KIND = {'Prop':'f', 'Hooker':'f', 'Second row':'f', 'Back row':'f', 'Loose head':'f', 'Tight head':'f', 'Openside':'f', 'Blindside':'f', 'No.8':'f',
+  'Scrum half':'sh', 'Fly half':'fh', 'Centre':'b', 'Wing':'b', 'Full back':'b', 'Inside centre':'b', 'Outside centre':'b', 'Left wing':'b', 'Right wing':'b'};
+function benchColour(t, n){
+  if(teamSize(t) < 12 || !benchNums(t).includes(+n)) return null;
+  const p = playerAt(t, n), kinds = p ? posList(p.pos).map(x => POS_KIND[x]).filter(Boolean) : [];
+  const half = kinds.find(k => k === 'sh' || k === 'fh'); if(half) return half === 'sh' ? YELLOW : BLUE;
+  const f = kinds.filter(k => k === 'f').length, b = kinds.filter(k => k === 'b').length;
+  return !kinds.length ? null : f > b ? BLACK : b > f ? RED : kinds[0] === 'f' ? BLACK : RED;
+}
 function teamPos(t,n){ const s=t.selection[n]; if(s && s.x!=null) return [s.x, s.y]; return DEFAULT_POS[slotOf(n,t)] || [35,60]; }
 function numberOf(t,pid){ for(const k in t.selection) if(t.selection[k] && t.selection[k].playerId===pid) return +k; return null; }
 /* Coach versions: each coach can make their own version of a team sheet (t.variantOf = the draft's id, t.by = their
@@ -4563,7 +4576,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 5 Nov 2026, 20:37</p>`,
+    <p class="hint" style="text-align:center">Version 5 Nov 2026, 20:49</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5111,7 +5124,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 20:37'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 20:49'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -5346,7 +5359,7 @@ async function publishSheets(){
   for(const d of await listDocs(`/groups/${z.group}/sheets`)) have[d.name.split('/').pop()] = d.fields && d.fields.json ? d.fields.json.stringValue : '';
   for(const t of S.teams) if(t.forPlayers && !t.localOnly && !t.placeholder){
     const picks = {}, colors = {}, xy = {};
-    for(const n in t.selection || {}){ const sl = t.selection[n]; if(!sl) continue; if(sl.playerId) picks[n] = sl.playerId; if(sl.color) colors[n] = sl.color; if(sl.x != null) xy[n] = [+sl.x.toFixed(1), +sl.y.toFixed(1)]; }
+    for(const n in t.selection || {}){ const sl = t.selection[n]; if(!sl) continue; if(sl.playerId) picks[n] = sl.playerId; const c = sl.color || benchColour(t, n); if(c) colors[n] = c; if(sl.x != null) xy[n] = [+sl.x.toFixed(1), +sl.y.toFixed(1)]; }
     want[t.id] = JSON.stringify({id: t.id, name: t.name, eventId: t.eventId || '', size: teamSize(t), bench: benchSize(t), picks, colors, xy});
   }
   for(const id in want) if(have[id] !== want[id]) writes.push({update:{name: DOCNAME(`groups/${z.group}/sheets/${id}`), fields:{json:{stringValue: want[id]}}}});
