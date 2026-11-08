@@ -608,6 +608,8 @@ function moveCone(m, c, x, y){
   for(const ic of Object.values(m.icons)) for(const k in ic.keys){ const q = ic.keys[k]; if(Math.abs(q[0]-c.x) < .05 && Math.abs(q[1]-c.y) < .05) ic.keys[k] = [x, y]; }
   c.x = x; c.y = y;
 }
+// a drill has shirts (icons); anything else in the drills list (e.g. a training plan synced by a phone on an old version) is dropped
+function isDrill(m){ return !!(m && m.icons && typeof m.icons === 'object' && !Array.isArray(m.icons)); }
 const catOf = m => CATS.some(c => c[0] === (m && m.cat)) ? m.cat : 'backs';
 const FRAME_MS = 250; // each frame is 0.25 s of match time; playback at Real plays it at that speed
 const secs = n => { const t = n * FRAME_MS / 1000; return (Number.isInteger(t) ? t : t.toFixed(2).replace(/0+$/, '')) + ' s'; };
@@ -677,7 +679,7 @@ const TEST_AS = (() => {
 const KEY = 'rugbyTeamPicker.v1' + (TEST_AS ? '.as.' + TEST_AS : '');
 let S = load();
 function load(){
-  try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; pooledMoves(d); pooledSquad(d); for(const w of Object.values(d.parked || {})) pooledSquad(w); return d; } } } catch(e){}
+  try { const raw = localStorage.getItem(KEY); if(raw){ const d = JSON.parse(raw); if(d && Array.isArray(d.teams) && d.teams.length) { d.ui = d.ui || {}; pooledMoves(d); pooledSquad(d); d.moves = d.moves.filter(isDrill); for(const w of Object.values(d.parked || {})){ pooledSquad(w); if(Array.isArray(w.moves)) w.moves = w.moves.filter(isDrill); } return d; } } } catch(e){}
   return seed();
 }
 // Players used to belong to one team; now every team in a group picks from one squad in players. Merge each team's
@@ -2022,8 +2024,8 @@ function renderMoves(){
   const edit = !!curMove();
   $('#movesList').hidden = edit; $('#moveEditor').hidden = !edit;
   if(edit){ renderEditor(); return; }
-  if(isViewer()) return renderViewerMoves();
-  const all = S.moves, el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
+  if(isViewer() || hatKind() === 'parent') return renderViewerMoves();
+  const all = S.moves.filter(isDrill), el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
   const mv = all.filter(m => catOf(m) === cur), catName = CATS.find(c => c[0] === cur)[1];
   const card = m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length, draft = grp && m.draft;
       return `<div class="mcard tapcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
@@ -2056,16 +2058,18 @@ function renderMoves(){
 const forPlayersToast = m => toast(m.forPlayers ? `Players and parents will see ${m.name} shortly` : `${m.name} will be taken off players' phones shortly`);
 function renderViewerMoves(){
   const z = S.sync, el = $('#movesList'), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
-  const cats = CATS.filter(([k]) => S.moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CATS[0])[0];
-  const mv = S.moves.filter(m => catOf(m) === c);
-  const pts = teamsOnPhone().filter(x => x.role === z.role);
+  // a coach in the parent role sees what the team's parents see: the drills shared with players
+  const coachParent = !viewerRole(z.role), moves = S.moves.filter(m => isDrill(m) && (!coachParent || (m.forPlayers && !m.draft)));
+  const cats = CATS.filter(([k]) => moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CATS[0])[0];
+  const mv = moves.filter(m => catOf(m) === c);
+  const pts = coachParent ? [] : teamsOnPhone().filter(x => x.role === z.role);
   el.innerHTML = `${pts.length > 1 ? `<div class="mact fixbar">${pts.map(x => `<button class="chip tchip${x === z ? ' on' : ''}" data-vteam="${x.group}" style="--gc:${groupColour(x.group)}"><span class="gdot"></span>${esc(x.groupName)}</button>`).join('')}</div>` : ''}
-    <div class="section-h"><span>${esc(z.groupName)} · ${ROLE_NAMES[z.role]}</span><span>Updated ${ago(z.lastSync)}</span></div>
-    ${S.moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${l}<small>${S.moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
+    <div class="section-h"><span>${esc(z.groupName)} · ${coachParent ? 'Shared with players and parents' : ROLE_NAMES[z.role]}</span><span>Updated ${ago(z.lastSync)}</span></div>
+    ${moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${l}<small>${moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
       ${mv.map(m => `<div class="mcard tapcard"><button class="thumb" data-open="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
         <div class="mmeta">${framesOf(m)} frames · ${secs(framesOf(m))}</div><div class="mact"><button class="chip on" data-open="${m.id}">Watch</button></div></div></div>`).join('')}`
-    : `<div class="empty">${waitText(z) ? esc(waitText(z)) : 'Your coaches haven’t shared any drills yet. Tap the cloud button at the top to check for new ones.'}</div>`}`;
+    : `<div class="empty">${waitText(z) ? esc(waitText(z)) : coachParent ? 'No drills are shared with players and parents yet. In your coach role, tap Share with players on a drill.' : 'Your coaches haven’t shared any drills yet. Tap the cloud button at the top to check for new ones.'}</div>`}`;
   $$('[data-tabcat]', el).forEach(b => b.addEventListener('click', () => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); }));
   $$('[data-open]', el).forEach(b => b.addEventListener('click', () => openMove(b.dataset.open)));
   $$('[data-vteam]', el).forEach(b => b.addEventListener('click', () => { if(b.dataset.vteam === z.group) return; const h = hat(); S.ui.parentTeam = b.dataset.vteam; switchGroup(b.dataset.vteam, true); if(h) S.ui.hat = {kind: h.kind, id: h.id}; renderAll(); runSync(null, true); }))
@@ -2934,7 +2938,10 @@ function applyPulled(plan, remote, copyMoves, newBase){
       const pid = id.slice(2), i = S.players.findIndex(x => x.id===pid);
       if(!R){ if(i>=0){ S.players.splice(i,1); got++; } continue; }
       if(i>=0) S.players[i] = JSON.parse(R.json); else S.players.push(JSON.parse(R.json));
-    } else {
+    } else if(id.startsWith('mv_')){
+      // not a drill (a training plan pushed as one by a phone on an old version): leave it out; with it in the base,
+      // the next sync deletes it from the team
+      if(R && !isDrill(JSON.parse(R.json))){ newBase[id] = hashStr(R.json); continue; }
       const mid = id.slice(3); let i = S.moves.findIndex(m => m.id===mid);
       if(i>=0 && S.moves[i].draft){ S.moves[i].id = uid(); i = -1; } // keep the draft; the group's version comes in beside it
       if(!R){ if(i>=0){ S.moves.splice(i,1); got++; } continue; }
@@ -2942,7 +2949,7 @@ function applyPulled(plan, remote, copyMoves, newBase){
     }
     newBase[id] = hashStr(R.json); got++;
   }
-  for(const id of plan.legacy){ const m = JSON.parse(live(id).json); if(!S.moves.some(x => x.id===m.id)){ S.moves.push(m); got++; } newBase[id] = hashStr(live(id).json); }
+  for(const id of plan.legacy){ const m = JSON.parse(live(id).json); if(isDrill(m) && !S.moves.some(x => x.id===m.id)){ S.moves.push(m); got++; } newBase[id] = hashStr(live(id).json); }
   S.moves.unshift(...copyMoves);
   if(!S.teams.length) S.teams.push(Object.assign(newTeam('Main selection'), {localOnly:true}));
   if(!S.teams.some(t => t.id===S.currentTeamId)) S.currentTeamId = S.teams[0].id;
@@ -3002,8 +3009,8 @@ async function pullShared(){
   if(S.teams.length !== 1 || !S.teams[0].placeholder || S.players.length){ S.teams = [Object.assign(newTeam('Main selection'), {placeholder: true})]; S.players = []; S.currentTeamId = S.teams[0].id; }
   const was = new Set(S.moves.map(m => hashStr(JSON.stringify(m))));
   // a parent sees the drills only once linked to a child (by the child's code, or by the team admin), a player once approved
-  const moves = !mayView(S.sync) ? [] : (await listDocs(`/groups/${S.sync.group}/shared`)).map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(Boolean)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  const moves = !mayView(S.sync) ? [] : (await listDocs(`/groups/${S.sync.group}/shared`)).map(d => { try { return JSON.parse(d.fields.json.stringValue); } catch(e){ return null; } }).filter(isDrill)
+    .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const got = moves.filter(m => !was.has(hashStr(JSON.stringify(m)))).length, gone = Math.max(0, was.size - (moves.length - got));
   S.moves = moves; S.sync.lastSync = Date.now();
   save(); return {got, gone, total: moves.length};
@@ -4653,7 +4660,7 @@ function hatTabs(h = hat()){
   const viewers = h.kind === 'parent' || h.kind === 'player', f = !!(S.cfg && (viewers ? S.cfg.fixViewers : S.cfg.fixCoaches));
   if(h.kind === 'coach') return [pitchOn() && 'pitch', 'squad', 'select', 'moves', f && 'fix', 'team', isGroupAdmin() && 'admin'].filter(Boolean);
   if(h.kind === 'player') return ['moves', f && 'fix', 'team'].filter(Boolean);
-  if(h.kind === 'parent') return [f && 'fix', isViewer() && (S.sync.kids || []).length && 'moves', 'kids'].filter(Boolean);
+  if(h.kind === 'parent') return [f && 'fix', syncing() && (S.sync.kids || []).length && 'moves', 'kids'].filter(Boolean); // also a team they coach where their child plays
   return ['cteams', f && 'ccal', 'cpeople'].filter(Boolean);
 }
 function setHat(h, tab){
@@ -4676,7 +4683,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 5 Nov 2026, 21:07</p>`,
+    <p class="hint" style="text-align:center">Version 8 Nov 2026, 13:28</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5224,7 +5231,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('5 Nov 2026, 21:07'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Nov 2026, 13:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
