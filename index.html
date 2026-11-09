@@ -378,6 +378,18 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
 .mcard .thumb svg{width:100%;height:100%;display:block}
 .mcard .mbody{min-width:0;display:flex;flex-direction:column;gap:4px}
 .mcard.plcard{grid-template-columns:1fr}
+.mdpage{line-height:1.45;overflow-wrap:anywhere}
+.mdpage h3,.mdpage h4,.mdpage h5{margin:14px 0 6px;font-family:var(--display);text-transform:none;letter-spacing:0}
+.mdpage h3{font-size:20px}.mdpage h4{font-size:17px}.mdpage h5{font-size:15px}
+.mdpage p{margin:6px 0}.mdpage ul,.mdpage ol{margin:6px 0;padding-left:22px}.mdpage li{margin:3px 0}
+.mdpage img{max-width:100%;border-radius:8px;margin:6px 0;display:block}
+.mdpage a,.linkrow{color:var(--accent)}
+.linkrow{display:flex;flex-direction:column;align-items:flex-start;width:100%;text-align:left;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:6px 0;font-weight:700;font-size:15px}
+.linkrow small{color:var(--muted);font-weight:400;font-size:12px}
+.mdbar{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}
+#ntBody{width:100%;min-height:220px;font:15px/1.4 var(--body);padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);box-sizing:border-box}
+.lkrow{display:grid;grid-template-columns:1fr 1.4fr auto;gap:6px;margin:6px 0}
+.lkrow input{min-width:0}
 .mname{font:800 20px/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em;background:none;border:0;padding:0;text-align:left}
 .mdesc{color:var(--muted);font-size:13.5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .mmeta{font-size:12px;color:var(--muted);letter-spacing:.03em}
@@ -530,6 +542,7 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
           <button class="chip" id="showChip">Show</button>
           <button class="chip" id="edPasses" hidden>Passes</button>
           <button class="chip" id="edCones">Cones</button>
+          <button class="chip" id="edNotes" hidden>Notes</button>
           <button class="chip" id="edState" hidden>Draft</button>
           <button class="chip" id="edFit">Whole pitch</button>
           <span class="spacer"></span>
@@ -2359,6 +2372,8 @@ function renderEditor(){
   syncShowChip();
   $('#edPasses').hidden = false; // always there: in a drill without the ball, tapping it adds the ball
   document.body.classList.toggle('romove', roMove(m));
+  const nt = $('#edNotes'), hasNotes = !!((m.page || '').trim() || (m.links || []).length); nt.hidden = !hasNotes && roMove(m);
+  nt.textContent = hasNotes ? `Notes${(m.links || []).length ? ' · ' + m.links.length + ' link' + (m.links.length > 1 ? 's' : '') : ''}` : '+ Notes'; nt.classList.toggle('on', hasNotes);
   const st = $('#edState'); st.hidden = !syncing() || !!m.peek;
   st.textContent = curated() ? (!m.draft ? 'Make my copy' : !m.prop ? 'Draft · propose' : m.prop.status === 'returned' ? 'Sent back' : propChanged(m) ? 'Send changes' : 'Waiting') : m.draft ? 'Draft · share' : 'Shared';
   st.classList.toggle('on', !!m.draft);
@@ -2516,6 +2531,16 @@ $('#edTitle').addEventListener('click', () => {
 });
 $('#edPlayers').addEventListener('click', () => pickPlayers());
 $('#edCones').addEventListener('click', () => showCones());
+// a drill's notes page and links: anyone who can watch it reads them; whoever can change the drill edits them
+function editDrillNotes(m){
+  editNotes({body: m.page, links: m.links}, {links: true, eyebrow: m.name, heading: 'Drill notes'}, v => {
+    if(v.body.trim()) m.page = v.body; else delete m.page;
+    if(v.links.length) m.links = v.links; else delete m.links;
+    save(); renderEditor(); toast('Notes saved'); });
+}
+$('#edNotes').addEventListener('click', () => { const m = curMove(); if(!m) return;
+  if(!(m.page || '').trim() && !(m.links || []).length && !roMove(m)) return editDrillNotes(m);
+  showNotes({title: m.name, body: m.page, links: m.links, eyebrow: 'Drill notes'}, {onEdit: roMove(m) ? null : () => editDrillNotes(m)}); });
 $('#edPasses').addEventListener('click', () => {
   const m = curMove(); if(!m) return;
   if(!m.icons.ball){ toggleIcon(m, 'ball'); save(); renderEditor(); toast('Ball added. Set up who has it and the passes.'); }
@@ -4304,6 +4329,88 @@ function showEvent(ref){
       }));
     });
 }
+/* ---------- NOTES PAGES AND LINKS ----------
+   A notes page is plain text with a few marks (a small part of Markdown): ## heading, - bullet, 1. step, **bold**,
+   _italic_, [words](https://…) for a link, ![](https://…) for a picture from the web; a web address on its own becomes a
+   link. Everything is escaped first and only those marks become formatting, so a page can't carry scripts. Pages are
+   kept in the drill or plan they belong to, so they work offline. Web links open in the phone's browser, over the app. */
+const safeUrl = u => { u = String(u || '').trim(); if(u && !/^[a-z]+:/i.test(u)) u = 'https://' + u; return /^https?:\/\/[^\s"'<>]+$/i.test(u) ? u : ''; };
+const hostOf = u => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch(e){ return ''; } };
+function mdInline(t){
+  return t.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, (m, alt, u) => `<img src="${u}" alt="${alt}" loading="lazy">`)
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (m, txt, u) => `<a href="${u}" data-ext>${txt}</a>`)
+    .replace(/(^|[\s(])(https?:\/\/[^\s<]*[^\s<.,;:!?)])/g, '$1<a href="$2" data-ext>$2</a>')
+    .replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>')
+    .replace(/(^|[\s(])_([^_]+)_(?=[\s.,;:!?)]|$)/g, '$1<i>$2</i>');
+}
+function mdHtml(src){
+  const out = []; let list = null, para = [];
+  const endPara = () => { if(para.length){ out.push(`<p>${mdInline(para.join(' '))}</p>`); para = []; } };
+  const endList = () => { if(list){ out.push(`</${list}>`); list = null; } };
+  for(const raw of esc(src || '').split(/\r?\n/)){
+    const l = raw.trim(); let m;
+    if(!l){ endPara(); endList(); continue; }
+    if((m = l.match(/^(#{1,3})\s+(.*)$/))){ endPara(); endList(); const n = m[1].length + 2; out.push(`<h${n}>${mdInline(m[2])}</h${n}>`); continue; }
+    if((m = l.match(/^(?:[-*•]|\d+[.)])\s+(.*)$/))){ const kind = /^\d/.test(l) ? 'ol' : 'ul'; endPara();
+      if(list !== kind){ endList(); out.push(`<${kind}>`); list = kind; }
+      out.push(`<li>${mdInline(m[1])}</li>`); continue; }
+    endList(); para.push(l);
+  }
+  endPara(); endList(); return out.join('');
+}
+// open a web link in the phone's browser, over the app (the app's own copy asks the phone to, through its bridge)
+function openLink(url){
+  const u = safeUrl(url); if(!u) return toast('That link doesn’t look right');
+  if(window.rtpNative && window.rtpNative.openLink) return window.rtpNative.openLink(u);
+  const a = document.createElement('a'); a.href = u; a.target = '_blank'; a.rel = 'noopener'; document.body.appendChild(a); a.click(); a.remove();
+}
+document.addEventListener('click', e => { const a = e.target.closest && e.target.closest('a[data-ext]'); if(a){ e.preventDefault(); openLink(a.getAttribute('href')); } });
+const linksHtml = links => (links || []).filter(l => safeUrl(l.url)).map((l, i) => `<button class="linkrow" data-lk="${i}">${esc(l.title || hostOf(l.url) || l.url)}<small>${esc(hostOf(l.url))}</small></button>`).join('');
+const wireLinks = (el, links) => { const ok = (links || []).filter(l => safeUrl(l.url)); $$('[data-lk]', el).forEach(b => b.addEventListener('click', () => openLink(ok[+b.dataset.lk].url))); };
+/* A page (and its links) to read. opts.onEdit: shown as Edit. opts.back: it was opened from a plan, which comes back
+   when it's closed (✕, Done, or the phone's Back); without it, closing just shows what was under it. */
+function showNotes({title, body, links, eyebrow}, opts = {}){
+  const html = `<div class="eyebrow">${esc(eyebrow || 'Notes')}</div><h2>${esc(title || 'Notes')}</h2>
+    <div class="mdpage">${body && body.trim() ? mdHtml(body) : '<p class="muted">No notes yet.</p>'}</div>
+    ${(links || []).length ? `<div class="field-label" style="margin-top:14px">Links</div>${linksHtml(links)}` : ''}
+    <div class="row-btns">${opts.onEdit ? '<button class="btn ghost" id="ntEdit">Edit</button>' : ''}<button class="btn" data-close>Done</button></div>`;
+  const mount = el => { wireLinks(el, links); const ed = $('#ntEdit', el); if(ed) ed.addEventListener('click', opts.onEdit); };
+  if(opts.back) goAndReturn(() => openSheet(html, mount, () => tripBack()), opts.back, 'Plan');
+  else openSheet(html, mount);
+}
+/* The editor for a page: an optional title, the text with buttons that put the marks in, Preview, and (opts.links) a
+   list of web links. onSave({title, body, links}); onClose runs however it closes. */
+function editNotes(v, opts, onSave, onClose){
+  const links = (v.links || []).map(l => ({title: l.title || '', url: l.url || ''}));
+  const linkRows = () => links.map((l, i) => `<div class="lkrow"><input type="text" data-lt="${i}" value="${esc(l.title)}" placeholder="Name, e.g. RFU Activate" maxlength="80"><input type="url" data-lu="${i}" value="${esc(l.url)}" placeholder="https://…" inputmode="url" autocapitalize="off"><button class="chip" data-lx="${i}" aria-label="Remove link">✕</button></div>`).join('');
+  openSheet(`<div class="eyebrow">${esc(opts.eyebrow || 'Notes')}</div><h2>${esc(opts.heading || 'Edit notes')}</h2>
+    ${opts.needTitle ? `<div class="field"><label class="field-label" for="ntTitle">Title</label><input id="ntTitle" type="text" maxlength="80" value="${esc(v.title || '')}" placeholder="e.g. Tackle technique"></div>` : ''}
+    <div class="mdbar"><button class="chip" data-md="h">Heading</button><button class="chip" data-md="ul">• List</button><button class="chip" data-md="ol">1. Steps</button><button class="chip" data-md="b">Bold</button><button class="chip" data-md="a">Link</button><button class="chip" id="ntPrevBtn">Preview</button></div>
+    <textarea id="ntBody" maxlength="20000" placeholder="Set-up, coaching points, progressions…">${esc(v.body || '')}</textarea>
+    <div class="mdpage" id="ntPrev" hidden></div>
+    <p class="hint">## heading · - bullet · 1. step · **bold** · [words](https://…) for a link. Text pasted from a web page or document comes in as plain text.</p>
+    ${opts.links ? `<div class="field"><div class="field-label">Links</div><p class="hint">Web pages that go with this, such as an RFU Activate page or a video.</p><div id="ntLinks">${linkRows()}</div><button class="chip" id="ntAddLink">+ Add a link</button></div>` : ''}
+    <div class="row-btns"><button class="btn" id="ntSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>`, el => {
+    const ta = $('#ntBody', el), pv = $('#ntPrev', el);
+    const wrap = (pre, post, ph) => { const a = ta.selectionStart, b = ta.selectionEnd, sel = ta.value.slice(a, b) || ph;
+      ta.setRangeText(pre + sel + post, a, b, 'end'); ta.setSelectionRange(a + pre.length, a + pre.length + sel.length); ta.focus(); };
+    const linePre = pre => { const a = ta.selectionStart, st = ta.value.lastIndexOf('\n', a - 1) + 1; ta.setRangeText(pre, st, st, 'end'); ta.focus(); };
+    $$('[data-md]', el).forEach(b => b.addEventListener('click', () => ({h: () => linePre('## '), ul: () => linePre('- '), ol: () => linePre('1. '), b: () => wrap('**', '**', 'bold'),
+      a: () => { const a = ta.selectionStart, b2 = ta.selectionEnd, sel = ta.value.slice(a, b2) || 'link text', ins = `[${sel}](https://)`; ta.setRangeText(ins, a, b2, 'end'); ta.setSelectionRange(a + sel.length + 3, a + ins.length - 1); ta.focus(); }})[b.dataset.md]()));
+    $('#ntPrevBtn', el).addEventListener('click', e => { const on = pv.hidden; pv.hidden = !on; ta.hidden = on; e.target.textContent = on ? 'Write' : 'Preview'; if(on) pv.innerHTML = ta.value.trim() ? mdHtml(ta.value) : '<p class="muted">Nothing written yet.</p>'; });
+    const readLinks = () => $$('[data-lt]', el).forEach(x => { links[+x.dataset.lt].title = x.value.trim(); links[+x.dataset.lt].url = $(`[data-lu="${x.dataset.lt}"]`, el).value.trim(); });
+    const drawLinks = () => { const box = $('#ntLinks', el); if(!box) return; box.innerHTML = linkRows();
+      $$('[data-lx]', box).forEach(b => b.addEventListener('click', () => { readLinks(); links.splice(+b.dataset.lx, 1); drawLinks(); })); };
+    drawLinks();
+    const al = $('#ntAddLink', el); if(al) al.addEventListener('click', () => { readLinks(); links.push({title: '', url: ''}); drawLinks(); const u = $$('[data-lt]', el).pop(); if(u) u.focus(); });
+    $('#ntSave', el).addEventListener('click', () => {
+      readLinks(); const bad = links.find(l => l.url && !safeUrl(l.url)); if(bad) return toast(`“${bad.url}” doesn’t look like a web address`);
+      const t = $('#ntTitle', el), title = t ? t.value.trim() : v.title;
+      if(opts.needTitle && !title) return toast('Give it a title');
+      onSave({title, body: ta.value.replace(/\s+$/, ''), links: links.filter(l => l.url).map(l => ({title: l.title, url: safeUrl(l.url)}))});
+      closeSheet(); });
+  }, onClose);
+}
 /* ---------- TRAINING PLANS ----------
    Each team has a session template (groups/<id>/settings/training, set by the team admin; the app's default until then).
    A training session's plan starts as a copy of it: blocks of minutes that the coaches fill with the team's drills or
@@ -4378,14 +4485,15 @@ function renderPlan(box, p, e, ref, st){
   const adding = i => st.i !== i ? '' : st.kind === 'drill'
     ? (drills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CATS.map(([k, l]) => (ds => ds.length ? `<optgroup label="${l}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => (m.cat || 'backs') === k))).join('')}</select>`
       : '<small class="muted">No team drills yet: make one on the Drills tab and share it with the coaches.</small>')
+    : st.kind === 'link' ? `<input type="text" data-lkt="${i}" placeholder="Name, e.g. RFU Activate warm-up" maxlength="80"><input type="url" data-lku="${i}" placeholder="https://…" inputmode="url" autocapitalize="off"><button class="chip on" data-lkok="${i}">Add</button>`
     : `<input type="text" data-textin="${i}" placeholder="e.g. Dynamic warm-up" maxlength="80"><button class="chip on" data-textok="${i}">Add</button>`;
   box.innerHTML = `<p class="muted">${esc(e.guestView && !e.date ? p.name : evWhen(e))}</p><div class="field"><label class="field-label plain" for="plLen">Session length</label><select id="plLen">${PLAN_LENGTHS.map(m => `<option value="${m}"${m === p.length ? ' selected' : ''}>${lengthName(m)}</option>`).join('')}</select>
       <p class="hint">${used === p.length ? `The blocks fill the ${lengthName(p.length)}.` : used < p.length ? `${p.length - used} min not in a block yet.` : `The blocks are ${used - p.length} min over.`}</p>
       ${start != null && !e.guestView && evLength(e) !== p.length ? `<p class="hint">The session is set for ${esc(e.time)}${e.end ? '–' + esc(e.end) : ''}. <button class="chip" id="plEnd">End it at ${clock(start + p.length)}</button></p>` : ''}</div>
     ${p.blocks.map((b, i) => { const at = t != null ? clock(t) : ''; if(t != null) t += +b.mins; const im = itemMins(b);
       return `<div class="plblock"><div class="plhead"><span class="pltime">${at}</span><input type="text" data-bn="${i}" value="${esc(b.name)}" maxlength="40" aria-label="Block name"><select data-bm="${i}" aria-label="Minutes for ${esc(b.name)}">${minsOpts(b.mins)}</select><button class="chip" data-bx="${i}" aria-label="Remove ${esc(b.name)}">✕</button></div>
-        ${b.items.map((x, j) => `<div class="plitem">${x.drillId ? `<button class="memlink" data-io="${esc(x.drillId)}">▶ ${esc(drillName(x))}</button>` : `<span>${esc(x.text)}</span>`}<select data-im="${i}|${j}" aria-label="Minutes">${minsOpts(x.mins)}</select><button class="chip" data-ix="${i}|${j}" aria-label="Remove">✕</button></div>`).join('')}
-        <div class="plfoot"><small class="${im > b.mins ? 'st-no' : 'muted'}">${im} of ${b.mins} min planned</small>${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button>`}</div></div>`; }).join('')}
+        ${b.items.map((x, j) => `<div class="plitem">${x.drillId ? `<button class="memlink" data-io="${esc(x.drillId)}">▶ ${esc(drillName(x))}</button>` : x.link ? `<button class="memlink" data-lnk="${i}|${j}">🔗 ${esc(x.text)}</button><button class="chip" data-lnked="${i}|${j}" aria-label="Change link">✎</button>` : x.page != null ? `<button class="memlink" data-pg="${i}|${j}">📄 ${esc(x.text)}</button>` : `<span>${esc(x.text)}</span>`}<select data-im="${i}|${j}" aria-label="Minutes">${minsOpts(x.mins)}</select><button class="chip" data-ix="${i}|${j}" aria-label="Remove">✕</button></div>`).join('')}
+        <div class="plfoot"><small class="${im > b.mins ? 'st-no' : 'muted'}">${im} of ${b.mins} min planned</small>${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button><button class="chip" data-addl="${i}">+ Link</button><button class="chip" data-addn="${i}">+ Notes</button>`}</div></div>`; }).join('')}
     <button class="btn ghost wide" id="plAddB">+ Add a block</button>
     <div class="field"><label class="field-label plain" for="plNotes">Notes for the coaches</label><textarea id="plNotes" rows="3" maxlength="2000">${esc(p.notes || '')}</textarea></div>
     <div class="row-btns"><button class="btn${p.ready ? '' : ' ghost'}" id="plReady">${p.ready ? 'Ready ✓' : 'Mark as ready'}</button><button class="btn ghost" id="plBack">${e.guestView ? 'Back to the plans' : 'Back to the session'}</button></div>
@@ -4415,6 +4523,26 @@ function renderPlan(box, p, e, ref, st){
   on('[data-textok]', 'click', x => addText(+x.dataset.textok));
   $$('[data-textin]', box).forEach(x => x.addEventListener('keydown', ev => { if(ev.key === 'Enter') addText(+x.dataset.textin); }));
   on('[data-io]', 'click', x => { if(!S.moves.some(d => d.id === x.dataset.io)) return toast('That drill is no longer in the team'); openDrillFromPlan(x.dataset.io, ref); });
+  // links and notes: each opens over the plan, and closing it comes back to the plan where it was
+  const backToPlan = () => { const top = sheetEl.scrollTop; return () => { (e.guestView ? showGuestPlan : showPlan)(ref); sheetEl.scrollTop = top; }; };
+  const itemAt = x => { const [i, j] = ij(x); return p.blocks[i].items[j]; };
+  on('[data-addl]', 'click', x => { Object.assign(st, {i: +x.dataset.addl, kind: 'link'}); renderPlan(box, p, e, ref, st); const inp = $('[data-lkt]', box); if(inp) inp.focus(); });
+  on('[data-lkok]', 'click', x => { const i = +x.dataset.lkok, t = $(`[data-lkt="${i}"]`, box).value.trim(), u = safeUrl($(`[data-lku="${i}"]`, box).value);
+    if(!u) return toast('Enter the web address, e.g. https://www.englandrugby.com/…'); const b = p.blocks[i];
+    b.items.push({id: uid(), text: t || hostOf(u) || 'Link', link: u, mins: fill(b)}); st.i = null; redo(); });
+  on('[data-lnk]', 'click', x => openLink(itemAt(x.dataset.lnk).link));
+  on('[data-lnked]', 'click', x => { const it = itemAt(x.dataset.lnked), back = backToPlan();
+    goAndReturn(() => openSheet(`<div class="eyebrow">Training plan</div><h2>Change link</h2>
+      <div class="field"><label class="field-label" for="lkT">Name</label><input id="lkT" type="text" maxlength="80" value="${esc(it.text)}"></div>
+      <div class="field"><label class="field-label" for="lkU">Web address</label><input id="lkU" type="url" inputmode="url" autocapitalize="off" value="${esc(it.link)}"></div>
+      <div class="row-btns"><button class="btn" id="lkSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>`,
+      el => $('#lkSave', el).addEventListener('click', () => { const u = safeUrl($('#lkU', el).value); if(!u) return toast('That doesn’t look like a web address');
+        it.link = u; it.text = $('#lkT', el).value.trim() || hostOf(u) || 'Link'; save(); closeSheet(); }), () => tripBack()), back, 'Plan'); });
+  on('[data-addn]', 'click', x => { const b = p.blocks[+x.dataset.addn], back = backToPlan();
+    goAndReturn(() => editNotes({}, {needTitle: true, eyebrow: b.name, heading: 'New notes'}, v => { b.items.push({id: uid(), text: v.title, page: v.body, mins: fill(b)}); save(); }, () => tripBack()), back, 'Plan'); });
+  on('[data-pg]', 'click', x => { const it = itemAt(x.dataset.pg), back = backToPlan(), blk = p.blocks[ij(x.dataset.pg)[0]].name;
+    showNotes({title: it.text, body: it.page, eyebrow: blk}, {back, onEdit: () => editNotes({title: it.text, body: it.page}, {needTitle: true, eyebrow: blk},
+      v => { it.text = v.title; it.page = v.body; save(); }, () => tripBack())}); });
   on('#plAddB', 'click', () => { p.blocks.push({id: uid(), name: 'New block', mins: Math.max(5, Math.min(30, p.length - used)) || 10, items: []}); redo(); });
   on('#plNotes', 'change', x => { p.notes = x.value; save(); });
   on('#plReady', 'click', () => { p.ready = !p.ready; redo(); });
@@ -4973,7 +5101,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 9 Nov 2026, 22:59</p>`,
+    <p class="hint" style="text-align:center">Version 9 Nov 2026, 23:11</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5566,7 +5694,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 22:59'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 23:11'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
