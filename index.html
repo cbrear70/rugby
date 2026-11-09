@@ -380,6 +380,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
 .mact{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 
 .ed-head{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line)}
+#edBack.trip{width:auto;padding:0 10px 0 2px;gap:2px;display:flex;align-items:center;font-weight:700;font-size:14px;color:var(--accent, var(--ink));white-space:nowrap}
 .ed-title{flex:1;min-width:0;background:none;border:0;text-align:left;padding:2px 4px}
 .ed-title b{display:block;font:800 19px/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ed-title small{display:block;color:var(--muted);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -511,7 +512,7 @@ body.viewer #edCones, body.viewer #edState, body.viewer #edHint{display:none!imp
       <div id="moveEditor" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
         <div class="ed-head">
           <button class="icon-btn" id="edBack" aria-label="Back to moves">
-            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="edBackTxt" hidden>Plan</span>
           </button>
           <button class="ed-title" id="edTitle"><b id="edName">Move</b><small id="edDesc">Tap to name and describe</small></button>
           <button class="chip" id="edPlayers">Players</button>
@@ -1204,7 +1205,24 @@ function showTab(tab){
   if(tab !== 'moves') stopPlay();
   renderAll();
 }
-$$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => { if(!sheetEl.hidden) closeSheet(); showTab(b.dataset.tab); }));
+$$('.tabbar [data-tab]').forEach(b => b.addEventListener('click', () => { if(!sheetEl.hidden) closeSheet(); endTrips(); showTab(b.dataset.tab); }));
+/* Return trips: something opened from a training plan (a drill now; pages and links later) goes back to the plan when
+   it's closed, with the on-screen Back, the phone's Back button or a swipe back. Each trip adds a history entry, so the
+   phone's Back closes it instead of leaving the app. Choosing another tab ends any trips (their entries do nothing). */
+const TRIPS = [];
+function goAndReturn(open, back){
+  TRIPS.push(back);
+  try { history.pushState({rtpTrip: TRIPS.length}, ''); } catch(e){}
+  open();
+}
+// the on-screen Back: use up the history entry if it's ours (popstate then comes back), otherwise go back directly
+function tripBack(){
+  if(!TRIPS.length) return false;
+  if(history.state && history.state.rtpTrip === TRIPS.length) history.back(); else TRIPS.pop()();
+  return true;
+}
+function endTrips(){ if(!TRIPS.length) return; TRIPS.length = 0; tripLabel(); }
+window.addEventListener('popstate', () => { const back = TRIPS.pop(); if(back) back(); });
 function renderAll(){
   document.body.classList.toggle('viewer', isViewer());
   const h = hat(), allowed = hatTabs(h);
@@ -2085,7 +2103,13 @@ function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(c
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
 function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move' : 'Whole pitch'; }
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
-$('#edBack').addEventListener('click', () => { stopPlay(); ME.moveId = null; ME.editing = null; renderMoves(); });
+$('#edBack').addEventListener('click', () => { if(tripBack()) return; stopPlay(); ME.moveId = null; ME.editing = null; renderMoves(); });
+// the drill's Back button says where it goes when the drill was opened from a training plan
+function tripLabel(){
+  const b = $('#edBack'), on = TRIPS.length > 0;
+  b.classList.toggle('trip', on); $('#edBackTxt').hidden = !on;
+  b.setAttribute('aria-label', on ? 'Back to the training plan' : 'Back to moves');
+}
 
 const moveCtl = PitchCtl($('#movePitch'), {
   pick: (x,y) => {
@@ -4132,13 +4156,19 @@ function renderPlan(box, p, e, ref, st){
     b.items.push({id: uid(), text: v, mins: fill(b)}); st.i = null; redo(); };
   on('[data-textok]', 'click', x => addText(+x.dataset.textok));
   $$('[data-textin]', box).forEach(x => x.addEventListener('keydown', ev => { if(ev.key === 'Enter') addText(+x.dataset.textin); }));
-  on('[data-io]', 'click', x => { if(!S.moves.some(d => d.id === x.dataset.io)) return toast('That drill is no longer in the team'); closeSheet(); showTab('moves'); openMove(x.dataset.io); });
+  on('[data-io]', 'click', x => { if(!S.moves.some(d => d.id === x.dataset.io)) return toast('That drill is no longer in the team'); openDrillFromPlan(x.dataset.io, ref); });
   on('#plAddB', 'click', () => { p.blocks.push({id: uid(), name: 'New block', mins: Math.max(5, Math.min(30, p.length - used)) || 10, items: []}); redo(); });
   on('#plNotes', 'change', x => { p.notes = x.value; save(); });
   on('#plReady', 'click', () => { p.ready = !p.ready; redo(); });
   on('#plBack', 'click', () => showEvent(ref));
   on('#plDel', 'click', () => askConfirm('Delete this training plan?', 'It goes from every coach’s phone. The session itself stays.', 'Delete plan', () => {
     S.plans = plans().filter(x => x !== p); save(); showEvent(ref); toast('Training plan deleted'); }));
+}
+// a drill opened from a plan plays on the Drills tab; its Back (or the phone's) comes back to the plan, scrolled as it was
+function openDrillFromPlan(id, ref){
+  const fromTab = TAB, top = sheetEl.scrollTop;
+  goAndReturn(() => { closeSheet(); showTab('moves'); openMove(id); tripLabel(); },
+    () => { stopPlay(); ME.moveId = null; ME.editing = null; tripLabel(); showTab(fromTab); showPlan(ref); sheetEl.scrollTop = top; });
 }
 // the team admin's template: the length new plans start with, and its blocks
 async function setTraining(tpl){
@@ -4683,7 +4713,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 8 Nov 2026, 13:28</p>`,
+    <p class="hint" style="text-align:center">Version 9 Nov 2026, 21:54</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5231,7 +5261,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('8 Nov 2026, 13:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 21:54'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
