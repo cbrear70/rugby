@@ -1758,6 +1758,16 @@ function unshareDrill(m){ m.draft = true; }
    m.peek marks an editor's look at a proposal: never saved past a restart, never synced, never edited. */
 const libEditor = () => syncing() && !isViewer() && (S.sync.role === 'admin' || !!S.sync.libEditor);
 const curated = () => syncing() && !isViewer() && !libEditor();
+/* The team's pages and links (S.pages): {id, type: 'res', title, url?, body?, links?}. A link is one with a web address
+   and no notes; a page has notes (and may have a main web address and more links). Curated like drills: team admins and
+   library editors change the team's; other coaches keep their own as drafts and propose them. Synced as rs_<id> items
+   in groups/<id>/training. */
+const pages = () => S.pages || (S.pages = []);
+const isRes = x => !!(x && x.type === 'res');
+const itemName = x => isRes(x) ? x.title : x.name;
+const libKind = x => isRes(x) ? 'pages' : 'drills';
+const findLib = id => { let a = S.moves, i = a.findIndex(m => m.id === id); if(i < 0){ a = pages(); i = a.findIndex(m => m.id === id); } return [a, i]; };
+const dropLib = x => { const a = isRes(x) ? pages() : S.moves, i = a.indexOf(x); if(i >= 0) a.splice(i, 1); };
 const roMove = (m = curMove()) => isViewer() || !!(m && (m.peek || (curated() && !m.draft)));
 const drillJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'prop', 'peek', 'localOnly']) delete mm[k]; return JSON.stringify(mm); };
 const propChanged = m => !!(m.prop && m.prop.hash && m.prop.hash !== hashStr(drillJson(m)));
@@ -2076,6 +2086,7 @@ function renderMoves(){
   $('#movesList').hidden = edit; $('#moveEditor').hidden = !edit;
   if(edit){ renderEditor(); return; }
   if(isViewer() || hatKind() === 'parent') return renderViewerMoves();
+  if(syncing() && S.ui.drillCat === 'pages') return renderPages();
   const all = S.moves.filter(m => isDrill(m) && !m.peek), el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
   const mv = all.filter(m => catOf(m) === cur), catName = CATS.find(c => c[0] === cur)[1];
   const cur8 = curated(), card = m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length, draft = grp && m.draft, pr = draft && m.prop;
@@ -2090,13 +2101,13 @@ function renderMoves(){
       </div></div>`; };
   const drafts = grp ? mv.filter(m => m.draft) : [], shared = grp ? mv.filter(m => !m.draft) : mv;
   // an editor's proposals waiting (all categories, so none is missed)
-  const props = libEditor() ? (S.sync.proposals || []) : [];
+  const props = libEditor() ? (S.sync.proposals || []).filter(p => isDrill(JSON.parse(p.json))) : [];
   const propCard = p => { const m = JSON.parse(p.json);
     return `<div class="mcard"><button class="thumb" data-peek="${p.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
       <button class="mname" data-peek="${p.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
       <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)} · ${CATS.find(c => c[0] === catOf(m))[1]}</div>${commentsHtml(p.comments.slice(-2))}
       <div class="mact"><button class="chip" data-peek="${p.id}">Watch</button><button class="chip on" data-pacc="${p.id}">Add to team drills</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
-  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>
+  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${grp ? pagesTab(false) : ''}</div>
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <button class="btn wide" id="newMove">New ${catName.toLowerCase()} drill</button>
     ${grp ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only you see these</span></div>
@@ -2173,7 +2184,7 @@ async function syncMyDrafts(){
   const z = S.sync, me = tokenUid(await fbToken()), base = z.draftBase || {}, eq = (f, v) => ({fieldFilter:{field:{fieldPath: f}, op: 'EQUAL', value:{stringValue: v}}});
   const r = await fb('POST', `/groups/${z.group}:runQuery`, {structuredQuery:{from:[{collectionId: 'drafts'}], where:{compositeFilter:{op: 'AND', filters:[eq('by', me), eq('status', 'draft')]}}}});
   const remote = {}; for(const x of r || []) if(x.document){ const f = x.document.fields || {}; if(f.json) remote[x.document.name.split('/').pop()] = f.json.stringValue; }
-  const local = {}; for(const m of S.moves) if(m.draft && !m.peek && isDrill(m)) local[m.id] = draftJson(m);
+  const local = {}; for(const m of [...S.moves, ...pages()]) if(m.draft && !m.peek && (isDrill(m) || isRes(m))) local[m.id] = draftJson(m);
   const writes = [], nb = {}, add = [], now = String(Date.now());
   const put = (id, json) => writes.push({update:{name: DOCNAME(propDoc(id)), fields:{by:{stringValue: me}, who:{stringValue: z.who || ''}, status:{stringValue: 'draft'}, json:{stringValue: json}, comments:{stringValue: '[]'}, at:{integerValue: now}}}});
   for(const id of new Set([...Object.keys(local), ...Object.keys(remote), ...Object.keys(base)])){
@@ -2181,17 +2192,17 @@ async function syncMyDrafts(){
     if(lh === rh){ if(lh) nb[id] = lh; continue; }
     const lc = lh !== B, rc = rh !== B;
     if(lc && !rc){ if(L){ put(id, L); nb[id] = lh; } else writes.push({delete: DOCNAME(propDoc(id))}); continue; }
-    if(rc && !lc){ const i = S.moves.findIndex(m => m.id === id);
-      if(!R){ if(i >= 0) S.moves.splice(i, 1); continue; }
-      let m; try { m = JSON.parse(R); } catch(e){ continue; } if(!isDrill(m)) continue;
-      m.draft = true; if(i >= 0) S.moves[i] = m; else add.push(m); nb[id] = rh; continue; }
+    if(rc && !lc){ const [arr, i] = findLib(id);
+      if(!R){ if(i >= 0) arr.splice(i, 1); continue; }
+      let m; try { m = JSON.parse(R); } catch(e){ continue; } if(!isDrill(m) && !isRes(m)) continue;
+      m.draft = true; if(i >= 0) arr[i] = m; else add.push(m); nb[id] = rh; continue; }
     // changed here and on another phone: keep this phone's, and the other one's beside it as a new draft
     if(L){ put(id, L); nb[id] = lh; }
-    if(R){ let m; try { m = JSON.parse(R); } catch(e){ continue; } if(!isDrill(m)) continue;
-      m.id = uid(); m.name += ' (other phone)'; m.draft = true; delete m.prop; add.push(m); const j = draftJson(m); put(m.id, j); nb[m.id] = hashStr(j); }
+    if(R){ let m; try { m = JSON.parse(R); } catch(e){ continue; } if(!isDrill(m) && !isRes(m)) continue;
+      m.id = uid(); if(isRes(m)) m.title += ' (other phone)'; else m.name += ' (other phone)'; m.draft = true; delete m.prop; add.push(m); const j = draftJson(m); put(m.id, j); nb[m.id] = hashStr(j); }
   }
   if(writes.length) await fb('POST', ':commit', {writes});
-  S.moves.unshift(...add); z.draftBase = nb; save();
+  S.moves.unshift(...add.filter(isDrill)); pages().unshift(...add.filter(isRes)); z.draftBase = nb; save();
   return add.length;
 }
 const parseComments = f => { try { return JSON.parse(f.comments && f.comments.stringValue || '[]'); } catch(e){ return []; } };
@@ -2210,17 +2221,17 @@ async function withdrawProposal(m){
 }
 // the coach's own proposals: sent back (with comments) stays a draft to change; accepted goes (it's in the library now)
 async function refreshMyProposals(){
-  const mine = S.moves.filter(m => m.draft && m.prop && m.prop.status === 'proposed'); if(!mine.length) return;
+  const mine = [...S.moves, ...pages()].filter(m => m.draft && m.prop && m.prop.status === 'proposed'); if(!mine.length) return;
   const back = [], took = [];
   for(const m of mine){
     // gone (the rules refuse a read of a missing one, so 403 means the same): it's just a draft again
     let d; try { d = await fb('GET', '/' + propDoc(m.prop.id)); } catch(e){ if(e.status === 404 || e.status === 403){ delete m.prop; continue; } throw e; }
     const f = d && d.fields || {}, st = f.status ? f.status.stringValue : 'proposed';
-    if(st === 'returned'){ m.prop.status = 'returned'; m.prop.comments = parseComments(f); back.push(m.name); }
-    else if(st === 'accepted'){ took.push(m.name); S.moves = S.moves.filter(x => x !== m); fb('DELETE', '/' + propDoc(m.prop.id)).catch(() => {}); }
+    if(st === 'returned'){ m.prop.status = 'returned'; m.prop.comments = parseComments(f); back.push(itemName(m)); }
+    else if(st === 'accepted'){ took.push(itemName(m)); dropLib(m); fb('DELETE', '/' + propDoc(m.prop.id)).catch(() => {}); }
   }
   save();
-  if(took.length || back.length) setTimeout(() => toast([took.length ? `${took.join(', ')} ${took.length > 1 ? 'are' : 'is'} now in the team’s drills` : '', back.length ? `${back.join(', ')} sent back: see your drafts on the Drills tab` : ''].filter(Boolean).join(' · ')), 2500);
+  if(took.length || back.length) setTimeout(() => toast([took.length ? `${took.join(', ')} ${took.length > 1 ? 'are' : 'is'} now in the team’s library` : '', back.length ? `${back.join(', ')} sent back: see your drafts on the Drills tab` : ''].filter(Boolean).join(' · ')), 2500);
 }
 // an editor's list of drills waiting for a decision
 async function loadProposals(){
@@ -2228,7 +2239,7 @@ async function loadProposals(){
   const was = new Set((z.proposals || []).map(p => p.id));
   z.proposals = (r || []).filter(x => x.document).map(x => { const f = x.document.fields || {};
     return {id: x.document.name.split('/').pop(), who: f.who ? f.who.stringValue : '', json: f.json ? f.json.stringValue : '', comments: parseComments(f), at: +(f.at && f.at.integerValue || 0)}; })
-    .filter(p => { try { return isDrill(JSON.parse(p.json)); } catch(e){ return false; } }).sort((a, b) => a.at - b.at);
+    .filter(p => { try { const x = JSON.parse(p.json); return isDrill(x) || isRes(x); } catch(e){ return false; } }).sort((a, b) => a.at - b.at);
   const fresh = z.proposals.filter(p => !was.has(p.id)).length; save();
   if(fresh && TAB !== 'moves') setTimeout(() => toast(`${fresh} drill${fresh > 1 ? 's' : ''} proposed to the team: Drills tab`), 2500);
 }
@@ -2238,13 +2249,14 @@ async function decideProposal(p, accept, text){
     updateMask:{fieldPaths: ['status', 'comments']}, currentDocument:{exists: true}}]});
   z.proposals = (z.proposals || []).filter(x => x !== p);
   if(accept){ const m = JSON.parse(p.json); m.id = uid(); for(const k of ['draft', 'prop', 'peek']) delete m[k];
-    if(S.moves.some(x => !x.draft && x.name === m.name)) m.name += ` (${p.who || 'a coach'})`;
-    S.moves.unshift(m); }
+    if(isRes(m)){ if(pages().some(x => !x.draft && x.title === m.title)) m.title += ` (${p.who || 'a coach'})`; pages().unshift(m); }
+    else { if(S.moves.some(x => !x.draft && x.name === m.name)) m.name += ` (${p.who || 'a coach'})`; S.moves.unshift(m); } }
   save();
 }
 // an editor watches a proposal before deciding: it plays like a drill, read-only, and Back returns to the list
 function peekProposal(p){
   const m = Object.assign(JSON.parse(p.json), {id: 'peek_' + p.id, draft: true, peek: true});
+  if(isRes(m)) return showRes(m, {eyebrow: 'Proposed by ' + (p.who || 'a coach')});
   const drop = () => { S.moves = S.moves.filter(x => !x.peek); };
   goAndReturn(() => { drop(); S.moves.unshift(m); openMove(m.id); tripLabel(); },
     () => { stopPlay(); drop(); ME.moveId = null; ME.editing = null; tripLabel(); renderMoves(); }, 'Proposals');
@@ -2253,25 +2265,93 @@ const commentsHtml = cs => (cs || []).map(c => `<div class="propnote">${esc(c.te
 // propose a draft, or resend one that was sent back (with a reply), or send changes to one still waiting
 function proposeSheet(m){
   const p = m.prop, again = !!p;
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)} · team drills</div><h2>${again ? (p.status === 'returned' ? 'Resend ' : 'Send changes to ') : 'Propose '}${esc(m.name)}</h2>
-    <p class="muted">${again ? 'The team admin or a library editor will see the new version.' : 'The team admin or a library editor looks at it, then adds it to the team’s drills or sends it back with comments.'} You keep your draft either way.</p>
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)} · team ${libKind(m)}</div><h2>${again ? (p.status === 'returned' ? 'Resend ' : 'Send changes to ') : 'Propose '}${esc(itemName(m))}</h2>
+    <p class="muted">${again ? 'The team admin or a library editor will see the new version.' : `The team admin or a library editor looks at it, then adds it to the team’s ${libKind(m)} or sends it back with comments.`} You keep your draft either way.</p>
     ${commentsHtml(p && p.comments)}
     ${again ? `<div class="field"><label class="field-label" for="ppReply">Reply (optional)</label><textarea id="ppReply" rows="2" maxlength="500" placeholder="e.g. Shortened it as asked"></textarea></div>` : ''}
     <div class="row-btns"><button class="btn" id="ppGo">${again ? 'Send' : 'Propose'}</button><button class="btn ghost" data-close>Cancel</button></div>`,
     el => $('#ppGo', el).addEventListener('click', async e => { e.target.disabled = true; const r = $('#ppReply', el);
-      try { await proposeDrill(m, r ? r.value.trim() : ''); closeSheet(); toast(`${m.name} sent to the team`); renderMoves(); if(curMove()) renderEditor(); }
+      try { await proposeDrill(m, r ? r.value.trim() : ''); closeSheet(); toast(`${itemName(m)} sent to the team`); renderMoves(); if(curMove()) renderEditor(); }
       catch(err){ e.target.disabled = false; toast(niceErr(err)); } }));
 }
 function sendBackSheet(p){
   const m = JSON.parse(p.json);
-  openSheet(`<div class="eyebrow">Proposed by ${esc(p.who || 'a coach')}</div><h2>Send back ${esc(m.name)}</h2>
+  openSheet(`<div class="eyebrow">Proposed by ${esc(p.who || 'a coach')}</div><h2>Send back ${esc(itemName(m))}</h2>
     ${commentsHtml(p.comments)}
     <div class="field"><label class="field-label" for="sbText">What needs changing?</label><textarea id="sbText" rows="3" maxlength="1000" placeholder="e.g. Too long for a warm-up: can it be 10 minutes?"></textarea></div>
     <div class="row-btns"><button class="btn" id="sbGo">Send back</button><button class="btn ghost" data-close>Cancel</button></div>`,
     el => $('#sbGo', el).addEventListener('click', async e => { const t = $('#sbText', el).value.trim(); if(!t) return toast('Say what needs changing');
       e.target.disabled = true;
-      try { await decideProposal(p, false, t); closeSheet(); toast(`${m.name} sent back to ${p.who || 'the coach'}`); renderMoves(); }
+      try { await decideProposal(p, false, t); closeSheet(); toast(`${itemName(m)} sent back to ${p.who || 'the coach'}`); renderMoves(); }
       catch(err){ e.target.disabled = false; toast(niceErr(err)); } }));
+}
+/* ---------- PAGES (the team's pages and links) ---------- */
+const pagesTab = on => { const n = pages().filter(r => !r.peek).length, w = libEditor() ? (S.sync.proposals || []).filter(p => isRes(JSON.parse(p.json))).length : 0;
+  return `<button role="tab" data-tabcat="pages" aria-selected="${on}">Pages${n || w ? `<small>${n}${w ? ' +' + w : ''}</small>` : ''}</button>`; };
+const resIcon = r => r.url && !(r.body || '').trim() && !(r.links || []).length ? '🔗' : '📄';
+// read a page (its notes, its web address and links), or open a link straight away
+function showRes(r, opts = {}){
+  if(resIcon(r) === '🔗') return openLink(r.url);
+  const links = (r.url ? [{title: 'Open ' + (hostOf(r.url) || 'the page'), url: r.url}] : []).concat(r.links || []);
+  showNotes({title: r.title, body: r.body, links, eyebrow: opts.eyebrow || 'Team page'}, opts);
+}
+// a new or changed page or link; done(r) after saving
+function editRes(r, done){
+  const isLink = resIcon(r) === '🔗' && !r.newPage;
+  if(!isLink) return editNotes({title: r.title, body: (r.url ? `[Open ${hostOf(r.url)}](${r.url})\n\n` : '') + (r.body || ''), links: r.links}, {needTitle: true, links: true, eyebrow: 'Team page', heading: r.title ? 'Edit page' : 'New page'},
+    v => { r.title = v.title; r.body = v.body; delete r.url; if(v.links.length) r.links = v.links; else delete r.links; delete r.newPage; done(r); });
+  openSheet(`<div class="eyebrow">Team link</div><h2>${r.title ? 'Edit link' : 'New link'}</h2>
+    <div class="field"><label class="field-label" for="rsT">Name</label><input id="rsT" type="text" maxlength="80" value="${esc(r.title || '')}" placeholder="e.g. RFU Activate: warm-up"></div>
+    <div class="field"><label class="field-label" for="rsU">Web address</label><input id="rsU" type="url" inputmode="url" autocapitalize="off" value="${esc(r.url || '')}" placeholder="https://…"></div>
+    <div class="row-btns"><button class="btn" id="rsSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
+    <p class="hint">To add your own notes about it, make a page instead and put the link in it.</p>`,
+    el => $('#rsSave', el).addEventListener('click', () => { const u = safeUrl($('#rsU', el).value); if(!u) return toast('Enter the web address, e.g. https://www.englandrugby.com/…');
+      r.url = u; r.title = $('#rsT', el).value.trim() || hostOf(u) || 'Link'; closeSheet(); done(r); }));
+}
+function renderPages(){
+  const el = $('#movesList'), cur8 = curated(), ed = libEditor(), all = pages().filter(r => !r.peek);
+  const drafts = all.filter(r => r.draft), team = all.filter(r => !r.draft);
+  const props = ed ? (S.sync.proposals || []).filter(p => isRes(JSON.parse(p.json))) : [];
+  const sub = r => [resIcon(r) === '🔗' ? 'Link · ' + hostOf(r.url) : 'Page' + ((r.links || []).length + (r.url ? 1 : 0) ? ` · ${(r.links || []).length + (r.url ? 1 : 0)} link${(r.links || []).length + (r.url ? 1 : 0) > 1 ? 's' : ''}` : '')].join('');
+  const card = r => { const pr = r.draft && r.prop;
+    return `<div class="mcard plcard${r.draft ? ' draft' : ''}"><div class="mbody"><button class="mname" data-rsopen="${r.id}">${resIcon(r)} ${esc(r.title)}</button>
+      ${pr && pr.status === 'returned' ? commentsHtml(pr.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}
+      <div class="mmeta">${r.draft ? `<span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team'}</span> ` : ''}${esc(sub(r))}</div>
+      <div class="mact">${r.draft ? `<button class="chip" data-rsed="${r.id}">Edit</button>${cur8 ? (!pr ? `<button class="chip on" data-prop="${r.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${r.id}">Resend</button>` : propChanged(r) ? `<button class="chip on" data-prop="${r.id}">Send changes</button>` : '') + (pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${r.id}">Withdraw</button>` : '')
+          : `<button class="chip on" data-rsadd="${r.id}">Add to team pages</button>`}<button class="chip" data-rsdel="${r.id}">Delete</button>`
+        : ed ? `<button class="chip" data-rsed="${r.id}">Edit</button><button class="chip" data-rsdup="${r.id}">Duplicate</button><button class="chip" data-rsdel="${r.id}">Delete</button>`
+        : `<button class="chip on" data-rsdup="${r.id}">Make my copy</button>`}</div></div></div>`; };
+  const propCard = p => { const r = JSON.parse(p.json);
+    return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${resIcon(r)} ${esc(r.title)}</button>
+      <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)}</div>${commentsHtml(p.comments.slice(-2))}
+      <div class="mact"><button class="chip" data-ppeek="${p.id}">Read</button><button class="chip on" data-pacc="${p.id}">Add to team pages</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
+  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k, l]) => { const n = S.moves.filter(m => isDrill(m) && !m.peek && catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="false">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${pagesTab(true)}</div>
+    ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
+    <div class="row-btns"><button class="btn" id="rsNewPage">New page</button><button class="btn ghost" id="rsNewLink">New link</button></div>
+    <p class="hint">Pages hold notes, such as coaching points or a summary of an RFU Activate session, with their links. Use them in any training plan.</p>
+    ${cur8 || drafts.length ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only you see these</span></div>
+      ${drafts.length ? drafts.map(card).join('') : '<p class="hint">New pages and links start here. When one is ready, tap Propose to the team.</p>'}` : ''}
+    <div class="section-h"><span>Team pages · ${team.length}</span><span></span></div>
+    ${team.length ? team.map(card).join('') : `<p class="hint">No team pages yet.${cur8 ? ' Pages the team admin adds appear here.' : ''}</p>`}`;
+  const find = id => all.find(r => r.id === id), propOf = id => props.find(p => p.id === id);
+  const on = (sel, fn) => $$(sel, el).forEach(b => b.addEventListener('click', () => fn(b)));
+  on('[data-tabcat]', b => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); });
+  const keep = r => { if(!pages().includes(r)) pages().unshift(r); save(); renderMoves(); };
+  on('#rsNewPage', () => editRes({id: uid(), type: 'res', title: '', newPage: true, draft: cur8 || undefined}, r => { keep(r); toast(cur8 ? 'Saved in your drafts' : 'Added to the team pages'); }));
+  on('#rsNewLink', () => editRes({id: uid(), type: 'res', title: '', url: 'https://', draft: cur8 || undefined}, r => { keep(r); toast(cur8 ? 'Saved in your drafts' : 'Added to the team pages'); }));
+  on('[data-rsopen]', b => { const r = find(b.dataset.rsopen); showRes(r, {onEdit: r.draft || ed ? () => editRes(r, keep) : null}); });
+  on('[data-rsed]', b => editRes(find(b.dataset.rsed), keep));
+  on('[data-rsdup]', b => { const r = Object.assign(clone(find(b.dataset.rsdup)), {id: uid(), draft: true}); delete r.prop; r.title += cur8 ? '' : ' (copy)'; pages().unshift(r); save(); renderMoves(); toast('Your own copy is in your drafts'); });
+  on('[data-rsadd]', b => { const r = find(b.dataset.rsadd); delete r.draft; delete r.prop; save(); renderMoves(); toast(`${r.title} added to the team pages`); });
+  on('[data-rsdel]', b => { const r = find(b.dataset.rsdel);
+    askConfirm(`Delete ${r.title}?`, r.draft ? 'It’s only your draft: it goes from your phones.' : 'It goes from the team’s pages for everyone. Plans that use it keep its name.', 'Delete', () => {
+      if(r.prop) withdrawProposal(r).catch(() => {}); dropLib(r); save(); renderMoves(); toast('Deleted'); }); });
+  on('[data-prop]', b => proposeSheet(find(b.dataset.prop)));
+  on('[data-wd]', async b => { const r = find(b.dataset.wd); b.disabled = true; try { await withdrawProposal(r); toast(`${r.title} withdrawn: it’s just your draft again`); renderMoves(); } catch(e){ b.disabled = false; toast(niceErr(e)); } });
+  on('[data-ppeek]', b => peekProposal(propOf(b.dataset.ppeek)));
+  on('[data-pback]', b => sendBackSheet(propOf(b.dataset.pback)));
+  on('[data-pacc]', async b => { const p = propOf(b.dataset.pacc); b.disabled = true;
+    try { await decideProposal(p, true); renderMoves(); toast(`${JSON.parse(p.json).title} added to the team pages`); runSync(null, true); } catch(e){ b.disabled = false; toast(niceErr(e)); } });
 }
 function unshareMove(m){
   askConfirm(`Move ${m.name} back to drafts?`, `It will be removed from the other coaches’ phones in ${S.sync.groupName}. You keep it here as a draft.`, 'Move to drafts',
@@ -3075,7 +3155,7 @@ async function fetchGroup(code){
    everything else in groups/<id>/items. Drills and plans used to be in items too: until a phone allowed to has copied
    one across (a library editor for drills, any coach for plans), the old copy in items is used. Each item read says
    where it came from (src), so a write knows whether the new home already has it. */
-const ITEM_HOME = id => id.startsWith('mv_') ? 'training' : id.startsWith('pl_') ? 'plans' : 'items';
+const ITEM_HOME = id => id.startsWith('mv_') || id.startsWith('rs_') ? 'training' : id.startsWith('pl_') ? 'plans' : 'items';
 async function listItems(code){
   const out = {};
   const read = async col => { const docs = await listDocs(`/groups/${code}/${col}`);
@@ -3099,6 +3179,7 @@ function localItems(){
   for(const pl of S.players){ if(pl.localOnly) continue; const q = Object.assign({}, pl); delete q.localOnly; out['p_'+pl.id] = {kind:'player', teamId:'', json: JSON.stringify(q)}; }
   for(const m of S.moves){ if(m.draft) continue; const mm = Object.assign({}, m); delete mm.draft; delete mm.localOnly; out['mv_'+m.id] = {kind:'move', teamId:'', json: JSON.stringify(mm)}; }
   for(const pl of plans()) out['pl_'+pl.id] = {kind:'plan', teamId:'', json: JSON.stringify(pl)};
+  for(const r of pages()) if(!r.draft && !r.peek) out['rs_'+r.id] = {kind:'res', teamId:'', json: drillJson(r)};
   if(isGuest()) for(const id in out) if(ITEM_HOME(id) === 'items') delete out[id];
   return out;
 }
@@ -3110,7 +3191,7 @@ const keptOnPhone = base => new Set(S.teams.filter(t => t.localOnly).map(t => 't
 function pendingChanges(){
   if(!syncing() || isViewer()) return 0;
   const base = S.sync.base || {}, loc = localItems(), localOnly = keptOnPhone(base); let n = 0;
-  const mine = id => !(id.startsWith('mv_') && curated()); // a coach who isn't a library editor never sends team drills
+  const mine = id => !((id.startsWith('mv_') || id.startsWith('rs_')) && curated()); // a coach who isn't a library editor never sends team drills or pages
   for(const id in loc) if(mine(id) && hashStr(loc[id].json) !== base[id]) n++;
   for(const id in base) if(mine(id) && !loc[id] && !id.startsWith('m_') && !localOnly.has(id)) n++;
   return n;
@@ -3144,7 +3225,7 @@ function planSync(local, remote, base, choices){
     let d = decide(id);
     // a coach who isn't a library editor never sends team drills: the team's version comes back (they can't change
     // team drills on the phone; to change one they make their own copy)
-    if(id.startsWith('mv_') && curated() && (d==='push' || d==='both')){ pull.push(id); continue; }
+    if((id.startsWith('mv_') || id.startsWith('rs_')) && curated() && (d==='push' || d==='both')){ pull.push(id); continue; }
     if(d==='both' && (id.startsWith('t_') || id.startsWith('pl_'))){ const tid = itemTeam(id), c = choices[tid];
       if(!c){ needs.push({teamId:tid, name: JSON.parse(local[id].json).name, by: remote[id].by, plan: id.startsWith('pl_')}); continue; }
       d = c==='mine' ? 'push' : 'pull'; }
@@ -3176,6 +3257,11 @@ function applyPulled(plan, remote, copyMoves, newBase){
       const pid = id.slice(2), i = S.players.findIndex(x => x.id===pid);
       if(!R){ if(i>=0){ S.players.splice(i,1); got++; } continue; }
       if(i>=0) S.players[i] = JSON.parse(R.json); else S.players.push(JSON.parse(R.json));
+    } else if(id.startsWith('rs_')){
+      const rid = id.slice(3), i = pages().findIndex(x => x.id === rid);
+      if(!R){ if(i>=0){ S.pages.splice(i,1); got++; } continue; }
+      const r = JSON.parse(R.json); if(!isRes(r)){ newBase[id] = hashStr(R.json); continue; }
+      if(i>=0) S.pages[i] = r; else pages().unshift(r);
     } else if(id.startsWith('mv_')){
       // not a drill (a training plan pushed as one by a phone on an old version): leave it out; with it in the base,
       // the next sync deletes it from the team
@@ -3205,6 +3291,7 @@ async function syncNow(choices = {}, retry = true){
   // a coach who isn't a library editor: drills on the phone that the team has never had (from before, or accepted from
   // another team) become their own drafts, to propose
   if(curated()) for(const m of S.moves) if(!m.draft && !(z.base || {})['mv_'+m.id] && !(remote['mv_'+m.id] && !remote['mv_'+m.id].deleted)) m.draft = true;
+  if(curated()) for(const r of pages()) if(!r.draft && !(z.base || {})['rs_'+r.id] && !(remote['rs_'+r.id] && !remote['rs_'+r.id].deleted)) r.draft = true;
   const local = localItems(), plan = planSync(local, remote, z.base || {}, choices);
   if(plan.needs.length) return {needs: plan.needs};
   const newBase = {}, keep = id => { if(local[id]) newBase[id] = hashStr(local[id].json); };
@@ -3213,7 +3300,7 @@ async function syncNow(choices = {}, retry = true){
   // each write carries a precondition, so if someone syncs in between this run starts again instead of overwriting them
   const who = z.who || '', now = String(Date.now()), writes = [];
   const write = (id, item) => {
-    const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : id.startsWith('p_') ? 'player' : id.startsWith('pl_') ? 'plan' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
+    const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : id.startsWith('p_') ? 'player' : id.startsWith('pl_') ? 'plan' : id.startsWith('rs_') ? 'res' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
       deleted:{booleanValue: !item}, by:{stringValue: who}, at:{integerValue: now}};
     const home = ITEM_HOME(id);
     writes.push({update:{name: DOCNAME(`groups/${code}/${home}/${id}`), fields}, currentDocument: Rd && Rd.src === home ? {updateTime: Rd.updateTime} : {exists:false}});
@@ -4481,10 +4568,13 @@ function renderPlan(box, p, e, ref, st){
   const used = blockMins(p.blocks), start = toMins(e.time), drills = S.moves.filter(m => !m.draft);
   const redo = () => { if(!e.guestView){ p.name = evTitle(e) + ', ' + evWhen(e).split(' · ')[0]; p.ev = planEv(e); } save(); renderPlan(box, p, e, ref, st); };
   let t = start;
+  const tpages = pages().filter(r => !r.draft && !r.peek);
   const drillName = x => { const m = x.drillId && S.moves.find(d => d.id === x.drillId); return m ? m.name : x.text || 'Drill no longer in the team'; };
   const adding = i => st.i !== i ? '' : st.kind === 'drill'
     ? (drills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CATS.map(([k, l]) => (ds => ds.length ? `<optgroup label="${l}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => (m.cat || 'backs') === k))).join('')}</select>`
       : '<small class="muted">No team drills yet: make one on the Drills tab and share it with the coaches.</small>')
+    : st.kind === 'page' ? (tpages.length ? `<select data-pickp="${i}"><option value="">Choose a team page or link…</option>${tpages.map(r => `<option value="${r.id}">${resIcon(r)} ${esc(r.title)}</option>`).join('')}</select>`
+      : '<small class="muted">No team pages yet: they’re made on the Drills tab, under Pages.</small>')
     : st.kind === 'link' ? `<input type="text" data-lkt="${i}" placeholder="Name, e.g. RFU Activate warm-up" maxlength="80"><input type="url" data-lku="${i}" placeholder="https://…" inputmode="url" autocapitalize="off"><button class="chip on" data-lkok="${i}">Add</button>`
     : `<input type="text" data-textin="${i}" placeholder="e.g. Dynamic warm-up" maxlength="80"><button class="chip on" data-textok="${i}">Add</button>`;
   box.innerHTML = `<p class="muted">${esc(e.guestView && !e.date ? p.name : evWhen(e))}</p><div class="field"><label class="field-label plain" for="plLen">Session length</label><select id="plLen">${PLAN_LENGTHS.map(m => `<option value="${m}"${m === p.length ? ' selected' : ''}>${lengthName(m)}</option>`).join('')}</select>
@@ -4492,8 +4582,8 @@ function renderPlan(box, p, e, ref, st){
       ${start != null && !e.guestView && evLength(e) !== p.length ? `<p class="hint">The session is set for ${esc(e.time)}${e.end ? '–' + esc(e.end) : ''}. <button class="chip" id="plEnd">End it at ${clock(start + p.length)}</button></p>` : ''}</div>
     ${p.blocks.map((b, i) => { const at = t != null ? clock(t) : ''; if(t != null) t += +b.mins; const im = itemMins(b);
       return `<div class="plblock"><div class="plhead"><span class="pltime">${at}</span><input type="text" data-bn="${i}" value="${esc(b.name)}" maxlength="40" aria-label="Block name"><select data-bm="${i}" aria-label="Minutes for ${esc(b.name)}">${minsOpts(b.mins)}</select><button class="chip" data-bx="${i}" aria-label="Remove ${esc(b.name)}">✕</button></div>
-        ${b.items.map((x, j) => `<div class="plitem">${x.drillId ? `<button class="memlink" data-io="${esc(x.drillId)}">▶ ${esc(drillName(x))}</button>` : x.link ? `<button class="memlink" data-lnk="${i}|${j}">🔗 ${esc(x.text)}</button><button class="chip" data-lnked="${i}|${j}" aria-label="Change link">✎</button>` : x.page != null ? `<button class="memlink" data-pg="${i}|${j}">📄 ${esc(x.text)}</button>` : `<span>${esc(x.text)}</span>`}<select data-im="${i}|${j}" aria-label="Minutes">${minsOpts(x.mins)}</select><button class="chip" data-ix="${i}|${j}" aria-label="Remove">✕</button></div>`).join('')}
-        <div class="plfoot"><small class="${im > b.mins ? 'st-no' : 'muted'}">${im} of ${b.mins} min planned</small>${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button><button class="chip" data-addl="${i}">+ Link</button><button class="chip" data-addn="${i}">+ Notes</button>`}</div></div>`; }).join('')}
+        ${b.items.map((x, j) => `<div class="plitem">${x.resId ? (r => r ? `<button class="memlink" data-res="${i}|${j}">${resIcon(r)} ${esc(r.title)}</button>` : `<span>${esc(x.text)} <small class="muted">(no longer in the team pages)</small></span>`)(pages().find(q => q.id === x.resId && !q.draft)) : x.drillId ? `<button class="memlink" data-io="${esc(x.drillId)}">▶ ${esc(drillName(x))}</button>` : x.link ? `<button class="memlink" data-lnk="${i}|${j}">🔗 ${esc(x.text)}</button><button class="chip" data-lnked="${i}|${j}" aria-label="Change link">✎</button>` : x.page != null ? `<button class="memlink" data-pg="${i}|${j}">📄 ${esc(x.text)}</button>` : `<span>${esc(x.text)}</span>`}<select data-im="${i}|${j}" aria-label="Minutes">${minsOpts(x.mins)}</select><button class="chip" data-ix="${i}|${j}" aria-label="Remove">✕</button></div>`).join('')}
+        <div class="plfoot"><small class="${im > b.mins ? 'st-no' : 'muted'}">${im} of ${b.mins} min planned</small>${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button><button class="chip" data-addp="${i}">+ Team page</button><button class="chip" data-addl="${i}">+ Link</button><button class="chip" data-addn="${i}">+ Notes</button>`}</div></div>`; }).join('')}
     <button class="btn ghost wide" id="plAddB">+ Add a block</button>
     <div class="field"><label class="field-label plain" for="plNotes">Notes for the coaches</label><textarea id="plNotes" rows="3" maxlength="2000">${esc(p.notes || '')}</textarea></div>
     <div class="row-btns"><button class="btn${p.ready ? '' : ' ghost'}" id="plReady">${p.ready ? 'Ready ✓' : 'Mark as ready'}</button><button class="btn ghost" id="plBack">${e.guestView ? 'Back to the plans' : 'Back to the session'}</button></div>
@@ -4526,6 +4616,11 @@ function renderPlan(box, p, e, ref, st){
   // links and notes: each opens over the plan, and closing it comes back to the plan where it was
   const backToPlan = () => { const top = sheetEl.scrollTop; return () => { (e.guestView ? showGuestPlan : showPlan)(ref); sheetEl.scrollTop = top; }; };
   const itemAt = x => { const [i, j] = ij(x); return p.blocks[i].items[j]; };
+  on('[data-addp]', 'click', x => { Object.assign(st, {i: +x.dataset.addp, kind: 'page'}); renderPlan(box, p, e, ref, st); });
+  on('[data-pickp]', 'change', x => { const r = tpages.find(q => q.id === x.value); if(!r) return; const b = p.blocks[+x.dataset.pickp];
+    b.items.push({id: uid(), resId: r.id, text: r.title, mins: fill(b)}); st.i = null; redo(); });
+  on('[data-res]', 'click', x => { const it = itemAt(x.dataset.res), r = pages().find(q => q.id === it.resId); if(!r) return;
+    if(resIcon(r) === '🔗') return openLink(r.url); showRes(r, {back: backToPlan()}); });
   on('[data-addl]', 'click', x => { Object.assign(st, {i: +x.dataset.addl, kind: 'link'}); renderPlan(box, p, e, ref, st); const inp = $('[data-lkt]', box); if(inp) inp.focus(); });
   on('[data-lkok]', 'click', x => { const i = +x.dataset.lkok, t = $(`[data-lkt="${i}"]`, box).value.trim(), u = safeUrl($(`[data-lku="${i}"]`, box).value);
     if(!u) return toast('Enter the web address, e.g. https://www.englandrugby.com/…'); const b = p.blocks[i];
@@ -5101,7 +5196,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 9 Nov 2026, 23:11</p>`,
+    <p class="hint" style="text-align:center">Version 9 Nov 2026, 23:18</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5694,7 +5789,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 23:11'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 23:18'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
