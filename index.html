@@ -2079,7 +2079,7 @@ function renderMoves(){
   el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}</div>
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <button class="btn wide" id="newMove">New ${catName.toLowerCase()} drill</button>
-    ${grp ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only on your phone</span></div>
+    ${grp ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only you see these</span></div>
       ${drafts.length ? drafts.map(card).join('') : `<p class="hint">${cur8 ? 'New drills start here. When one is ready, tap Propose to the team: the team admin adds it to the team’s drills or sends it back with comments.' : 'New drills start here. Nobody else sees a draft until you tap Share with coaches.'}</p>`}` : ''}
     <div class="section-h"><span>${grp ? (cur8 ? 'Team drills' : 'Shared with '+esc(S.sync.groupName)) : catName+' drills'} · ${shared.length}</span><span>${S.teams.length > 1 ? 'Used by all selections' : ''}</span></div>
     ${cur8 && shared.length ? '<p class="hint">The team admin looks after these. To change one, tap Make my copy, then propose your version.</p>' : ''}
@@ -2144,6 +2144,36 @@ async function setLibEditors(uids){
   z.libEditors = uids; save();
 }
 const propDoc = id => `groups/${S.sync.group}/drafts/${id}`;
+/* My drafts, online: a coach's draft drills are kept in groups/<id>/drafts/<drill id> {by, who, status 'draft', json,
+   at}, so they're on every phone the coach uses in the team, and only theirs (team admins and editors never see a
+   draft until it's proposed). z.draftBase holds each one's hash at the last sync, to tell a change made on this phone
+   from one made on another. Changed on both: the other phone's version is kept as well, as "(other phone)". */
+const draftJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'peek', 'localOnly']) delete mm[k]; return JSON.stringify(mm); };
+async function syncMyDrafts(){
+  const z = S.sync, me = tokenUid(await fbToken()), base = z.draftBase || {}, eq = (f, v) => ({fieldFilter:{field:{fieldPath: f}, op: 'EQUAL', value:{stringValue: v}}});
+  const r = await fb('POST', `/groups/${z.group}:runQuery`, {structuredQuery:{from:[{collectionId: 'drafts'}], where:{compositeFilter:{op: 'AND', filters:[eq('by', me), eq('status', 'draft')]}}}});
+  const remote = {}; for(const x of r || []) if(x.document){ const f = x.document.fields || {}; if(f.json) remote[x.document.name.split('/').pop()] = f.json.stringValue; }
+  const local = {}; for(const m of S.moves) if(m.draft && !m.peek && isDrill(m)) local[m.id] = draftJson(m);
+  const writes = [], nb = {}, add = [], now = String(Date.now());
+  const put = (id, json) => writes.push({update:{name: DOCNAME(propDoc(id)), fields:{by:{stringValue: me}, who:{stringValue: z.who || ''}, status:{stringValue: 'draft'}, json:{stringValue: json}, comments:{stringValue: '[]'}, at:{integerValue: now}}}});
+  for(const id of new Set([...Object.keys(local), ...Object.keys(remote), ...Object.keys(base)])){
+    const L = local[id], R = remote[id], lh = L ? hashStr(L) : null, rh = R ? hashStr(R) : null, B = base[id] || null;
+    if(lh === rh){ if(lh) nb[id] = lh; continue; }
+    const lc = lh !== B, rc = rh !== B;
+    if(lc && !rc){ if(L){ put(id, L); nb[id] = lh; } else writes.push({delete: DOCNAME(propDoc(id))}); continue; }
+    if(rc && !lc){ const i = S.moves.findIndex(m => m.id === id);
+      if(!R){ if(i >= 0) S.moves.splice(i, 1); continue; }
+      let m; try { m = JSON.parse(R); } catch(e){ continue; } if(!isDrill(m)) continue;
+      m.draft = true; if(i >= 0) S.moves[i] = m; else add.push(m); nb[id] = rh; continue; }
+    // changed here and on another phone: keep this phone's, and the other one's beside it as a new draft
+    if(L){ put(id, L); nb[id] = lh; }
+    if(R){ let m; try { m = JSON.parse(R); } catch(e){ continue; } if(!isDrill(m)) continue;
+      m.id = uid(); m.name += ' (other phone)'; m.draft = true; delete m.prop; add.push(m); const j = draftJson(m); put(m.id, j); nb[m.id] = hashStr(j); }
+  }
+  if(writes.length) await fb('POST', ':commit', {writes});
+  S.moves.unshift(...add); z.draftBase = nb; save();
+  return add.length;
+}
 const parseComments = f => { try { return JSON.parse(f.comments && f.comments.stringValue || '[]'); } catch(e){ return []; } };
 // send (or resend, with an optional reply) a draft to the team's library editors
 async function proposeDrill(m, reply){
@@ -3002,14 +3032,21 @@ async function fetchGroup(code){
   const f = d.fields || {}, was = f.formerly && f.formerly.arrayValue && f.formerly.arrayValue.values || [];
   return {code, name: f.name.stringValue, formerly: was.map(v => v.stringValue), club: f.club ? f.club.stringValue : '', youth: !!(f.youth && f.youth.booleanValue), positions: f.positions ? f.positions.stringValue : ''};
 }
+/* Where each synced item lives: the team's drills (mv_) in groups/<id>/training and training plans (pl_) in
+   groups/<id>/plans, so people who help with training can be let in to those without seeing selections or the squad;
+   everything else in groups/<id>/items. Drills and plans used to be in items too: until a phone allowed to has copied
+   one across (a library editor for drills, any coach for plans), the old copy in items is used. Each item read says
+   where it came from (src), so a write knows whether the new home already has it. */
+const ITEM_HOME = id => id.startsWith('mv_') ? 'training' : id.startsWith('pl_') ? 'plans' : 'items';
 async function listItems(code){
-  const out = {}; let page = '';
-  do {
-    const j = await fb('GET', `/groups/${code}/items?pageSize=300${page?'&pageToken='+encodeURIComponent(page):''}`) || {};
-    for(const d of j.documents||[]){ const f = d.fields||{}, id = d.name.split('/').pop();
-      out[id] = {kind: f.kind && f.kind.stringValue, teamId: f.teamId && f.teamId.stringValue, json: f.json ? f.json.stringValue : '', deleted: !!(f.deleted && f.deleted.booleanValue), by: f.by ? f.by.stringValue : '', updateTime: d.updateTime}; }
-    page = j.nextPageToken;
-  } while(page);
+  const out = {};
+  const read = async col => { const docs = await listDocs(`/groups/${code}/${col}`);
+    for(const d of docs){ const f = d.fields||{}, id = d.name.split('/').pop();
+      if(col !== 'items' && ITEM_HOME(id) !== col) continue;
+      out[id] = {kind: f.kind && f.kind.stringValue, teamId: f.teamId && f.teamId.stringValue, json: f.json ? f.json.stringValue : '', deleted: !!(f.deleted && f.deleted.booleanValue), by: f.by ? f.by.stringValue : '', updateTime: d.updateTime, src: col}; } };
+  await read('items');
+  // the new homes win over the old copies; a phone whose rules don't reach them yet just keeps using items
+  for(const col of ['training', 'plans']) await read(col).catch(e => { if(e.status !== 403) throw e; });
   return out;
 }
 // Items: 't_<teamId>' is a team without moves; 'mv_<moveId>' is a move in the group's shared library; 'pl_<eventId>'
@@ -3139,8 +3176,16 @@ async function syncNow(choices = {}, retry = true){
   const write = (id, item) => {
     const Rd = remote[id], fields = {kind:{stringValue: id.startsWith('t_') ? 'team' : id.startsWith('p_') ? 'player' : id.startsWith('pl_') ? 'plan' : 'move'}, teamId:{stringValue: itemTeam(id)}, json:{stringValue: item ? item.json : ''},
       deleted:{booleanValue: !item}, by:{stringValue: who}, at:{integerValue: now}};
-    writes.push({update:{name: DOCNAME(`groups/${code}/items/${id}`), fields}, currentDocument: Rd ? {updateTime: Rd.updateTime} : {exists:false}});
+    const home = ITEM_HOME(id);
+    writes.push({update:{name: DOCNAME(`groups/${code}/${home}/${id}`), fields}, currentDocument: Rd && Rd.src === home ? {updateTime: Rd.updateTime} : {exists:false}});
   };
+  // move drills and plans still only in items to their own homes, as they are (a library editor for drills, any coach
+  // for plans), unless this sync is already writing them
+  const moving = Object.keys(remote).filter(id => remote[id].src === 'items' && ITEM_HOME(id) !== 'items' && !remote[id].deleted && !push.includes(id)
+    && (id.startsWith('pl_') || libEditor()));
+  for(const id of moving){ const R = remote[id];
+    writes.push({update:{name: DOCNAME(`groups/${code}/${ITEM_HOME(id)}/${id}`), fields:{kind:{stringValue: R.kind || ''}, teamId:{stringValue: R.teamId || ''}, json:{stringValue: R.json},
+      deleted:{booleanValue: false}, by:{stringValue: R.by || who}, at:{integerValue: now}}}, currentDocument:{exists:false}}); }
   for(const id of push){ write(id, local[id]); keep(id); }
   // a move changed on both sides: theirs keeps the name, ours is saved alongside as "(my version)" so nothing is lost
   const copyMoves = [];
@@ -3444,6 +3489,7 @@ async function runSync(choices, quiet, auto){
     const r = await syncNow(choices || {}); // quiet syncs pass null
     if(r.needs){ SYNCING = false; showClashBanner(r.needs); if(!auto) askTeamConflicts(r.needs, choices || {}); return; }
     showClashBanner(null); dropMissingMove();
+    try { await syncMyDrafts(); } catch(e){ console.warn('Drafts', e); }
     try { await refreshMyProposals(); if(libEditor()) await loadProposals(); } catch(e){ console.warn('Proposals', e); }
     try { if(libEditor()) await publishShared(); await publishRoster(); await publishSheets().catch(e => { if(e.status !== 403) throw e; }); } catch(e){ if(e.status !== 403) throw e; } // 403: security rules from older versions
     try { await loadFixtures(); } catch(e){}
@@ -4856,7 +4902,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 9 Nov 2026, 22:18</p>`,
+    <p class="hint" style="text-align:center">Version 9 Nov 2026, 22:48</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5422,7 +5468,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 22:18'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('9 Nov 2026, 22:48'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
