@@ -1884,12 +1884,14 @@ const drillShelf = (list, title, sub, k) => list.length ? `<div class="section-h
 const pageShelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${k}|${r.id}">${resIcon(r)} ${esc(r.title)}</button><div class="mmeta">${resIcon(r) === '🔗' ? 'Link · ' + esc(hostOf(r.url)) : 'Page'}</div><div class="mact">${starterActions(r, k)}</div></div></div>`).join('')}` : '';
 const sessionShelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${k}|${r.id}">${esc(r.name)}</button><div class="mmeta">${esc(sesInfo(r))}</div><div class="mact">${starterActions(r, k)}</div></div></div>`).join('')}` : '';
 const clubSub = () => (S.sync && S.sync.clubName) || 'The club';
+const toTeamChip = x => fbOn() && !curated() ? `<button class="chip" data-tsend="${x.id}">Send to another team</button>` : '';
 const toClubChip = x => isGroupAdmin() && S.sync.club ? `<button class="chip" data-tclub="${x.id}">Send to club</button>` : '';
 // the Drills, Pages and Sessions tabs' starter buttons
 function wireStarter(el){
   const find = v => { const [k, id] = v.split('|'); return shelfArr(k).find(x => x.id === id); };
   $$('[data-aopen]', el).forEach(b => b.addEventListener('click', () => { const x = find(b.dataset.aopen), club = b.dataset.aopen.startsWith('c');
     if(isSes(x)) showSesSummary(x, club ? 'Club session' : 'Starter session'); else showRes(x, {eyebrow: club ? 'Club page' : 'Starter page'}); }));
+  $$('[data-tsend]', el).forEach(b => b.addEventListener('click', () => { const [arr] = findLib(b.dataset.tsend); sendToGroup(arr.find(q => q.id === b.dataset.tsend)); }));
   $$('[data-tclub]', el).forEach(b => b.addEventListener('click', () => { const [arr] = findLib(b.dataset.tclub), x = arr.find(q => q.id === b.dataset.tclub);
     askConfirm(`Send ${itemName(x)} to ${clubSub()}?`, `The club admins look at it, then add it to the club library for every team${isSes(x) ? ' (with the team drills and pages it uses)' : ''}, or send it back with comments. You see how it’s getting on in Admin → Training.`, 'Send', async () => {
       try { await sendToClub(x); toast(`${itemName(x)} sent to the club`); } catch(e){ toast(niceErr(e)); } }); }));
@@ -2460,7 +2462,7 @@ function renderPages(){
       <div class="mmeta">${r.draft ? `<span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team'}</span> ` : ''}${esc(sub(r))}</div>
       <div class="mact">${r.draft ? `<button class="chip" data-rsed="${r.id}">Edit</button>${cur8 ? (!pr ? `<button class="chip on" data-prop="${r.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${r.id}">Resend</button>` : propChanged(r) ? `<button class="chip on" data-prop="${r.id}">Send changes</button>` : '') + (pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${r.id}">Withdraw</button>` : '')
           : `<button class="chip on" data-rsadd="${r.id}">Add to team pages</button>`}<button class="chip" data-rsdel="${r.id}">Delete</button>`
-        : ed ? `<button class="chip" data-rsed="${r.id}">Edit</button><button class="chip" data-rsdup="${r.id}">Duplicate</button><button class="chip" data-rsdel="${r.id}">Delete</button>${pubChips(r, 'r')}${toClubChip(r)}`
+        : ed ? `<button class="chip" data-rsed="${r.id}">Edit</button><button class="chip" data-rsdup="${r.id}">Duplicate</button><button class="chip" data-rsdel="${r.id}">Delete</button>${toTeamChip(r)}${pubChips(r, 'r')}${toClubChip(r)}`
         : `<button class="chip on" data-rsdup="${r.id}">Make my copy</button>`}</div></div></div>`; };
   const propCard = p => { const r = JSON.parse(p.json);
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${resIcon(r)} ${esc(r.title)}</button>
@@ -2541,7 +2543,7 @@ function renderSessions(){
       <div class="mmeta">${r.draft ? `<span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team'}</span> ` : ''}${esc(sesInfo(r))}</div>
       <div class="mact">${r.draft ? `<button class="chip" data-ssren="${r.id}">Rename</button>${cur8 ? (!pr ? `<button class="chip on" data-prop="${r.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${r.id}">Resend</button>` : propChanged(r) ? `<button class="chip on" data-prop="${r.id}">Send changes</button>` : '') + (pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${r.id}">Withdraw</button>` : '')
           : `<button class="chip on" data-ssadd="${r.id}">Add to team sessions</button>`}<button class="chip" data-ssdel="${r.id}">Delete</button>`
-        : ed ? `<button class="chip" data-ssren="${r.id}">Rename</button><button class="chip" data-ssdup="${r.id}">Duplicate</button><button class="chip" data-ssdel="${r.id}">Delete</button>${pubChips(r, 's')}${toClubChip(r)}`
+        : ed ? `<button class="chip" data-ssren="${r.id}">Rename</button><button class="chip" data-ssdup="${r.id}">Duplicate</button><button class="chip" data-ssdel="${r.id}">Delete</button>${toTeamChip(r)}${pubChips(r, 's')}${toClubChip(r)}`
         : `<button class="chip on" data-ssdup="${r.id}">Make my copy</button>`}</div></div></div>`; };
   const propCard = p => { const r = JSON.parse(p.json);
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${esc(r.name)}</button>
@@ -3228,8 +3230,24 @@ function importDrill(d, old){
 }
 // a drill another team sent (from the inbox), accepted: first in the list, with a new id if it clashes and where it
 // came from on its name if that clashes
+/* A page or session from another team, with its parts: each gets a new id here, and the session's items are pointed
+   at the new copies. They go into the team's library, or the coach's drafts for a coach who isn't a library editor. */
+function acceptSentBundle(it){
+  const j = JSON.parse(it.json), from = it.fromGroup || it.fromWho || 'another team', ids = {};
+  const take = y => { const c = clone(y); for(const k of ['draft', 'prop', 'peek', 'app', 'club']) delete c[k]; ids[c.id] = c.id = uid(); if(curated()) c.draft = true; return c; };
+  for(const y of j.parts || []){ if(!isDrill(y) && !isRes(y)) continue; const c = take(y);
+    if(isDrill(c)){ if(S.moves.some(x => x.name === c.name)) c.name += ` (from ${from})`; S.moves.unshift(c); }
+    else { if(pages().some(x => x.title === c.title)) c.title += ` (from ${from})`; pages().unshift(c); } }
+  const old = j.main.id, c = take(j.main);
+  if(isSes(c)){ c.blocks = copyBlocks(c.blocks); for(const b of c.blocks) for(const x of b.items){ const was = x.drillId ? ids[x.drillId] : x.resId ? ids[x.resId] : null;
+      if(x.drillId && was) x.drillId = was; if(x.resId && was) x.resId = was; }
+    if(sessions().some(x => x.name === c.name)) c.name += ` (from ${from})`; sessions().unshift(c); }
+  else if(isRes(c)){ if(pages().some(x => x.title === c.title)) c.title += ` (from ${from})`; pages().unshift(c); }
+  save(); return c;
+}
 function acceptSentDrill(it){
-  const m = JSON.parse(it.json); if(S.moves.some(x => x.id === m.id)) m.id = uid();
+  const j = JSON.parse(it.json); if(j.type === 'bundle') return acceptSentBundle(it);
+  const m = j; if(S.moves.some(x => x.id === m.id)) m.id = uid();
   if(S.moves.some(x => x.name === m.name)) m.name += ` (from ${it.fromGroup || it.fromWho || 'another team'})`;
   S.moves.unshift(m); save(); return m;
 }
@@ -3238,8 +3256,12 @@ const sendCodeProblem = code => code.length !== 10 ? 'Enter the 10-character sen
   : syncing() && code === S.sync.mailbox ? 'That is your own team’s send code.'
   : syncing() && code === S.sync.group ? 'That is your team’s join code. Ask the other team for their send code.' : '';
 // drop drill m into the inbox of the team with this send code, and remember the code (most recent first)
+/* What goes through a send code: a drill on its own, as it always has (so older versions of the app can take it), or
+   a bundle {type: 'bundle', main, parts} for a page or session, with the team drills and pages a session uses. */
 async function sendDrill(m, code){
-  const z = S.sync || {}, fields = {json:{stringValue: JSON.stringify(Object.assign({}, m, {localOnly: undefined, draft: undefined}))}, fromGroup:{stringValue: z.groupName || ''}, fromWho:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}};
+  const parts = isDrill(m) ? [] : withParts(m).slice(1).map(y => JSON.parse(drillJson(y)));
+  const body = isDrill(m) ? JSON.stringify(Object.assign({}, m, {localOnly: undefined, draft: undefined, prop: undefined, app: undefined, club: undefined})) : JSON.stringify({type: 'bundle', main: JSON.parse(drillJson(m)), parts});
+  const z = S.sync || {}, fields = {json:{stringValue: body}, fromGroup:{stringValue: z.groupName || ''}, fromWho:{stringValue: z.who || ''}, at:{integerValue: String(Date.now())}};
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`mailboxes/${code}/items/${uid()}`), fields}, currentDocument:{exists:false}}]});
   S.ui.sendTo = [code].concat((S.ui.sendTo || []).filter(c => c !== code)).slice(0, 6); save();
 }
@@ -3771,7 +3793,7 @@ async function checkInbox(again){
   try { j = await fb('GET', `/mailboxes/${box}/items?pageSize=50`) || {}; }
   catch(e){ if(e.status === 403 && !again){ delete S.sync.memberOf; save(); return checkInbox(true); } throw e; }
   const items = (j.documents||[]).map(d => { const f = d.fields || {}; return {id: d.name.split('/').pop(), json: f.json ? f.json.stringValue : '', fromGroup: f.fromGroup ? f.fromGroup.stringValue : '', fromWho: f.fromWho ? f.fromWho.stringValue : ''}; })
-    .filter(it => { try { JSON.parse(it.json).icons; return true; } catch(e){ return false; } });
+    .filter(it => { try { const j = JSON.parse(it.json); return isDrill(j) || (j.type === 'bundle' && isLib(j.main)); } catch(e){ return false; } });
   if(items.length) showInbox(items);
   return items.length;
 }
@@ -3779,14 +3801,14 @@ async function checkInbox(again){
 const checkInboxQuietly = () => isViewer() || isGuest() ? runSync(null, true) : checkInbox().catch(e => { if(e.gone) askNewCode(); else if(e.removed) showRemoved(); });
 function showInbox(items){
   let accepted = 0;
-  const card = it => { const m = JSON.parse(it.json);
-    return `<div class="mcard" data-in="${esc(it.id)}"><div class="thumb">${moveThumb(m)}</div><div class="mbody">
-      <div class="mname">${esc(m.name)}</div>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
+  const card = it => { const j = JSON.parse(it.json), m = j.type === 'bundle' ? j.main : j, n = (j.parts || []).length;
+    return `<div class="mcard${isDrill(m) ? '' : ' plcard'}" data-in="${esc(it.id)}">${isDrill(m) ? `<div class="thumb">${moveThumb(m)}</div>` : ''}<div class="mbody">
+      <div class="mname">${isRes(m) ? resIcon(m) + ' ' : ''}${esc(itemName(m))}</div>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}${isSes(m) ? `<div class="mdesc">Session · ${esc(sesInfo(m))}${n ? ` · with ${n} drill${n > 1 ? 's' : ''} and page${n > 1 ? 's' : ''}` : ''}</div>` : isRes(m) ? '<div class="mdesc">Page</div>' : ''}
       <div class="mmeta">From ${esc(it.fromWho || 'a coach')}${it.fromGroup ? ', '+esc(it.fromGroup) : ''}</div>
       <div class="mact"><button class="chip on" data-acc="${esc(it.id)}">Accept</button><button class="chip" data-dec="${esc(it.id)}">Decline</button></div></div></div>`; };
   const finish = () => { if(accepted){ renderAll(); runSync(); } };
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Drills sent to your team</h2>
-    <p class="muted">Accepted drills are added to your team for every selection. Declined drills are thrown away.</p>
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>Sent to your team</h2>
+    <p class="muted">${curated() ? 'Accepted ones go into your drafts, to propose to the team.' : 'Accepted ones are added to the team’s drills, pages and sessions.'} Declined ones are thrown away.</p>
     <div id="inList">${items.map(card).join('')}</div>
     <button class="btn ghost wide" data-close>Decide later</button>`,
     el => {
@@ -3796,20 +3818,21 @@ function showInbox(items){
         try { await fb('DELETE', `/mailboxes/${S.sync.mailbox}/items/${id}`); }
         catch(e){ if(e.status !== 404){ toast(niceErr(e)); $$('button', row).forEach(b => b.disabled = false); return; } }
         if(accept){ acceptSentDrill(it); accepted++; }
-        row.remove(); toast(accept ? 'Drill added' : 'Drill declined');
+        row.remove(); toast(accept ? 'Added' : 'Declined');
         if(!$('#inList', el).children.length) closeSheet();
       };
       $$('[data-acc]', el).forEach(b => b.addEventListener('click', () => done(b.dataset.acc, true)));
       $$('[data-dec]', el).forEach(b => b.addEventListener('click', () => done(b.dataset.dec, false)));
     }, finish);
 }
-function sendToGroup(m){
+function sendToGroup(m, onClose){
   const recent = (S.ui.sendTo || []).slice(0, 4);
-  openSheet(`<div class="eyebrow">Send to another team</div><h2>${esc(m.name)}</h2>
-    <p class="muted">Enter the other team's <b>send code</b>. They are asked to accept the drill the next time one of their coaches opens the app.</p>
+  const what = isDrill(m) ? 'drill' : isRes(m) ? 'page' : 'session';
+  openSheet(`<div class="eyebrow">Send to another team</div><h2>${esc(itemName(m))}</h2>
+    <p class="muted">Enter the other team's <b>send code</b>. They are asked to accept the ${what}${isSes(m) && withParts(m).length > 1 ? ', with the team drills and pages it uses,' : ''} the next time one of their coaches opens the app. It's a copy: changes you make later don't reach them.</p>
     <div class="field"><label class="field-label" for="sgCode">Their send code</label><input id="sgCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH-JK"></div>
     ${recent.length ? `<div class="mact">${recent.map(c => `<button class="chip" data-rc="${c}">${fmtCode(c)}</button>`).join('')}</div>` : ''}
-    <div class="row-btns"><button class="btn" id="sgGo">Send move</button><button class="btn ghost" data-close>Cancel</button></div>
+    <div class="row-btns"><button class="btn" id="sgGo">Send ${what}</button><button class="btn ghost" data-close>Cancel</button></div>
     <p class="hint" id="sgErr" role="alert"></p>`,
     el => {
       tidyCode($('#sgCode', el));
@@ -3820,10 +3843,10 @@ function sendToGroup(m){
         $('#sgGo', el).disabled = true; err('Sending…');
         try {
           await sendDrill(m, code);
-          closeSheet(); toast('Drill sent. They will be asked to accept it.');
+          closeSheet(); toast(`${itemName(m)} sent. They will be asked to accept it.`);
         } catch(e){ $('#sgGo', el).disabled = false; err(e.status===403 ? 'No team has that send code. Check it with the other team.' : niceErr(e)); }
       });
-    });
+    }, onClose);
 }
 
 let SYNCING = false;
@@ -4809,7 +4832,7 @@ function renderPlan(box, p, e, ref, st){
         <div class="plfoot"><small class="${im > b.mins ? 'st-no' : 'muted'}">${im} of ${b.mins} min planned</small>${st.i === i || e.session ? '' : `<button class="chip" data-saveb="${i}">Save block</button>`}${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button><button class="chip" data-addp="${i}">+ Team page</button><button class="chip" data-addl="${i}">+ Link</button><button class="chip" data-addn="${i}">+ Notes</button>`}</div></div>`; }).join('')}
     <button class="btn ghost wide" id="plAddB">+ Add a block</button>
     <div class="field"><div class="field-label">Use again</div><div class="mact">
-      ${e.session ? '' : '<button class="chip" id="plFrom">Start from…</button>'}<button class="chip" id="plAddFrom">+ Blocks from…</button>${e.session ? '' : '<button class="chip" id="plSaveS">Save as session</button>'}${e.guestView ? '' : '<button class="chip" id="plCopyTo">Copy to another session</button>'}
+      ${e.session ? '' : '<button class="chip" id="plFrom">Start from…</button>'}<button class="chip" id="plAddFrom">+ Blocks from…</button>${e.session ? '' : '<button class="chip" id="plSaveS">Save as session</button>'}${e.guestView ? '' : '<button class="chip" id="plCopyTo">Copy to another session</button>'}${e.guestView || curated() || !fbOn() ? '' : '<button class="chip" id="plSendT">Send to another team</button>'}
     </div></div>
     <div class="field"><label class="field-label plain" for="plNotes">Notes for the coaches</label><textarea id="plNotes" rows="3" maxlength="2000">${esc(p.notes || '')}</textarea></div>
     <div class="row-btns">${e.session ? '' : `<button class="btn${p.ready ? '' : ' ghost'}" id="plReady">${p.ready ? 'Ready ✓' : 'Mark as ready'}</button>`}<button class="btn ghost" id="plBack">${e.session ? 'Done' : e.guestView ? 'Back to the plans' : 'Back to the session'}</button></div>
@@ -4899,6 +4922,10 @@ function renderPlan(box, p, e, ref, st){
     goAndReturn(() => nameSheet('Save as session', p.name, v => saveAsSession(v, p.blocks, p.length, p.notes), () => tripBack()), back, 'Plan'); });
   on('[data-saveb]', 'click', x => { const b = p.blocks[+x.dataset.saveb], back = backToPlan();
     goAndReturn(() => nameSheet('Save block', b.name, v => saveAsSession(v, [b], b.mins), () => tripBack()), back, 'Plan'); });
+  // to another team as a session (they don't have this date), with the team drills and pages it uses
+  on('#plSendT', 'click', () => { const x = {id: uid(), type: 'ses', name: p.name, length: p.length, blocks: copyBlocks(p.blocks)}; if(p.notes) x.notes = p.notes;
+    for(const bl of x.blocks) for(const it of bl.items) if(it.drillId && !S.moves.some(d => d.id === it.drillId && !d.draft) && !drillById(it.drillId)) delete it.drillId;
+    goAndReturn(() => sendToGroup(x, () => tripBack()), backToPlan(), 'Plan'); });
   on('#plCopyTo', 'click', () => { const z = S.sync, today = new Date().toISOString().slice(0, 10), back = backToPlan();
     const evs = (z.events || []).filter(v => v.type === 'training' && v.id !== p.id && v.date >= today && !v.cancelled).sort((a, b) => (a.date + (a.time || '')).localeCompare(b.date + (b.time || ''))).slice(0, 20);
     if(!evs.length) return toast('No other training sessions coming up');
@@ -5462,7 +5489,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 00:50</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 01:06</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6074,7 +6101,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 00:50'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 01:06'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
