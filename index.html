@@ -2548,7 +2548,29 @@ function waitsOn(x, extra = []){
   const waiting = (S.sync && S.sync.proposals || []).map(q => { try { return JSON.parse(q.json); } catch(e){ return null; } }).filter(Boolean);
   return [...new Set(ids)].filter(id => id && !inLibrary(id) && !extra.some(y => y.id === id)).map(id => ({id, name: (w => w ? itemName(w) : 'a draft that hasn’t been proposed')(waiting.find(y => y.id === id))}));
 }
-const waitsHtml = ws => ws.length ? `<p class="hint st-no">Approve these first: ${ws.map(w => esc(w.name)).join(', ')}.</p>` : '';
+/* The proposals for what x waits on, children first (a plan's drills, then each drill's animations and pages), to
+   approve along with it; null when one of them was never proposed (it can't be approved: send x back instead). */
+function partProposals(x, extra = []){
+  const out = [], props = S.sync && S.sync.proposals || [], idOf = q => { try { return JSON.parse(q.json).id; } catch(e){ return null; } };
+  const visit = y => { for(const w of waitsOn(y, extra)){ const q = props.find(p => idOf(p) === w.id); if(!q) return false;
+    if(out.includes(q)) continue; if(!visit(JSON.parse(q.json))) return false; out.push(q); } return true; };
+  return visit(x) ? out : null;
+}
+// what a proposal card says about its parts: approved with it, or never proposed
+function waitsHtml(ws, qs){
+  if(!ws.length) return '';
+  if(qs) return `<p class="hint">Approving it also approves its ${qs.length > 1 ? qs.length + ' new parts' : 'new part'}: ${qs.map(q => esc(itemName(JSON.parse(q.json)))).join(', ')}.</p>`;
+  const missing = ws.filter(w => !(S.sync.proposals || []).some(q => { try { return JSON.parse(q.json).id === w.id; } catch(e){ return false; } }));
+  const n = missing.length || 1;
+  return `<p class="hint st-no">It uses ${n > 1 ? n + ' of the coach’s drafts' : 'one of the coach’s drafts'} that ${n > 1 ? 'haven’t' : 'hasn’t'} been proposed, so it can’t be approved yet. Send it back and ask them to propose it again.</p>`;
+}
+// approve p along with the parts it waits on (each is approved on its own, children first)
+async function approveWithParts(p){
+  const qs = partProposals(JSON.parse(p.json), p.extra || []) || [];
+  for(const q of qs) await decideProposal(q, true);
+  await decideProposal(p, true);
+  return qs.length;
+}
 const commentsHtml = cs => (cs || []).map(c => `<div class="propnote">${esc(c.text)}<small>${c.kind === 'returned' ? 'Sent back' : 'Reply'} by ${esc(c.who || 'a coach')} · ${ago(c.at)}</small></div>`).join('');
 // propose a draft, or resend one that was sent back (with a reply), or send changes to one still waiting
 function proposeSheet(m){
@@ -2891,8 +2913,8 @@ function renderDrls(){
   const shelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.sort(drlOrder).map(x => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${k}|${x.id}">🧩 ${esc(x.name)}</button><div class="mmeta">${esc(drlMeta(x))}</div><div class="mact">${starterActions(x, k)}</div></div></div>`).join('')}` : '';
   const propCard = p => { const x = JSON.parse(p.json), n = (p.extra || []).length;
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">🧩 ${esc(x.name)}</button>
-      <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)} · ${esc(drlMeta(x, allDrls().concat((p.extra || []).filter(isDrl))))}${n ? ` · with ${n} more` : ''}</div>${commentsHtml(p.comments.slice(-2))}${(ws => waitsHtml(ws))(waitsOn(x, p.extra || []))}
-      <div class="mact"><button class="chip" data-ppeek="${p.id}">Look</button><button class="chip on" data-pacc="${p.id}"${waitsOn(x, p.extra || []).length ? ' disabled' : ''}>Add to team drills</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
+      <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)} · ${esc(drlMeta(x, allDrls().concat((p.extra || []).filter(isDrl))))}${n ? ` · with ${n} more` : ''}</div>${commentsHtml(p.comments.slice(-2))}${(ws => waitsHtml(ws, partProposals(x, p.extra || [])))(waitsOn(x, p.extra || []))}
+      <div class="mact"><button class="chip" data-ppeek="${p.id}">Look</button><button class="chip on" data-pacc="${p.id}"${partProposals(x, p.extra || []) ? '' : ' disabled'}>${(n => n ? `Add with ${n > 1 ? 'its ' + n + ' parts' : 'its part'}` : 'Add to team drills')((partProposals(x, p.extra || []) || []).length)}</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
   el.innerHTML = `${kindTabs('drills')}${clsFilter(cur, k => every.filter(x => !k || catOf(x) === k).length)}
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <button class="btn wide" id="dlNew">New ${cur ? esc(clsName(cur).toLowerCase()) + ' ' : ''}drill</button>
@@ -2919,7 +2941,7 @@ function renderDrls(){
   on('[data-ppeek]', b => peekProposal(propOf(b.dataset.ppeek)));
   on('[data-pback]', b => sendBackSheet(propOf(b.dataset.pback)));
   on('[data-pacc]', async b => { const p = propOf(b.dataset.pacc); b.disabled = true;
-    try { await decideProposal(p, true); renderMoves(); toast(`${JSON.parse(p.json).name} added to the team’s drills`); runSync(null, true); } catch(e){ b.disabled = false; toast(niceErr(e)); } });
+    try { const n = await approveWithParts(p); renderMoves(); toast(`${JSON.parse(p.json).name} added to the team’s drills${n ? `, with ${n} part${n > 1 ? 's' : ''}` : ''}`); runSync(null, true); } catch(e){ b.disabled = false; toast(niceErr(e)); } });
 }
 /* ---------- SAVED SESSIONS ---------- */
 const copyBlocks = bs => clone(bs || []).map(b => Object.assign(b, {id: uid(), items: (b.items || []).map(x => Object.assign(x, {id: uid()}))}));
@@ -2962,8 +2984,8 @@ function renderSessions(){
   const evRef = d => (S.sync.events || []).some(v => v.id === d.eventId) ? d.eventId : null;
   const pldCard = q => { const d = JSON.parse(q.json), ws = waitsOn(d, q.extra || []), at = d.ev && d.ev.date ? evWhen(Object.assign({type: 'training'}, d.ev)).split(' · ')[0] : '';
     return `<div class="mcard plcard"><div class="mbody"><b>${esc((d.ev && d.ev.title) || 'Training')}${at ? ', ' + esc(at) : ''}</b>
-      <div class="mmeta">${esc(q.who || 'A coach')}’s version · ${ago(q.at)} · ${esc(sesInfo(d))}</div>${commentsHtml(q.comments.slice(-2))}${waitsHtml(ws)}
-      <div class="mact">${evRef(d) ? `<button class="chip" data-plook="${q.id}">Look</button>` : ''}<button class="chip on" data-plive="${q.id}"${ws.length ? ' disabled' : ''}>Make live</button><button class="chip" data-pback="${q.id}">Send back</button></div></div></div>`; };
+      <div class="mmeta">${esc(q.who || 'A coach')}’s version · ${ago(q.at)} · ${esc(sesInfo(d))}</div>${commentsHtml(q.comments.slice(-2))}${waitsHtml(ws, partProposals(d, q.extra || []))}
+      <div class="mact">${evRef(d) ? `<button class="chip" data-plook="${q.id}">Look</button>` : ''}<button class="chip on" data-plive="${q.id}"${partProposals(d, q.extra || []) ? '' : ' disabled'}>${ws.length ? 'Make live with its parts' : 'Make live'}</button><button class="chip" data-pback="${q.id}">Send back</button></div></div></div>`; };
   const card = r => { const pr = r.draft && r.prop;
     return `<div class="mcard plcard${r.draft ? ' draft' : ''}"><div class="mbody"><button class="mname" data-ssopen="${r.id}">${esc(r.name)}</button>
       ${pr && pr.status === 'returned' ? commentsHtml(pr.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}
@@ -2993,7 +3015,7 @@ function renderSessions(){
   const pOf = id => pprops.find(q => q.id === id);
   on('[data-plook]', b => { const q = pOf(b.dataset.plook), d = JSON.parse(q.json); showPlanRead(d.eventId, d, `${q.who || 'A coach'}’s version`, q.extra || []); });
   on('[data-plive]', b => { const q = pOf(b.dataset.plive), d = JSON.parse(q.json), live = planFor(d.eventId), go = async () => { b.disabled = true;
-      try { await decideProposal(q, true); toast(`${q.who || 'The coach'}’s version is the live plan now`); renderMoves(); runSync(null, true); } catch(err){ b.disabled = false; toast(niceErr(err)); } };
+      try { await approveWithParts(q); toast(`${q.who || 'The coach'}’s version is the live plan now`); renderMoves(); runSync(null, true); } catch(err){ b.disabled = false; toast(niceErr(err)); } };
     if(live && planItems(live)) askConfirm('Replace the live plan?', `${q.who || 'The coach'}’s version takes its place for everyone.`, 'Replace', go); else go(); });
   on('[data-ssren]', b => { const r = find(b.dataset.ssren); nameSheet('Rename', r.name, v => { r.name = v; save(); renderMoves(); }); });
   on('[data-ssdup]', b => { const r = Object.assign(clone(find(b.dataset.ssdup)), {id: uid(), draft: true}); delete r.prop; r.blocks = copyBlocks(r.blocks); if(!cur8) r.name += ' (copy)'; sessions().unshift(r); save(); renderMoves(); toast('Your own copy is in your drafts'); });
@@ -5316,8 +5338,8 @@ function showPlan(ref){
       : `<p class="hint">${live ? (ed ? 'To change the live plan, make your own version, then tap Make live.' : 'To suggest changes, make your own version and propose it.') : ed ? 'Start a draft, then tap Make live.' : 'Start a draft and propose it.'} Only you see your draft until then.</p>
       <div class="row-btns">${live ? '<button class="btn" id="phCopy">Make my version</button>' : ''}${e.guestView ? '' : `<button class="btn${live ? ' ghost' : ''}" id="phNew">Start from the session template</button>`}</div>`}</div>
     ${waits.length ? `<div class="field"><div class="field-label">Versions waiting for you · ${waits.length}</div>${waits.map(q => { const d = JSON.parse(q.json), ws = waitsOn(d, q.extra || []); return `<div class="mcard plcard"><div class="mbody"><b>${esc(q.who || 'A coach')}’s version</b>
-      <div class="mmeta">${ago(q.at)} · ${esc(sum(d))}</div>${commentsHtml(q.comments.slice(-2))}${waitsHtml(ws)}
-      <div class="mact"><button class="chip" data-wlook="${q.id}">Look</button><button class="chip on" data-wlive="${q.id}"${ws.length ? ' disabled' : ''}>Make live</button><button class="chip" data-wback="${q.id}">Send back</button></div></div></div>`; }).join('')}</div>` : ''}
+      <div class="mmeta">${ago(q.at)} · ${esc(sum(d))}</div>${commentsHtml(q.comments.slice(-2))}${waitsHtml(ws, partProposals(d, q.extra || []))}
+      <div class="mact"><button class="chip" data-wlook="${q.id}">Look</button><button class="chip on" data-wlive="${q.id}"${partProposals(d, q.extra || []) ? '' : ' disabled'}>${ws.length ? 'Make live with its parts' : 'Make live'}</button><button class="chip" data-wback="${q.id}">Send back</button></div></div></div>`; }).join('')}</div>` : ''}
     <div class="row-btns">${live && ed && S.sync.club && planItems(live) ? '<button class="btn ghost" id="phClub">Send to club</button>' : ''}<button class="btn ghost" id="phBack">${e.guestView ? 'Done' : 'Back to the session'}</button></div>
     ${live && ed ? '<button class="btn danger wide" id="phDel">Delete the live plan</button>' : ''}`;
   const wire = el => {
@@ -5331,7 +5353,7 @@ function showPlan(ref){
     const of = id => waits.find(q => q.id === id);
     on('[data-wlook]', b => { const q = of(b.dataset.wlook); showPlanRead(ref, JSON.parse(q.json), `${q.who || 'A coach'}’s version`, q.extra || []); });
     on('[data-wback]', b => sendBackSheet(of(b.dataset.wback)));
-    on('[data-wlive]', b => { const q = of(b.dataset.wlive), go = async () => { try { await decideProposal(q, true); toast(`${q.who || 'The coach'}’s version is the live plan now`); runSync(null, true); showPlan(ref); } catch(err){ toast(niceErr(err)); } };
+    on('[data-wlive]', b => { const q = of(b.dataset.wlive), go = async () => { try { await approveWithParts(q); toast(`${q.who || 'The coach'}’s version is the live plan now`); runSync(null, true); showPlan(ref); } catch(err){ toast(niceErr(err)); } };
       if(live && planItems(live)) askConfirm('Replace the live plan?', `${q.who || 'The coach'}’s version takes its place for everyone.`, 'Replace', go); else go(); });
   };
   if(live) return showPlanRead(ref, live, '', [], {tail, wire});
@@ -6122,7 +6144,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:28</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:37</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6954,7 +6976,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:37'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
