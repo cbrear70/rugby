@@ -2302,16 +2302,27 @@ function renderViewerMoves(){
 }
 function shareMove(m){ shareDrill(m); save(); renderMoves(); toast(`${m.name} will be shared with ${S.sync.groupName} in a moment`); }
 /* ---------- PROPOSALS (the curated team library) ----------
-   groups/<id>/settings/library {editors: [phone ids]} names the library editors (team admins always are).
-   groups/<id>/drafts/<proposal id> {by (phone id), who, status 'proposed'|'returned'|'accepted', json, comments (JSON
+   groups/<id>/settings/library {editors: [person ids: a coach's first device; older ones a device id]} names the library editors (team admins always are).
+   groups/<id>/drafts/<proposal id> {by (the coach's person id, so all their devices share it), who, status 'proposed'|'returned'|'accepted', json, comments (JSON
    list), at} is a coach's drill offered to the library. The coach's phone checks its own on each sync; an editor's phone
    lists those waiting (S.sync.proposals). Accepted ones are deleted by the coach's phone once it has seen them. */
+// this device's person in team z (see PAIRING ACTIONS): the uid of their first device, which owns their drafts and
+// proposals and is what the library editors list holds. Read once from the device's entry; a training guest, who has
+// no entry, is just itself.
+async function myPersonId(z = S.sync){
+  const me = tokenUid(await fbToken());
+  if(z.personOf !== me){
+    const d = await fb('GET', `/groups/${z.group}/members/${me}`).catch(() => null);
+    z.person = d && d.fields && d.fields.person ? d.fields.person.stringValue : me; z.personOf = me; save();
+  }
+  return z.person;
+}
 async function loadLibEditors(z = S.sync){
   let ed = [];
   try { const d = await fb('GET', `/groups/${z.group}/settings/library`), v = d && d.fields && d.fields.editors && d.fields.editors.arrayValue;
     ed = (v && v.values || []).map(x => x.stringValue).filter(Boolean); }
   catch(e){ if(e.status !== 404) throw e; }
-  z.libEditors = ed; z.libEditor = ed.includes(tokenUid(await fbToken())); save();
+  z.libEditors = ed; z.libEditor = ed.includes(tokenUid(await fbToken())) || ed.includes(await myPersonId(z)); save();
 }
 async function setLibEditors(uids){
   const z = S.sync, values = uids.map(u => ({stringValue: u}));
@@ -2325,7 +2336,7 @@ const propDoc = id => `groups/${S.sync.group}/drafts/${id}`;
    from one made on another. Changed on both: the other phone's version is kept as well, as "(other phone)". */
 const draftJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'peek', 'localOnly', 'app', 'club']) delete mm[k]; return JSON.stringify(mm); };
 async function syncMyDrafts(){
-  const z = S.sync, me = tokenUid(await fbToken()), base = z.draftBase || {}, eq = (f, v) => ({fieldFilter:{field:{fieldPath: f}, op: 'EQUAL', value:{stringValue: v}}});
+  const z = S.sync, me = await myPersonId(z), base = z.draftBase || {}, eq =(f, v) => ({fieldFilter:{field:{fieldPath: f}, op: 'EQUAL', value:{stringValue: v}}});
   const r = await fb('POST', `/groups/${z.group}:runQuery`, {structuredQuery:{from:[{collectionId: 'drafts'}], where:{compositeFilter:{op: 'AND', filters:[eq('by', me), eq('status', 'draft')]}}}});
   const remote = {}; for(const x of r || []) if(x.document){ const f = x.document.fields || {}; if(f.json) remote[x.document.name.split('/').pop()] = f.json.stringValue; }
   const local = {}; for(const m of [...S.moves, ...pages(), ...sessions()]) if(m.draft && !m.peek && isLib(m)) local[m.id] = draftJson(m);
@@ -2352,7 +2363,7 @@ async function syncMyDrafts(){
 const parseComments = f => { try { return JSON.parse(f.comments && f.comments.stringValue || '[]'); } catch(e){ return []; } };
 // send (or resend, with an optional reply) a draft to the team's library editors
 async function proposeDrill(m, reply){
-  const z = S.sync, me = tokenUid(await fbToken()), p = m.prop || {id: uid(), comments: []}, json = drillJson(m);
+  const z = S.sync, me = await myPersonId(z), p = m.prop || {id: uid(), comments: []}, json = drillJson(m);
   const comments = (p.comments || []).concat(reply ? [{who: z.who || '', at: Date.now(), text: reply, kind: 'resent'}] : []);
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(propDoc(p.id)), fields:{by:{stringValue: me}, who:{stringValue: z.who || ''}, status:{stringValue: 'proposed'},
     json:{stringValue: json}, comments:{stringValue: JSON.stringify(comments)}, at:{integerValue: String(Date.now())}}}}]});
@@ -3995,7 +4006,7 @@ function leaveWorkspace(){
   S.sync = {who: z.who}; save(); return null;
 }
 // back into the open team with a code: take the role it gave, keep everything. Returns the role it had.
-function rejoinGroup(role, memberOf){ const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = memberOf; z.joinedAt = Date.now(); delete z.removed; save(); return was; }
+function rejoinGroup(role, memberOf){ const z = S.sync, was = z.role || 'coach'; z.role = role; z.memberOf = memberOf; z.joinedAt = Date.now(); delete z.removed; delete z.personOf; save(); return was; }
 // Open a team just joined, parking the open one. The workspace starts empty when joining as a player or parent, beside
 // another team, or on a phone with only the built-in samples. Returns whether it was emptied.
 function startGroup(grp, role, who, memberOf){
@@ -5530,7 +5541,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 06:21</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 06:31</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5750,7 +5761,7 @@ async function openPaired(r){
     }
     const z = teamsOnPhone().find(x => x.group === m.g);
     // (a team already here, e.g. a device that was removed and is added again, takes the phone's role and is back in)
-    if(z){ z.kids = m.kids || []; z.status = 'approved'; z.role = m.role; z.memberOf = m.g + ':' + me; delete z.removed; delete z.linksDone; }
+    if(z){ z.kids = m.kids || []; z.status = 'approved'; z.role = m.role; z.memberOf = m.g + ':' + me; z.person = m.person; z.personOf = me; delete z.removed; delete z.linksDone; }
     first = first || m.g;
   }
   save();
@@ -6062,11 +6073,13 @@ function renderAdminTab(){
     const box = $('#gpLibEd', el); if(!box) return;
     try {
       const [ms] = await Promise.all([groupMembers(), loadLibEditors()]); if(!box.isConnected) return;
-      const coaches = ms.filter(m => m.role === 'coach' && m.status !== 'pending'), on = new Set(z.libEditors || []);
-      box.innerHTML = coaches.length ? coaches.map(m => `<label class="check"><input type="checkbox" data-led="${m.uid}"${on.has(m.uid) ? ' checked' : ''}> ${esc(m.who || 'No name')} <small class="muted">· ID ${m.uid.slice(0, 8)}</small></label>`).join('')
+      // one tick per person (all their devices), kept as their person id; an older tick kept a device id
+      const coaches = onePerPerson(ms.filter(m => m.role === 'coach' && m.status !== 'pending')), on = new Set(z.libEditors || []);
+      const ticked = m => personDevs(ms, m).some(d => on.has(d.uid)) || on.has(personKey(m));
+      box.innerHTML = coaches.length ? coaches.map(m => `<label class="check"><input type="checkbox" data-led="${personKey(m)}"${ticked(m) ? ' checked' : ''}> ${esc(m.who || 'No name')} <small class="muted">· ID ${personKey(m).slice(0, 8)}</small></label>`).join('')
         : '<p class="hint">No coaches yet (only team admins). Invite a coach under Invites.</p>';
       $$('[data-led]', box).forEach(c => c.addEventListener('change', async () => {
-        const want = $$('[data-led]', box).filter(x => x.checked).map(x => x.dataset.led), nm = (coaches.find(m => m.uid === c.dataset.led) || {}).who || 'They';
+        const want = $$('[data-led]', box).filter(x => x.checked).map(x => x.dataset.led), nm = (coaches.find(m => personKey(m) === c.dataset.led) || {}).who || 'They';
         $$('[data-led]', box).forEach(x => x.disabled = true);
         try { await setLibEditors(want); toast(c.checked ? `${nm} can now look after the team’s drills` : `${nm} is no longer a library editor`); }
         catch(e){ c.checked = !c.checked; toast(niceErr(e)); }
@@ -6354,7 +6367,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 06:21'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 06:31'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -6705,10 +6718,12 @@ function renderKidsTab(){
   $('#kdJoin', el).addEventListener('click', () => showGate(true));
   $$('[data-kc]', el).forEach(box => { const [g, pid] = box.dataset.kc.split('|'); kidCode(pid, zOf(g)).then(c => { box.textContent = c ? fmtCode(c) : 'not made yet'; }).catch(() => { box.textContent = '—'; }); });
   checkLinkRequests();
+  // your own devices (this one, the one it was paired from, and the ones paired from it) are "you", not other parents
+  const myUids = $$('[data-kl]', el).length ? Promise.all([fbToken(), myDevices().catch(() => [])]).then(([tok, ds]) => [tokenUid(tok), ...ds.map(d => d.uid)]) : null;
   for(const box of $$('[data-kl]', el)){
     const [g, pid] = box.dataset.kl.split('|'), z = zOf(g);
-    Promise.all([linkedTo(pid, z), fbToken()]).then(([ls, tok]) => { if(!box.isConnected) return; const me = tokenUid(tok);
-      const others = ls.filter(l => l.uid !== me);
+    Promise.all([linkedTo(pid, z), myUids, myPersonId(z).catch(() => '')]).then(([ls, uids, person]) => { if(!box.isConnected) return;
+      const others = ls.filter(l => !uids.includes(l.uid) && l.uid !== person);
       box.innerHTML = `<small>Linked: you${others.map(l => ', ' + esc(l.who || 'someone') + (l.role === 'player' ? ' (their own phone)' : '')).join('')}</small>`;
     }).catch(() => { box.innerHTML = ''; });
   }
