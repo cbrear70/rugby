@@ -5541,7 +5541,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 06:31</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 06:38</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6269,19 +6269,18 @@ const HELP = [
     <li>On your phone: Admin → <b>People</b>, find the new phone and tap <b>Which player?</b> to pick the child.</li>
     <li>Remove the old phone from <b>People</b> (tap Remove twice), especially if it has been passed on to someone else.</li></ol>
     <p>The child’s links to their parents belong to the child, not the phone, so the parents don’t need to do anything.</p>`],
-  ['A parent wants it on a phone and a laptop', '', 'coach|admin team', `<p>Yes. Each device counts as its own person in the team, so link each one:</p>
-    <ol><li>On the laptop, open <b>${esc(location.origin + location.pathname)}</b> in a web browser.</li>
-    <li>Tap <b>Enter a code</b> and type the child’s code (from you, or on the parent’s phone: Children tab, under the child). Use a name like “Sam (laptop)” so you can tell them apart.</li></ol>
-    <p>Both devices then show the same child and can answer availability. Each one appears separately in Admin → People.</p>
-    <p>On an iPhone, the home-screen app and Safari count as two different devices too. Parents should use the home-screen app.</p>`],
+  ['Someone wants it on a phone and a laptop', '', 'coach|admin team', `<p>Yes, and they don’t need another code or invite from you. On their phone they tap the heading at the top, then <b>Use on a laptop or another device</b>, and type the code it shows on the laptop (it works once, for 10 minutes). The laptop joins every team they’re in, as them, with the same role and children.</p>
+    <p>In Admin → <b>People</b> they’re shown once, with “2 devices” and each device listed underneath. Changing their role or tapping Remove covers all their devices; the Remove next to one device takes out just that one (e.g. a lost phone).</p>
+    <p>Under-18 players can’t do this: their devices come through a parent’s invite.</p>`],
   ['A parent has a second child', '', 'coach|admin team', `<ul><li><b>Same team:</b> make sure the second child is in the squad, then send the parent that child’s code (Admin → Unlinked → <b>Invite parent</b>). They enter it from their Children tab → <b>Enter a code</b>. Or, as team admin: Admin → tap the child → <b>Link</b> next to the parent.</li>
     <li><b>Another team:</b> the parent needs that child’s code from the other team’s admin. If they joined with a club parent code, they can also join from their Children tab → <b>More teams at …</b> → <b>Join as parent</b>, then enter the child’s code.</li></ul>
     <p>Both children then appear together on the parent’s Children tab.</p>`],
   ['Change teams', '', 'coach|*', `<ul><li>Tap the heading at the top (it shows your role and team) to open <b>Your roles</b>, then tap the team you want. Each team keeps its own squad, selections and drills.</li>
     <li>To join another team, tap <b>Enter a code</b> on the same screen and type the invite you were given.</li>
     <li>To switch between selections in the same team (e.g. Saxons and Vikings), use the chip at the top of the Pitch or Selection tab.</li></ul>`],
-  ['Add another coach or team admin', 'Team admin', 'admin|admin team', `<p>Admin → <b>Invites</b> → <b>Invite a coach</b> or <b>Invite a team admin</b>, and send it. Each invite works once, on one phone. To make someone already in the team a coach, change their role in Admin → <b>People</b>.</p>`],
-  ['Someone says the app shows they were removed', '', 'coach|admin team', `<p>Usually this is an iPhone that joined from a link: the link opened in Safari, but they’re using the home-screen app, which counts as another device. Ask them to open the home-screen app, tap <b>Enter a code</b> and type the code there. Then remove the extra Safari entry from Admin → People.</p>`],
+  ['Add another coach or team admin', 'Team admin', 'admin|admin team', `<p>Admin → <b>Invites</b> → <b>Invite a coach</b> or <b>Invite a team admin</b>, and send it. Each invite works once, on one phone. To make someone already in the team a coach, change their role in Admin → <b>People</b>.</p>
+    <p>A coach who also wants the app on a laptop doesn’t need a second invite: they add the laptop from their phone (heading at the top → <b>Use on a laptop or another device</b>).</p>`],
+  ['Someone says the app shows they were removed', '', 'coach|admin team', `<p>Usually this is an iPhone that joined from a link: the link opened in Safari, but they’re using the home-screen app, which counts as another device. Ask them to open whichever one works (it shows their team), tap the heading at the top, then <b>Use on a laptop or another device</b>, and type the code it shows into the other one (<b>I already use the app on my phone</b>). Both then work, as them, and Admin → People shows them once with 2 devices.</p>`],
   ['Pick the team for a fixture', '', 'coach|fix select', `<ol><li>On <b>Fixtures</b>, tap the fixture, then <b>Pick the team</b>. Or tap the fixture in the row at the top of the <b>Selection</b> tab: the lit one is the team sheet you’re looking at, on the Pitch tab too.</li>
     <li>A new team sheet fills itself from the players who said they’re <b>Available</b>: as many as possible in a position they play, the rest on the bench, then those who said <b>Maybe</b> at the end of the bench.</li>
     <li>Change any shirt from its drop-down. The players who play that position are listed first. Picking someone who already has a shirt swaps the two.</li></ol>
@@ -6316,7 +6315,12 @@ const HELP = [
   ['Watch the drills', '', 'parent player|moves', `<p>The <b>Drills</b> tab has the drills your coaches have shared. Tap one and press play. You can’t change them.</p>`],
   ['Link another child, or another team', '', 'parent|kids', `<p>On the <b>Children</b> tab, tap <b>Enter a code</b> and type the child’s code from their team admin. If you joined through a club, <b>More teams at …</b> lists the club’s other teams to join as a parent.</p>`],
   ['Your child’s own phone', '', 'parent|kids', `<p>On the <b>Children</b> tab, tap <b>Invite … ’s phone</b> under your child and send them the code. Their phone joins as them. You can remove it from the same place.</p>`],
-  ['Use the app on another phone or laptop', '', 'parent|kids', `<p>Each device joins separately: on the other one, open the app and enter your child’s code (Children tab, under the child). On an iPhone, use the home-screen app rather than Safari: they count as two devices.</p>`],
+  ['Use the app on a laptop or another device', '', 'coach parent player club|*', `<ol><li>On the laptop (or other device), open <b>${esc(location.origin + location.pathname)}</b> in a web browser and tap <b>I already use the app on my phone</b>.</li>
+    <li>On your phone, tap the heading at the top, then <b>Use on a laptop or another device</b>. It shows a code that works once, for 10 minutes.</li>
+    <li>Type the code on the laptop and tap <b>Add this device</b>.</li></ol>
+    <p>The laptop joins every team and club on your phone, as you: same role, same children, your training drafts, and nobody needs to approve it. Your phone lists the devices you’ve added, each with <b>Remove</b>.</p>
+    <p><b>New phone?</b> Do the same from your old phone. Then, if you still have the old one, tap <b>Leave …</b> on it (Team tab, or Children tab for parents); if not, your team admin can remove just that device in Admin → People.</p>
+    <p>Only type the code on your own devices. Under-18 players can’t add devices this way: ask your parent or carer.</p>`],
   ['Link your parents', '', 'player|team', `<p>Your <b>Team</b> tab shows your code for your parents or carers. When they enter it, the team admin (or a parent already linked to you) approves them.</p>`],
   ['Switch team or role', '', 'parent player club|*', `<p>Tap the heading at the top to open <b>Your roles</b>, then tap the team or role you want. <b>Enter a code</b> there joins another team.</p>`],
   ['Add a team to the club', '', 'club|cteams', `<p><b>Teams</b> → type the name under <b>New team</b> → <b>Create</b>. Tick <b>Youth team</b> for under-18s. Then tap <b>Invite admin</b> next to it and send the code to whoever runs the team.</p>`],
@@ -6367,7 +6371,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 06:31'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 06:38'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
