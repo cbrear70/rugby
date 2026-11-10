@@ -290,6 +290,10 @@ textarea{resize:vertical;min-height:84px}
 .tabbar{grid-template-columns:repeat(var(--tabs,5),1fr)!important}.tabbar.many button{font-size:9.5px;letter-spacing:.02em}
 .hats{display:flex;flex-direction:column;gap:8px;margin:6px 0 12px}
 .hatrow{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;background:var(--panel2);border:1px solid var(--line);border-left:5px solid var(--gc);border-radius:12px;padding:10px 12px}
+.paircode{font:800 38px/1.1 ui-monospace,Menlo,Consolas,monospace;letter-spacing:.08em;text-align:center;padding:14px 8px;margin:6px 0;border:2px dashed var(--line);border-radius:12px;background:var(--panel2);user-select:all}
+.paircode.gone{opacity:.35;text-decoration:line-through}
+.pairurl{font-weight:700;word-break:break-all;margin:4px 0 8px}
+.pairdev{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}.pairdev span{display:flex;flex-direction:column}.pairdev small{color:var(--muted)}
 .hatrow.cur{outline:2px solid var(--gc)}.hatrow b{font-size:17px}.hatrow small{color:var(--muted);font-size:12.5px}
 .hatrole{font:700 11px/1 var(--body);letter-spacing:.1em;text-transform:uppercase;color:var(--gc)}
 .selchip{max-width:46%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -4121,6 +4125,14 @@ function showGate(canClose){
     <div class="field"><label class="field-label" for="gtDob">Your date of birth</label><input id="gtDob" type="date" max="${ymd(new Date())}" value="${esc(S.dob || '')}">
       <p class="hint">Everyone gives one. Parents must be 18 or over, and under-18s join youth teams through a parent. Your team admin sees your age.</p></div>
     <button class="btn wide" id="gtJoin">Join</button>
+    <div class="field" id="gtPairBox">
+      <button class="btn ghost wide" id="gtPairOpen">I already use the app on my phone</button>
+      <div id="gtPair" hidden>
+        <p class="muted">On your phone, tap the heading at the top, then <b>Use on a laptop or another device</b>. Type the code it shows:</p>
+        <div class="add-row"><input id="gtPairCode" type="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="ABCD-EFGH" aria-label="Code from your phone"><button class="btn" id="gtPairGo">Add this device</button></div>
+        <p class="hint">This device joins the same teams and clubs as your phone, as you. Nobody needs to approve it.</p>
+      </div>
+    </div>
     ${clubsOnPhone().length ? `<div class="field"><div class="field-label">Your clubs</div>${clubsOnPhone().map(c => `<button class="btn ghost wide" data-gclub="${c.id}">${esc(c.name)} · ${CLUB_ROLES[c.role] || ''}</button>`).join('')}</div>` : ''}
     ${canClose ? '<button class="btn ghost wide" id="gtClose">Cancel</button>' : ''}
     <p class="hint" id="gtErr" role="alert"></p></div>`;
@@ -4160,6 +4172,27 @@ function showGate(canClose){
       if(r.kid){ const z = teamsOnPhone().find(x => x.group === r.grp.code); if(z){ z.kids = r.kids; delete z.linksDone; save(); } setHat(hatsOnPhone().find(x => x.kind === 'parent') || {kind: 'parent', id: 'family'}, 'kids'); } }
     catch(e){ err(niceErr(e)); busy(false); }
   });
+  // pairing: a code from this person's phone (8 characters, shown as ABCD-EFGH)
+  const pc = $('#gtPairCode', g);
+  pc.setAttribute('autocorrect', 'off');
+  pc.addEventListener('input', () => { const v = normCode(pc.value).slice(0, 8); pc.value = v.length > 4 ? fmtPair(v) : v; });
+  $('#gtPairOpen', g).addEventListener('click', () => { $('#gtPairOpen', g).hidden = true; $('#gtPair', g).hidden = false; pc.focus(); });
+  const pairGo = async () => {
+    const code = normCode(pc.value).slice(0, 8);
+    if(code.length !== 8) return err('Enter the 8-character code from your phone.');
+    busy(true); err('Adding this device…');
+    try {
+      const r = await redeemPairCode(code); if(r.err){ err(r.err); busy(false); return; }
+      if(/join=/.test(location.hash)) history.replaceState(null, '', location.pathname + location.search);
+      g.hidden = true; closeSheet(); ME.moveId = null; ME.editing = null;
+      const kept = await openPaired(r), t = (r.all.teams || []).length, cl = (r.all.clubs || []).length;
+      syncDot(); renderAll(); showTab(hatTabs()[0]);
+      toast('This device is added: ' + [t && `${t} team${t > 1 ? 's' : ''}`, cl && `${cl} club${cl > 1 ? 's' : ''}`].filter(Boolean).join(' and ') + ', as on your phone');
+      if(syncing()){ if(kept) await chooseUploads(); else runSync(null, true); }
+    } catch(e){ err(niceErr(e)); busy(false); }
+  };
+  $('#gtPairGo', g).addEventListener('click', pairGo);
+  pc.addEventListener('keydown', e => { if(e.key === 'Enter') pairGo(); });
   const c = $('#gtClose', g); if(c) c.addEventListener('click', () => { g.hidden = true; });
   $$('[data-gclub]', g).forEach(b => b.addEventListener('click', () => { g.hidden = true; showClub(b.dataset.gclub); }));
 }
@@ -5486,15 +5519,73 @@ function showHats(){
     ${hs.length ? `<div class="hats">${hs.map(x => `<button class="hatrow${cur && x.kind === cur.kind && x.id === cur.id ? ' cur' : ''}" data-hat="${x.kind}|${x.id}" style="--gc:${x.colour}"><span class="hatrole">${x.role}</span><b>${esc(x.title)}</b>${x.sub ? `<small>${esc(x.sub)}</small>` : ''}</button>`).join('')}</div>`
       : '<p class="muted">This phone isn’t in a team yet.</p>'}
     <button class="btn wide" id="hatJoin">Enter a code</button>
-    ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
+    ${canPairHere() ? '<button class="btn ghost wide" id="hatPair">Use on a laptop or another device</button>' : ''}
+    ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 01:06</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 01:29</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
+      const hp = $('#hatPair', el); if(hp) hp.addEventListener('click', showPair);
       const hh = $('#hatHelp', el); if(hh) hh.addEventListener('click', showHelp);
     });
+}
+// Use on a laptop or another device: a code for the other device (it lasts 10 minutes and works once), then the
+// devices this one has added, each with Remove
+function showPair(){
+  let pc = null, used = false, timer = 0, busy = false;
+  const url = linkBase();
+  const stop = () => { clearInterval(timer); timer = 0; if(pc && !used) cancelPairCode(pc.code).catch(() => {}); };
+  openSheet(`<div class="eyebrow">This phone</div><h2>Use on a laptop or another device</h2>
+    <p>On the other device, open this in a web browser:</p>
+    <p class="pairurl">${esc(url)}</p>
+    <div class="row-btns"><button class="btn ghost" id="pairCopy">Copy</button><button class="btn ghost" id="pairSend">Send to yourself</button></div>
+    <p>Then tap <b>I already use the app on my phone</b> and type this code:</p>
+    <div class="paircode" id="pairCode" aria-live="polite">…</div>
+    <p class="hint" id="pairLeft"></p>
+    <p class="hint">The other device joins every team and club on this phone, with the same role and children, as you. Nobody needs to approve it. Only give the code to your own devices.</p>
+    <div class="field-label">Your other devices</div>
+    <div id="pairDevs" class="hint">Loading…</div>`,
+    el => {
+      $('#pairCopy', el).addEventListener('click', async () => { try { await navigator.clipboard.writeText(url); toast('Address copied'); } catch(e){ toast('Select the address and copy it'); } });
+      $('#pairSend', el).addEventListener('click', () => shareText(url, 'Rugby Team Picker'));
+      const codeEl = $('#pairCode', el), left = $('#pairLeft', el), devs = $('#pairDevs', el);
+      const showDevs = async () => {
+        try {
+          const ds = await myDevices(); if(!el.isConnected) return;
+          devs.innerHTML = ds.length ? ds.map(d => `<div class="pairdev"><span><b>${esc(d.device)}</b>${d.at ? `<small>Added ${esc(new Date(d.at).toLocaleDateString())}</small>` : ''}</span><button class="btn danger" data-rmdev="${esc(d.code)}">Remove</button></div>`).join('') : 'None yet.';
+          $$('[data-rmdev]', devs).forEach(b => b.addEventListener('click', async () => {
+            if(!b.dataset.sure){ b.dataset.sure = '1'; b.textContent = 'Tap again to remove'; return; }
+            b.disabled = true;
+            try { await removeDevice(ds.find(d => d.code === b.dataset.rmdev)); toast('Removed'); showDevs(); }
+            catch(e){ b.disabled = false; toast(niceErr(e)); }
+          }));
+        } catch(e){ if(el.isConnected) devs.textContent = niceErr(e); }
+      };
+      const tick = async () => {
+        if(!el.isConnected){ stop(); return; }
+        const ms = pc.expiresAt - Date.now();
+        if(ms <= 0){ clearInterval(timer); timer = 0; codeEl.classList.add('gone'); left.innerHTML = 'This code has run out. <button class="btn ghost" id="pairNew">New code</button>'; $('#pairNew', el).addEventListener('click', newCode_); return; }
+        left.textContent = `Works once, for the next ${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')}`;
+        // every 3 seconds: has the other device used it?
+        if(busy || Math.floor(ms / 1000) % 3) return;
+        busy = true;
+        try {
+          const u = await pairCodeUsed(pc.code);
+          if(u && el.isConnected){ used = true; clearInterval(timer); timer = 0; codeEl.classList.add('gone'); left.innerHTML = `<b>Added: ${esc(u.device)} ✓</b> <button class="btn ghost" id="pairNew">Add another</button>`; $('#pairNew', el).addEventListener('click', newCode_); showDevs(); }
+        } catch(e){} finally { busy = false; }
+      };
+      const newCode_ = async () => {
+        codeEl.classList.remove('gone'); codeEl.textContent = '…'; left.textContent = 'Making a code…';
+        try { pc = await makePairCode(); used = false; }
+        catch(e){ codeEl.textContent = '—'; codeEl.classList.add('gone'); left.textContent = niceErr(e); return; }
+        if(!el.isConnected){ cancelPairCode(pc.code).catch(() => {}); return; }
+        codeEl.textContent = fmtPair(pc.code);
+        clearInterval(timer); timer = setInterval(tick, 1000); tick();
+      };
+      newCode_(); showDevs();
+    }, stop);
 }
 // the chip at the top of the Pitch and Selection tabs: which selection is open, tap to switch or make one
 const selChip = () => `<button class="chip selchip" data-selpick>${esc(team().name)} ▾</button>`;
@@ -5528,6 +5619,132 @@ function showClub(c){
   if(h) return setHat(h);
   if((S.clubs || {})[c] && S.clubs[c].code) return setHat(hatsOnPhone().find(x => x.kind === 'parent') || {kind: 'parent', id: 'family'}, 'kids');
   toast('Only club admins, and parents who joined with the club parent code, can see the club’s other teams');
+}
+
+/* ---------- PAIRING ACTIONS ----------
+   Use the app on a laptop or another device as the same person (docs/device-pairing-spec.md). This device makes a
+   one-use code that lasts 10 minutes (devlinks/<code>) with a snapshot of its entry in each team and club; the other
+   device enters it and joins them all as copies, which the security rules check against the real entries. members'
+   person = the uid of the person's first device (none = itself). Under-18 players, and phones waiting for approval,
+   can't pair. */
+const PAIR_MS = 10 * 60000;
+const fStr = (f, k) => f && f[k] ? f[k].stringValue || '' : '';
+const fList = (f, k) => (f && f[k] && f[k].arrayValue && f[k].arrayValue.values || []).map(v => v.stringValue);
+const pairable = m => (m.status || 'approved') === 'approved' && ((m.role || 'coach') !== 'player' || isAdult(m.dob));
+const fmtPair = c => c.slice(0, 4) + '-' + c.slice(4);
+// from what's on the phone: worth offering at all (the snapshot checks each entry properly)
+const canPairHere = () => teamsOnPhone().some(z => z.role !== 'guest' && pairable({role: z.role, status: z.status, dob: S.dob})) || clubsOnPhone().length > 0;
+// this device's entry in each team and club it's in, where it can be copied
+async function pairSnapshot(){
+  const me = tokenUid(await fbToken()), teams = [], clubs = [];
+  for(const z of teamsOnPhone()){
+    if(z.role === 'guest') continue;
+    const d = await fb('GET', `/groups/${z.group}/members/${me}`).catch(() => null), f = d && d.fields; if(!f) continue;
+    const m = {g: z.group, name: z.groupName || '', role: fStr(f, 'role') || 'coach', who: fStr(f, 'who'), dob: fStr(f, 'dob'), kids: fList(f, 'kids'), status: fStr(f, 'status') || 'approved', person: fStr(f, 'person') || me};
+    if(pairable(m)) teams.push(m);
+  }
+  for(const c of clubsOnPhone()){
+    const d = await fb('GET', `/clubs/${c.id}/members/${me}`).catch(() => null), f = d && d.fields; if(!f) continue;
+    clubs.push({c: c.id, name: c.name || '', role: fStr(f, 'role'), who: fStr(f, 'who'), dob: fStr(f, 'dob'), person: fStr(f, 'person') || me, code: c.code || ''});
+  }
+  return {teams, clubs};
+}
+// a new code: {code, expiresAt, snap}
+async function makePairCode(){
+  const snap = await pairSnapshot();
+  if(!snap.teams.length && !snap.clubs.length) throw new Error('Nothing on this phone can be added to another device yet.');
+  const me = tokenUid(await fbToken()), now = Date.now(), code = newCode().slice(0, 8);
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME('devlinks/' + code), fields:{by:{stringValue: me}, at:{integerValue: String(now)},
+    expiresAt:{integerValue: String(now + PAIR_MS)}, snap:{stringValue: JSON.stringify(snap)}}}, currentDocument:{exists:false}}]});
+  return {code, expiresAt: now + PAIR_MS, snap};
+}
+// has the other device used it yet? {device} once it has, else null
+async function pairCodeUsed(code){
+  const d = await fb('GET', '/devlinks/' + code), f = d && d.fields;
+  return f && f.usedBy ? {device: fStr(f, 'usedDevice') || 'Another device'} : null;
+}
+const cancelPairCode = code => fb('DELETE', '/devlinks/' + code);
+// the devices this one has paired, newest first: [{code, uid, device, at}]; clears away codes that ran out unused
+async function myDevices(){
+  const me = tokenUid(await fbToken());
+  const r = await fb('POST', ':runQuery', {structuredQuery:{from:[{collectionId: 'devlinks'}], where:{fieldFilter:{field:{fieldPath: 'by'}, op: 'EQUAL', value:{stringValue: me}}}}});
+  const out = [];
+  for(const x of r || []){
+    const d = x.document; if(!d) continue;
+    const f = d.fields || {}, code = d.name.split('/').pop();
+    if(f.usedBy) out.push({code, uid: fStr(f, 'usedBy'), device: fStr(f, 'usedDevice') || 'Another device', at: +(f.usedAt && f.usedAt.integerValue || 0)});
+    else if(+(f.expiresAt && f.expiresAt.integerValue || 0) < Date.now()) cancelPairCode(code).catch(() => {});
+  }
+  return out.sort((a, b) => b.at - a.at);
+}
+// take a paired device out of every team and club on this phone (the rules let the same person do it). One it has
+// already left, or that isn't the same person there any more, is skipped.
+async function removeDevice(dev){
+  const paths = [...teamsOnPhone().filter(z => z.role !== 'guest').map(z => `groups/${z.group}/members/${dev.uid}`), ...clubsOnPhone().map(c => `clubs/${c.id}/members/${dev.uid}`)];
+  for(const p of paths) await fb('DELETE', '/' + p).catch(e => { if(e.status !== 403 && e.status !== 404) throw e; });
+  await cancelPairCode(dev.code);
+}
+// On the other device: claim a code and join every team and club in it as copies of the device that made it, a few
+// at a time (the rules can read only so many documents per write). Returns {err} or {teams, clubs}: what it joined.
+const PAIR_BATCH = 4;
+async function redeemPairCode(code){
+  const me = tokenUid(await fbToken()), now = String(Date.now());
+  const d = await fb('GET', '/devlinks/' + code).catch(e => { if(e.status === 403) return null; throw e; }), f = d && d.fields;
+  if(!f) return {err: 'No device has that code. Check it on your phone, or make a new one there.'};
+  if(fStr(f, 'by') === me) return {err: 'That code is from this device. Type it on the other one.'};
+  const usedBy = fStr(f, 'usedBy');
+  if(usedBy && usedBy !== me) return {err: 'That code has already been used. Make a new one on your phone.'};
+  if(+(f.expiresAt && f.expiresAt.integerValue || 0) < Date.now()) return {err: 'That code has run out. Make a new one on your phone.'};
+  let snap; try { snap = JSON.parse(fStr(f, 'snap')); } catch(e){ snap = null; }
+  if(!snap || (!(snap.teams || []).length && !(snap.clubs || []).length)) return {err: 'That code has nothing to add. Make a new one on your phone.'};
+  // skip what this device is already in
+  const isIn = async p => !!(await fb('GET', p).catch(() => null));
+  const teams = [], clubs = [];
+  for(const m of snap.teams || []) if(!(await isIn(`/groups/${m.g}/members/${me}`))) teams.push(m);
+  for(const m of snap.clubs || []) if(!(await isIn(`/clubs/${m.c}/members/${me}`))) clubs.push(m);
+  // a copy of the entry: everything the rules compare, plus this device's own name and times
+  const base = m => ({who:{stringValue: m.who || ''}, device:{stringValue: deviceLabel()}, at:{integerValue: now}, seen:{integerValue: now},
+    role:{stringValue: m.role}, person:{stringValue: m.person}, pair:{stringValue: code}, ...(m.dob ? {dob:{stringValue: m.dob}} : {})});
+  const writes = [
+    ...teams.map(m => ({update:{name: DOCNAME(`groups/${m.g}/members/${me}`), fields: Object.assign(base(m), {kids:{arrayValue:{values: (m.kids || []).map(k => ({stringValue: k}))}}, status:{stringValue: 'approved'}})}, currentDocument:{exists:false}})),
+    ...clubs.map(m => ({update:{name: DOCNAME(`clubs/${m.c}/members/${me}`), fields: base(m)}, currentDocument:{exists:false}}))];
+  const claim = usedBy ? [] : [{update:{name: DOCNAME('devlinks/' + code), fields:{usedBy:{stringValue: me}, usedAt:{integerValue: now}, usedDevice:{stringValue: deviceLabel()}}},
+    updateMask:{fieldPaths:['usedBy', 'usedAt', 'usedDevice']}, currentDocument:{updateTime: d.updateTime}}];
+  try {
+    // the claim goes with the first few, so nothing joins without it
+    for(let i = 0; i === 0 || i < writes.length; i += PAIR_BATCH) await fb('POST', ':commit', {writes: [...(i ? [] : claim), ...writes.slice(i, i + PAIR_BATCH)]});
+  } catch(e){
+    if(e.status === 403 || e.status === 400 || /FAILED_PRECONDITION|PERMISSION/.test(e.message)) return {err: 'This device couldn’t be added: the code may have just been used or run out, or something changed on your phone. Make a new code and try again.'};
+    throw e;
+  }
+  return {teams, clubs, all: snap};
+}
+// set this device up like the other one: each team joined (or already here) as a workspace, and each club; opens the
+// first team. Returns whether the open team's workspace kept things already on this device (then the screen asks which
+// to share, as when joining with a team code).
+async function openPaired(r){
+  const me = tokenUid(await fbToken()), all = r.all;
+  if(!S.dob){ const dob = [...(all.teams || []), ...(all.clubs || [])].map(m => m.dob).find(Boolean); if(dob){ S.dob = dob; save(); } }
+  for(const m of all.clubs || []){
+    const was = (S.clubs || {})[m.c];
+    S.clubs = Object.assign({}, S.clubs, {[m.c]: {name: m.name || (was && was.name) || 'Club', role: m.role, who: m.who, code: m.code || (was && was.code) || ''}});
+  }
+  let first = '', kept = false;
+  for(const m of all.teams || []){
+    const here = teamsOnPhone().find(z => z.group === m.g);
+    if(!here){
+      const grp = await fetchGroup(m.g).catch(() => null) || {code: m.g, name: m.name || 'Team', club: ''};
+      const cleared = startGroup(grp, m.role, m.who, m.g + ':' + me);
+      if(!first) kept = !cleared && !viewerRole(m.role);
+    }
+    const z = teamsOnPhone().find(x => x.group === m.g);
+    // (a team already here, e.g. a device that was removed and is added again, takes the phone's role and is back in)
+    if(z){ z.kids = m.kids || []; z.status = 'approved'; z.role = m.role; z.memberOf = m.g + ':' + me; delete z.removed; delete z.linksDone; }
+    first = first || m.g;
+  }
+  save();
+  if(first && !(syncing() && S.sync.group === first)) swapWorkspace(first);
+  return kept;
 }
 
 /* ---------- TEAM ADMIN ACTIONS ----------
@@ -6101,7 +6318,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 01:06'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 01:29'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -6684,7 +6901,7 @@ window.addEventListener('online', () => scheduleAutoSend(2e3));
 if(fbOn()) setTimeout(loadConfig, 600);
 if(fbOn()) setTimeout(checkLinkRequests, 2000);
 window.addEventListener('hashchange', checkJoinLink);
-window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup, showClub, showTab, setHat, showSelections, hatsOnPhone};
+window.__rtp = {switchGroup, showGroup, get S(){return S;}, ME, encodeCode, decodeCode, handleImport, posAt, FB, runSync, showGate, checkInbox, sendToGroup, redeem, leaveGroup, showClub, showTab, setHat, showSelections, hatsOnPhone, showPair, makePairCode, myDevices, redeemPairCode, openPaired};
 })();
 </script>
 
