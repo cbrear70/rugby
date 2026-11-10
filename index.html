@@ -599,6 +599,8 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="15.5" rx="2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 9.5h17M8 3v4M16 3v4M7.5 13.5h2M11 13.5h2M14.5 13.5h2M7.5 17h2M11 17h2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Calendar</button>
     <button role="tab" data-tab="cpeople" aria-selected="false" hidden>
       <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 20c0-3.5 2.7-6 6-6s6 2.5 6 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 11v6M14 14h6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>Parents</button>
+    <button role="tab" data-tab="clib" aria-selected="false" hidden>
+      <svg width="24" height="24" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.5h4v15H5zM10.5 4.5h4v15h-4zM16 5.2l3.6-.9 3 14.5-3.6.9z" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/></svg>Library</button>
   </nav>
 </div>
 
@@ -1217,7 +1219,7 @@ function wireSwatches(el, fn){ $$('[data-color]', el).forEach(b => b.addEventLis
 
 /* ---------- tabs ---------- */
 let TAB = S.ui.tab || 'pitch';
-const viewOf = tab => /^c(teams|cal|people)$/.test(tab) ? 'club' : tab; // the club admin's three tabs share one screen
+const viewOf = tab => /^c(teams|cal|people|lib)$/.test(tab) ? 'club' : tab; // the club admin's three tabs share one screen
 function showTab(tab){
   if(tab === 'fix' && TAB !== 'fix') S.ui.fixPast = false;
   const allowed = hatTabs(); if(!allowed.includes(tab)) tab = allowed[0];
@@ -1262,7 +1264,7 @@ function renderAll(){
   if(TAB==='team') renderTeamTab();
   if(TAB==='admin') renderAdminTab();
   if(TAB==='kids') renderKidsTab();
-  if(/^c(teams|cal|people)$/.test(TAB)) renderClubTab(TAB);
+  if(/^c(teams|cal|people|lib)$/.test(TAB)) renderClubTab(TAB);
   if(TAB==='pitch'){ renderTeamPitch(); renderBench(); requestAnimationFrame(()=>{ teamCtl.refresh(); if(!teamZoomed) teamZoomed = zoomTeam(); syncFitChip(); }); }
   if(TAB==='squad') renderSquad();
   if(TAB==='select') renderSelect();
@@ -1783,8 +1785,40 @@ const LIB_ID = /^(mv|rs|ss)_/;
 const appLib = () => S.app || (S.app = {version: 0, moves: [], pages: [], sessions: []});
 const appOnly = (arr, mine) => arr.filter(x => !mine.some(y => y.id === x.id));
 const appDrills = () => appOnly(appLib().moves, S.moves), appPages = () => appOnly(appLib().pages, pages()), appSessions = () => appOnly(appLib().sessions, sessions());
-const drillById = id => S.moves.find(d => d.id === id) || appLib().moves.find(d => d.id === id) || null;
-const pageById = id => pages().find(r => r.id === id && !r.draft) || appLib().pages.find(r => r.id === id) || null;
+/* The club library: what the club has accepted from its teams' admins (clubs/<club>/library), seen by everyone who
+   helps with training in any team of the club. Each phone keeps the open team's copy (S.sync.clubLib), fetched on sync.
+   To read it, the phone shows it's in a team of the club with a club pass (clubs/<club>/trainers/<phone id> = {g}). */
+const clubLib = () => (syncing() && S.sync.clubLib) || {moves: [], pages: [], sessions: []};
+const clubDrills = () => appOnly(clubLib().moves, S.moves), clubPages = () => appOnly(clubLib().pages, pages()), clubSessions = () => appOnly(clubLib().sessions, sessions());
+const drillById = id => S.moves.find(d => d.id === id) || clubLib().moves.find(d => d.id === id) || appLib().moves.find(d => d.id === id) || null;
+const pageById = id => pages().find(r => r.id === id && !r.draft) || clubLib().pages.find(r => r.id === id) || appLib().pages.find(r => r.id === id) || null;
+const shelfArr = k => ({m: appLib().moves, r: appLib().pages, s: appLib().sessions, cm: clubLib().moves, cr: clubLib().pages, cs: clubLib().sessions})[k] || [];
+async function refreshClubLib(){
+  const z = S.sync; if(!z.club){ delete z.clubLib; return; }
+  const pass = z.club + ':' + z.group;
+  if(z.clubPass !== pass){ const me = tokenUid(await fbToken());
+    await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`clubs/${z.club}/trainers/${me}`), fields:{g:{stringValue: z.group}}}}]}); z.clubPass = pass; }
+  const out = {moves: [], pages: [], sessions: []};
+  for(const d of await listDocs(`/clubs/${z.club}/library`)){ let j; try { j = JSON.parse(d.fields.json.stringValue); } catch(e){ continue; }
+    j.club = true; if(isDrill(j)) out.moves.push(j); else if(isRes(j)) out.pages.push(j); else if(isSes(j)) out.sessions.push(j); }
+  z.clubLib = out; save();
+}
+// the team drills and pages a session uses, to go with it (to the starter library or the club)
+const withParts = x => { const items = [x];
+  if(isSes(x)) for(const b of x.blocks) for(const it of b.items || []){ const m = it.drillId && S.moves.find(d => d.id === it.drillId && !d.draft), r = it.resId && pages().find(q => q.id === it.resId && !q.draft);
+    if(m && !items.includes(m)) items.push(m); if(r && !items.includes(r)) items.push(r); }
+  return items; };
+/* A team admin sends a team drill, page or session to the club (clubs/<club>/proposals/<id>: {by, who, g, team,
+   status, json, extra (the drills and pages a session uses), comments, src (the team item's id), at}); the club's
+   admins add it to the club library or send it back with comments. The team admin's phone remembers what it sent
+   (z.clubSent) and checks on it in Admin → Training. */
+async function sendToClub(x, again){
+  const z = S.sync, me = tokenUid(await fbToken()), parts = withParts(x), id = again ? again.id : uid();
+  await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`clubs/${z.club}/proposals/${id}`), fields:{by:{stringValue: me}, who:{stringValue: z.who || ''}, g:{stringValue: z.group}, team:{stringValue: z.groupName},
+    status:{stringValue: 'proposed'}, json:{stringValue: drillJson(x)}, extra:{stringValue: JSON.stringify(parts.slice(1).map(y => JSON.parse(drillJson(y))))},
+    comments:{stringValue: JSON.stringify(again ? again.comments : [])}, src:{stringValue: x.id}, at:{integerValue: String(Date.now())}}}}]});
+  z.clubSent = (z.clubSent || []).filter(q => q.id !== id).concat({id, src: x.id, name: itemName(x)}); save();
+}
 const libDocId = x => (isDrill(x) ? 'mv_' : isRes(x) ? 'rs_' : 'ss_') + x.id;
 async function refreshAppLib(){
   const d = await fb('GET', '/config/app'), f = d && d.fields || {}, v = +(f.libraryVersion && f.libraryVersion.integerValue || 0), a = appLib();
@@ -1815,12 +1849,12 @@ async function unpublishStarter(x){
 }
 // take a starter item into the team (an editor) or the coach's drafts, as a copy with its own id
 function copyFromApp(x){
-  const c = clone(x); delete c.app; c.id = uid(); if(isSes(c)) c.blocks = copyBlocks(c.blocks); if(curated()) c.draft = true;
+  const c = clone(x); delete c.app; delete c.club; c.id = uid(); if(isSes(c)) c.blocks = copyBlocks(c.blocks); if(curated()) c.draft = true;
   libArr(c).unshift(c); save(); return c;
 }
 // watch a starter drill: read-only, like a proposal; Back returns to where it was opened
 function peekAppDrill(id, back, label){
-  const src = appLib().moves.find(d => d.id === id); if(!src) return;
+  const src = clubLib().moves.find(d => d.id === id) || appLib().moves.find(d => d.id === id); if(!src) return;
   const m = Object.assign(clone(src), {id: 'peek_' + id, draft: true, peek: true});
   const drop = () => { S.moves = S.moves.filter(x => !x.peek); };
   goAndReturn(() => { closeSheet(); drop(); showTab('moves'); S.moves.unshift(m); openMove(m.id); tripLabel(); },
@@ -1844,10 +1878,21 @@ function loadStarterDraft(){
 // a site admin's buttons on a team item: publish it, or (once published) update or remove the starter copy
 const pubChips = (x, k) => !S.siteAdmin ? '' : (k === 'm' ? appLib().moves : k === 'r' ? appLib().pages : appLib().sessions).some(a => a.id === x.id)
   ? `<button class="chip" data-apub="${x.id}">Update starter</button><button class="chip" data-aunpub="${k}|${x.id}">Remove from starter</button>` : `<button class="chip" data-apub="${x.id}">Publish to starter</button>`;
-const starterActions = (x, k) => `<button class="chip${libEditor() ? '' : ' on'}" data-acopy="${k}|${x.id}">${libEditor() ? 'Add to team ' + {m: 'drills', r: 'pages', s: 'sessions'}[k] : 'Make my copy'}</button>${S.siteAdmin ? `<button class="chip" data-aunpub="${k}|${x.id}">Remove from starter</button>` : ''}`;
+const starterActions = (x, k) => `<button class="chip${libEditor() ? '' : ' on'}" data-acopy="${k}|${x.id}">${libEditor() ? 'Add to team ' + {m: 'drills', r: 'pages', s: 'sessions'}[k.slice(-1)] : 'Make my copy'}</button>${S.siteAdmin && k.length === 1 ? `<button class="chip" data-aunpub="${k}|${x.id}">Remove from starter</button>` : ''}`;
+// a shelf of read-only drills, pages or sessions (k: m/r/s starter, cm/cr/cs club)
+const drillShelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.map(m => `<div class="mcard"><button class="thumb" data-apeek="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody"><button class="mname" data-apeek="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}<div class="mact"><button class="chip" data-apeek="${m.id}">Watch</button>${starterActions(m, k)}</div></div></div>`).join('')}` : '';
+const pageShelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${k}|${r.id}">${resIcon(r)} ${esc(r.title)}</button><div class="mmeta">${resIcon(r) === '🔗' ? 'Link · ' + esc(hostOf(r.url)) : 'Page'}</div><div class="mact">${starterActions(r, k)}</div></div></div>`).join('')}` : '';
+const sessionShelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${k}|${r.id}">${esc(r.name)}</button><div class="mmeta">${esc(sesInfo(r))}</div><div class="mact">${starterActions(r, k)}</div></div></div>`).join('')}` : '';
+const clubSub = () => (S.sync && S.sync.clubName) || 'The club';
+const toClubChip = x => isGroupAdmin() && S.sync.club ? `<button class="chip" data-tclub="${x.id}">Send to club</button>` : '';
 // the Drills, Pages and Sessions tabs' starter buttons
 function wireStarter(el){
-  const find = v => { const [k, id] = v.split('|'); return (k === 'm' ? appLib().moves : k === 'r' ? appLib().pages : appLib().sessions).find(x => x.id === id); };
+  const find = v => { const [k, id] = v.split('|'); return shelfArr(k).find(x => x.id === id); };
+  $$('[data-aopen]', el).forEach(b => b.addEventListener('click', () => { const x = find(b.dataset.aopen), club = b.dataset.aopen.startsWith('c');
+    if(isSes(x)) showSesSummary(x, club ? 'Club session' : 'Starter session'); else showRes(x, {eyebrow: club ? 'Club page' : 'Starter page'}); }));
+  $$('[data-tclub]', el).forEach(b => b.addEventListener('click', () => { const [arr] = findLib(b.dataset.tclub), x = arr.find(q => q.id === b.dataset.tclub);
+    askConfirm(`Send ${itemName(x)} to ${clubSub()}?`, `The club admins look at it, then add it to the club library for every team${isSes(x) ? ' (with the team drills and pages it uses)' : ''}, or send it back with comments. You see how it’s getting on in Admin → Training.`, 'Send', async () => {
+      try { await sendToClub(x); toast(`${itemName(x)} sent to the club`); } catch(e){ toast(niceErr(e)); } }); }));
   $$('[data-acopy]', el).forEach(b => b.addEventListener('click', () => { const c = copyFromApp(find(b.dataset.acopy)); renderMoves(); toast(c.draft ? `${itemName(c)} copied to your drafts` : `${itemName(c)} added to the team’s ${libKind(c)}`); }));
   $$('[data-aunpub]', el).forEach(b => b.addEventListener('click', () => { const x = find(b.dataset.aunpub);
     askConfirm(`Remove ${itemName(x)} from the starter library?`, 'Every team stops seeing it. Copies teams have made, and plans that use it, keep what they have.', 'Remove', async () => {
@@ -1858,7 +1903,7 @@ function wireStarter(el){
   $$('[data-apeek]', el).forEach(b => b.addEventListener('click', () => peekAppDrill(b.dataset.apeek, () => renderMoves(), 'Drills')));
 }
 const roMove = (m = curMove()) => isViewer() || !!(m && (m.peek || (curated() && !m.draft)));
-const drillJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'prop', 'peek', 'localOnly', 'app']) delete mm[k]; return JSON.stringify(mm); };
+const drillJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'prop', 'peek', 'localOnly', 'app', 'club']) delete mm[k]; return JSON.stringify(mm); };
 const propChanged = m => !!(m.prop && m.prop.hash && m.prop.hash !== hashStr(drillJson(m)));
 // Players and parents see drills a coach marks for them, after the coach syncs; they can watch but not change them
 function setForPlayers(m, on){ if(on) m.forPlayers = true; else delete m.forPlayers; }
@@ -2187,7 +2232,7 @@ function renderMoves(){
         <div class="mmeta">${draft ? `<span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team'}</span> ` : ''}${grp && !draft && m.forPlayers ? '<span class="dtag">Players see this</span> ' : ''}${np} player${np===1?'':'s'}${m.icons.ball?' + ball':''} · ${framesOf(m)} frames · ${secs(framesOf(m))}</div>
         <div class="mact">${cur8 ? (draft ? `${!pr ? `<button class="chip on" data-prop="${m.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${m.id}">Change and resend</button>` : propChanged(m) ? `<button class="chip on" data-prop="${m.id}">Send changes</button>` : ''}${pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${m.id}">Withdraw</button>` : ''}<button class="chip" data-share="${m.id}">Share</button><button class="chip" data-dup="${m.id}">Duplicate</button><button class="chip" data-del="${m.id}">Delete</button>`
             : `<button class="chip" data-share="${m.id}">Share</button><button class="chip on" data-dup="${m.id}">Make my copy</button>`)
-          : `${draft ? `<button class="chip on" data-togroup="${m.id}">Share with coaches</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another team</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-fp="${m.id}">${m.forPlayers ? 'Hide from players' : 'Share with players'}</button><button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button>${grp && !draft ? pubChips(m, 'm') : ''}`}</div>
+          : `${draft ? `<button class="chip on" data-togroup="${m.id}">Share with coaches</button>` : ''}<button class="chip" data-share="${m.id}">Share</button>${fbOn() ? `<button class="chip" data-send="${m.id}">Send to another team</button>` : ''}<button class="chip" data-dup="${m.id}">Duplicate</button>${grp && !draft ? `<button class="chip" data-fp="${m.id}">${m.forPlayers ? 'Hide from players' : 'Share with players'}</button><button class="chip" data-undraft="${m.id}">Move to drafts</button>` : ''}<button class="chip" data-del="${m.id}">Delete</button>${grp && !draft ? pubChips(m, 'm') + toClubChip(m) : ''}`}</div>
       </div></div>`; };
   const drafts = grp ? mv.filter(m => m.draft) : [], shared = grp ? mv.filter(m => !m.draft) : mv;
   // an editor's proposals waiting (all categories, so none is missed)
@@ -2205,7 +2250,7 @@ function renderMoves(){
     <div class="section-h"><span>${grp ? (cur8 ? 'Team drills' : 'Shared with '+esc(S.sync.groupName)) : catName+' drills'} · ${shared.length}</span><span>${S.teams.length > 1 ? 'Used by all selections' : ''}</span></div>
     ${cur8 && shared.length ? '<p class="hint">The team admin looks after these. To change one, tap Make my copy, then propose your version.</p>' : ''}
     ${shared.length ? shared.map(card).join('') : grp ? `<p class="hint">Nothing shared in ${catName} yet. ${cur8 ? 'Drills the team admin adds appear here.' : 'Drills you share, and drills from the other coaches, appear here.'}</p>` : `<div class="empty">No ${catName.toLowerCase()} drills yet. Tap New drill, pick the shirts involved, then drag each one to its start and finish.</div>`}
-    ${grp ? (ad => ad.length ? `<div class="section-h"><span>Starter drills · ${ad.length}</span><span>Come with the app</span></div>${ad.map(m => `<div class="mcard"><button class="thumb" data-apeek="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody"><button class="mname" data-apeek="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}<div class="mact"><button class="chip" data-apeek="${m.id}">Watch</button>${starterActions(m, 'm')}</div></div></div>`).join('')}` : '')(appDrills().filter(m => catOf(m) === cur)) : ''}`;
+    ${grp ? drillShelf(clubDrills().filter(m => catOf(m) === cur), 'Club drills', clubSub(), 'cm') + drillShelf(appDrills().filter(m => catOf(m) === cur), 'Starter drills', 'Come with the app', 'm') : ''}`;
   $$('[data-tabcat]', el).forEach(b => b.addEventListener('click', () => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); }));
   wireStarter(el);
   $('#newMove').addEventListener('click', () => {
@@ -2271,7 +2316,7 @@ const propDoc = id => `groups/${S.sync.group}/drafts/${id}`;
    at}, so they're on every phone the coach uses in the team, and only theirs (team admins and editors never see a
    draft until it's proposed). z.draftBase holds each one's hash at the last sync, to tell a change made on this phone
    from one made on another. Changed on both: the other phone's version is kept as well, as "(other phone)". */
-const draftJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'peek', 'localOnly', 'app']) delete mm[k]; return JSON.stringify(mm); };
+const draftJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'peek', 'localOnly', 'app', 'club']) delete mm[k]; return JSON.stringify(mm); };
 async function syncMyDrafts(){
   const z = S.sync, me = tokenUid(await fbToken()), base = z.draftBase || {}, eq = (f, v) => ({fieldFilter:{field:{fieldPath: f}, op: 'EQUAL', value:{stringValue: v}}});
   const r = await fb('POST', `/groups/${z.group}:runQuery`, {structuredQuery:{from:[{collectionId: 'drafts'}], where:{compositeFilter:{op: 'AND', filters:[eq('by', me), eq('status', 'draft')]}}}});
@@ -2415,7 +2460,7 @@ function renderPages(){
       <div class="mmeta">${r.draft ? `<span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team'}</span> ` : ''}${esc(sub(r))}</div>
       <div class="mact">${r.draft ? `<button class="chip" data-rsed="${r.id}">Edit</button>${cur8 ? (!pr ? `<button class="chip on" data-prop="${r.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${r.id}">Resend</button>` : propChanged(r) ? `<button class="chip on" data-prop="${r.id}">Send changes</button>` : '') + (pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${r.id}">Withdraw</button>` : '')
           : `<button class="chip on" data-rsadd="${r.id}">Add to team pages</button>`}<button class="chip" data-rsdel="${r.id}">Delete</button>`
-        : ed ? `<button class="chip" data-rsed="${r.id}">Edit</button><button class="chip" data-rsdup="${r.id}">Duplicate</button><button class="chip" data-rsdel="${r.id}">Delete</button>${pubChips(r, 'r')}`
+        : ed ? `<button class="chip" data-rsed="${r.id}">Edit</button><button class="chip" data-rsdup="${r.id}">Duplicate</button><button class="chip" data-rsdel="${r.id}">Delete</button>${pubChips(r, 'r')}${toClubChip(r)}`
         : `<button class="chip on" data-rsdup="${r.id}">Make my copy</button>`}</div></div></div>`; };
   const propCard = p => { const r = JSON.parse(p.json);
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${resIcon(r)} ${esc(r.title)}</button>
@@ -2430,8 +2475,7 @@ function renderPages(){
       ${drafts.length ? drafts.map(card).join('') : '<p class="hint">New pages and links start here. When one is ready, tap Propose to the team.</p>'}` : ''}
     <div class="section-h"><span>Team pages · ${team.length}</span><span></span></div>
     ${team.length ? team.map(card).join('') : `<p class="hint">No team pages yet.${cur8 ? ' Pages the team admin adds appear here.' : ''}</p>`}
-    ${(ap => ap.length ? `<div class="section-h"><span>Starter pages · ${ap.length}</span><span>Come with the app</span></div>${ap.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${r.id}">${resIcon(r)} ${esc(r.title)}</button><div class="mmeta">${esc(sub(r))}</div><div class="mact">${starterActions(r, 'r')}</div></div></div>`).join('')}` : '')(appPages())}`;
-  $$('[data-aopen]', el).forEach(b => b.addEventListener('click', () => showRes(appLib().pages.find(r => r.id === b.dataset.aopen), {eyebrow: 'Starter page'})));
+    ${pageShelf(clubPages(), 'Club pages', clubSub(), 'cr')}${pageShelf(appPages(), 'Starter pages', 'Come with the app', 'r')}`;
   wireStarter(el);
   const find = id => all.find(r => r.id === id), propOf = id => props.find(p => p.id === id);
   const on = (sel, fn) => $$(sel, el).forEach(b => b.addEventListener('click', () => fn(b)));
@@ -2497,7 +2541,7 @@ function renderSessions(){
       <div class="mmeta">${r.draft ? `<span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team'}</span> ` : ''}${esc(sesInfo(r))}</div>
       <div class="mact">${r.draft ? `<button class="chip" data-ssren="${r.id}">Rename</button>${cur8 ? (!pr ? `<button class="chip on" data-prop="${r.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${r.id}">Resend</button>` : propChanged(r) ? `<button class="chip on" data-prop="${r.id}">Send changes</button>` : '') + (pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${r.id}">Withdraw</button>` : '')
           : `<button class="chip on" data-ssadd="${r.id}">Add to team sessions</button>`}<button class="chip" data-ssdel="${r.id}">Delete</button>`
-        : ed ? `<button class="chip" data-ssren="${r.id}">Rename</button><button class="chip" data-ssdup="${r.id}">Duplicate</button><button class="chip" data-ssdel="${r.id}">Delete</button>${pubChips(r, 's')}`
+        : ed ? `<button class="chip" data-ssren="${r.id}">Rename</button><button class="chip" data-ssdup="${r.id}">Duplicate</button><button class="chip" data-ssdel="${r.id}">Delete</button>${pubChips(r, 's')}${toClubChip(r)}`
         : `<button class="chip on" data-ssdup="${r.id}">Make my copy</button>`}</div></div></div>`; };
   const propCard = p => { const r = JSON.parse(p.json);
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${esc(r.name)}</button>
@@ -2510,8 +2554,7 @@ function renderSessions(){
       ${drafts.length ? drafts.map(card).join('') : '<p class="hint">Sessions you save from a plan start here. When one is ready, tap Propose to the team.</p>'}` : ''}
     <div class="section-h"><span>Team sessions · ${team.length}</span><span></span></div>
     ${team.length ? team.map(card).join('') : `<p class="hint">No team sessions yet.${cur8 ? ' Sessions the team admin adds appear here.' : ''}</p>`}
-    ${(as => as.length ? `<div class="section-h"><span>Starter sessions · ${as.length}</span><span>Come with the app</span></div>${as.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${r.id}">${esc(r.name)}</button><div class="mmeta">${esc(sesInfo(r))}</div><div class="mact">${starterActions(r, 's')}</div></div></div>`).join('')}` : '')(appSessions())}`;
-  $$('[data-aopen]', el).forEach(b => b.addEventListener('click', () => showSesSummary(appLib().sessions.find(r => r.id === b.dataset.aopen), 'Starter session')));
+    ${sessionShelf(clubSessions(), 'Club sessions', clubSub(), 'cs')}${sessionShelf(appSessions(), 'Starter sessions', 'Come with the app', 's')}`;
   wireStarter(el);
   const find = id => all.find(r => r.id === id), propOf = id => props.find(p => p.id === id);
   const on = (sel, fn) => $$(sel, el).forEach(b => b.addEventListener('click', () => fn(b)));
@@ -3792,7 +3835,7 @@ async function runSync(choices, quiet, auto){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
     await refreshRole(); await refreshClub().catch(() => {}); loadConfig();
-    if(!isViewer()){ await refreshAppLib().catch(e => console.warn('Starter library', e)); await refreshSiteAdmin().catch(() => {}); }
+    if(!isViewer()){ await refreshAppLib().catch(e => console.warn('Starter library', e)); await refreshSiteAdmin().catch(() => {}); await refreshClubLib().catch(e => console.warn('Club library', e)); }
     if(isViewer()){
       const linked = await claimApprovals(S.sync).catch(() => 0); if(linked){ await refreshRole(); }
       const answer = S.sync.role === 'parent' ? (await approvalsToAnswer(S.sync).catch(() => [])).length : 0;
@@ -4748,10 +4791,10 @@ function renderPlan(box, p, e, ref, st){
   const used = blockMins(p.blocks), start = toMins(e.time), drills = S.moves.filter(m => !m.draft);
   const redo = () => { if(!e.guestView){ p.name = evTitle(e) + ', ' + evWhen(e).split(' · ')[0]; p.ev = planEv(e); } save(); renderPlan(box, p, e, ref, st); };
   let t = start;
-  const tpages = pages().filter(r => !r.draft && !r.peek).concat(appPages()), adrills = appDrills();
+  const tpages = pages().filter(r => !r.draft && !r.peek).concat(clubPages(), appPages()), adrills = appDrills(), cdrills = clubDrills();
   const drillName = x => { const m = x.drillId && drillById(x.drillId); return m ? m.name : x.text || 'Drill no longer in the team'; };
   const adding = i => st.i !== i ? '' : st.kind === 'drill'
-    ? (drills.length || adrills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CATS.map(([k, l]) => (ds => ds.length ? `<optgroup label="${l}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => (m.cat || 'backs') === k))).join('')}${adrills.length ? `<optgroup label="Starter drills">${adrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}</select>`
+    ? (drills.length || adrills.length || cdrills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CATS.map(([k, l]) => (ds => ds.length ? `<optgroup label="${l}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => (m.cat || 'backs') === k))).join('')}${cdrills.length ? `<optgroup label="Club drills">${cdrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}${adrills.length ? `<optgroup label="Starter drills">${adrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}</select>`
       : '<small class="muted">No team drills yet: make one on the Drills tab and share it with the coaches.</small>')
     : st.kind === 'page' ? (tpages.length ? `<select data-pickp="${i}"><option value="">Choose a team page or link…</option>${tpages.map(r => `<option value="${r.id}">${resIcon(r)} ${esc(r.title)}</option>`).join('')}</select>`
       : '<small class="muted">No team pages yet: they’re made on the Drills tab, under Pages.</small>')
@@ -4797,7 +4840,7 @@ function renderPlan(box, p, e, ref, st){
   $$('[data-textin]', box).forEach(x => x.addEventListener('keydown', ev => { if(ev.key === 'Enter') addText(+x.dataset.textin); }));
   on('[data-io]', 'click', x => { const id = x.dataset.io;
     if(S.moves.some(d => d.id === id && !d.peek)) return openDrillFromPlan(id, ref, reopen);
-    if(appLib().moves.some(d => d.id === id)){ const fromTab = TAB, top = sheetEl.scrollTop; return peekAppDrill(id, () => { showTab(fromTab); reopen(ref); sheetEl.scrollTop = top; }, 'Plan'); }
+    if(appLib().moves.some(d => d.id === id) || clubLib().moves.some(d => d.id === id)){ const fromTab = TAB, top = sheetEl.scrollTop; return peekAppDrill(id, () => { showTab(fromTab); reopen(ref); sheetEl.scrollTop = top; }, 'Plan'); }
     toast('That drill is no longer in the team'); });
   // links and notes: each opens over the plan, and closing it comes back to the plan where it was
   const reopen = e.session ? showSessionEdit : e.guestView ? showGuestPlan : showPlan;
@@ -4832,6 +4875,7 @@ function renderPlan(box, p, e, ref, st){
   /* Use again. Sources: saved sessions (the team's, and my drafts) and other plans that have something in them. Copies
      always get new ids, so changing one never changes the other; items still point at the same drills and pages. */
   const sources = () => [...sessions().filter(x => !x.peek && x.id !== p.id).map(x => ({key: 's' + x.id, group: x.draft ? 'My draft sessions' : 'Team sessions', label: x.name, info: sesInfo(x), x})),
+    ...clubSessions().map(x => ({key: 'c' + x.id, group: 'Club sessions', label: x.name, info: sesInfo(x), x})),
     ...appSessions().map(x => ({key: 'a' + x.id, group: 'Starter sessions', label: x.name, info: sesInfo(x), x})),
     ...plans().filter(x => x.id !== p.id && x.blocks.some(b => b.items.length)).sort((a, b) => ((b.ev || {}).date || '').localeCompare((a.ev || {}).date || '')).map(x => ({key: 'p' + x.id, group: 'Other plans', label: x.name, info: lengthName(x.length), x}))];
   const pickSource = (title, hint, done) => { const src = sources(), back = backToPlan();
@@ -5396,7 +5440,7 @@ function hatTabs(h = hat()){
   if(h.kind === 'player') return ['moves', f && 'fix', 'team'].filter(Boolean);
   if(h.kind === 'guest') return ['train', 'moves', 'team'];
   if(h.kind === 'parent') return [f && 'fix', syncing() && (S.sync.kids || []).length && 'moves', 'kids'].filter(Boolean); // also a team they coach where their child plays
-  return ['cteams', f && 'ccal', 'cpeople'].filter(Boolean);
+  return ['cteams', f && 'ccal', 'cpeople', 'clib'].filter(Boolean);
 }
 function setHat(h, tab){
   closeSheet();
@@ -5418,7 +5462,7 @@ function showHats(){
     ${canHelp() ? '<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 00:33</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 00:50</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -5733,12 +5777,13 @@ function renderAdminTab(){
     <div class="field" data-sec="training"><div class="field-label">Training session template</div><p class="hint">Each new training plan starts from this. Plans already made keep their own blocks.</p><div id="gpTraining"></div>
       <div class="field-label" style="margin-top:18px">Library editors</div><p class="hint">Team admins look after the team’s drills. Tick coaches who can help: they can add, change and remove team drills, and accept drills other coaches propose or send them back with comments.</p><div id="gpLibEd"><p class="muted">Loading…</p></div>
       <div class="field-label" style="margin-top:18px">Training guests</div><p class="hint">People who help with training but aren’t coaches in the team, such as a visiting coach. They see the team’s drills and training plans, can change plans and propose drills, and see nothing else: no squad, selections, fixtures or people. Each invite works once, on one phone, for someone aged 18 or over.</p>
-      <button class="btn ghost" id="gpInvG">Invite a training guest</button><div id="gpGuests"><p class="muted">Loading…</p></div></div>
+      <button class="btn ghost" id="gpInvG">Invite a training guest</button><div id="gpGuests"><p class="muted">Loading…</p></div>
+      ${z.club ? `<div class="field-label" style="margin-top:18px">Sent to ${esc(z.clubName || 'the club')}</div><p class="hint">Team drills, pages and sessions you send to the club (Send to club, on the Drills tab). Once the club adds one, every team in the club can use it.</p><div id="gpClubSent"></div>` : ''}</div>
     <div id="gpKidsAdm"><p class="muted" data-sec="unlinked">Loading…</p><p class="muted" data-sec="linked">Loading…</p></div>
     <div class="field" data-sec="people"><div class="field-label">People</div><div id="gpPeople"><p class="muted">Loading…</p></div></div>`;
   const pick = k => { S.ui.adminSec = k; save(); $$('[data-asec]', bar).forEach(b => b.classList.toggle('on', b.dataset.asec === k)); $$('[data-sec]', el).forEach(f => { f.hidden = f.dataset.sec !== k; }); el.scrollTop = 0; };
   $$('[data-asec]', bar).forEach(b => b.addEventListener('click', () => pick(b.dataset.asec))); pick(S.ui.adminSec);
-  loadCodesInto($('#gpCodes', el), true); loadKidsAdmin($('#gpKidsAdm', el)); renderTemplate($('#gpTraining', el)); loadLibEd(); loadGuests();
+  loadCodesInto($('#gpCodes', el), true); loadKidsAdmin($('#gpKidsAdm', el)); renderTemplate($('#gpTraining', el)); loadLibEd(); loadGuests(); loadClubSent();
   const scm = () => $$('[data-scm]', el).forEach(b => b.classList.toggle('on', b.dataset.scm === (z.scoring || 'tries'))); scm();
   $$('[data-scm]', el).forEach(b => b.addEventListener('click', async () => {
     try { await setScoring(b.dataset.scm); scm(); toast(b.dataset.scm === 'full' ? 'Scores record tries, conversions, penalties and drop goals' : 'Scores record tries only'); }
@@ -5760,6 +5805,24 @@ function renderAdminTab(){
         $$('[data-led]', box).forEach(x => x.disabled = false);
       }));
     } catch(e){ box.innerHTML = `<p class="hint">Could not load library editors: ${esc(niceErr(e))}</p>`; }
+  }
+  async function loadClubSent(){
+    const box = $('#gpClubSent', el); if(!box) return;
+    const sent = z.clubSent || []; if(!sent.length){ box.innerHTML = '<p class="hint">Nothing sent yet.</p>'; return; }
+    box.innerHTML = '<p class="muted">Checking…</p>';
+    const rows = await Promise.all(sent.map(async q => { try { const d = await fb('GET', `/clubs/${z.club}/proposals/${q.id}`); const f = d && d.fields || {};
+      return Object.assign({}, q, {gone: !d, status: f.status ? f.status.stringValue : '', comments: parseComments(f)}); } catch(e){ return Object.assign({}, q, {gone: true}); } }));
+    if(!box.isConnected) return;
+    box.innerHTML = rows.map(q => `<div class="mcard plcard"><div class="mbody"><b>${esc(q.name)}</b>
+      ${q.status === 'returned' ? commentsHtml(q.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}
+      <div class="mmeta"><span class="dtag">${q.gone ? 'Removed by the club' : q.status === 'accepted' ? 'In the club library' : q.status === 'returned' ? 'Sent back' : 'Waiting for the club'}</span></div>
+      <div class="mact">${q.status === 'returned' ? `<button class="chip on" data-csag="${q.id}">Send the team’s version again</button>` : ''}<button class="chip" data-csx="${q.id}">${q.status === 'proposed' ? 'Withdraw' : 'Clear'}</button></div></div></div>`).join('');
+    $$('[data-csag]', box).forEach(b => b.addEventListener('click', async () => { const q = rows.find(r => r.id === b.dataset.csag), [arr] = findLib(q.src), x = arr.find(y => y.id === q.src);
+      if(!x) return toast('That’s no longer in the team’s library'); b.disabled = true;
+      try { await sendToClub(x, q); toast('Sent to the club again'); loadClubSent(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+    $$('[data-csx]', box).forEach(b => b.addEventListener('click', async () => { const q = rows.find(r => r.id === b.dataset.csx); b.disabled = true;
+      if(q.status === 'proposed') try { await fb('DELETE', `/clubs/${z.club}/proposals/${q.id}`); } catch(e){ b.disabled = false; return toast(niceErr(e)); }
+      z.clubSent = (z.clubSent || []).filter(r => r.id !== q.id); save(); loadClubSent(); }));
   }
   // training guests: who has access (each can be removed), and their invites not used yet
   async function loadGuests(){
@@ -6011,7 +6074,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 00:33'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 00:50'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -6070,9 +6133,55 @@ function showSupport(){
 
 /* Club admin tabs: Teams, Calendar, Parents */
 function clubOfHat(){ const h = hat(); return h && h.kind === 'club' ? Object.assign({id: h.id}, S.clubs[h.id]) : null; }
+/* The club admin's Library tab: what team admins have sent (accept it into the club library, or send it back with
+   comments), and the club library itself (each can be removed). */
+function renderClubLib(el, c, head){
+  el.innerHTML = `${head}<div class="field"><div class="field-label">Sent by the teams</div><div id="clProps"><p class="muted">Loading…</p></div></div>
+    <div class="field"><div class="field-label">The club library</div><p class="hint">Everyone who helps with training in a team of the club can use these, and copy them into their own team.</p><div id="clLib"><p class="muted">Loading…</p></div></div>`;
+  const icon = x => isDrill(x) ? '▶' : isRes(x) ? resIcon(x) : '🗂';
+  const look = (x, eyebrow) => isSes(x) ? showSesSummary(x, eyebrow) : isRes(x) ? showRes(x, {eyebrow})
+    : openSheet(`<div class="eyebrow">${esc(eyebrow)}</div><h2>${esc(x.name)}</h2><div class="mcard" style="grid-template-columns:120px 1fr"><div class="thumb" style="width:120px;height:170px">${moveThumb(x)}</div><div class="mbody">${x.desc ? `<div class="mdesc">${esc(x.desc)}</div>` : ''}<div class="mmeta">${CATS.find(q => q[0] === catOf(x))[1]} · ${framesOf(x)} frames</div></div></div>${x.page ? `<div class="mdpage">${mdHtml(x.page)}</div>` : ''}${(x.links || []).length ? linksHtml(x.links) : ''}<button class="btn wide" data-close>Done</button>`, s2 => wireLinks(s2, x.links));
+  const loadProps = async () => { const box = $('#clProps', el); if(!box) return;
+    try {
+      const r = await fb('POST', `/clubs/${c}:runQuery`, {structuredQuery:{from:[{collectionId: 'proposals'}], where:{fieldFilter:{field:{fieldPath: 'status'}, op: 'EQUAL', value:{stringValue: 'proposed'}}}}});
+      const ps = (r || []).filter(x => x.document).map(x => { const f = x.document.fields || {}; let j = null, extra = []; try { j = JSON.parse(f.json.stringValue); extra = JSON.parse(f.extra && f.extra.stringValue || '[]'); } catch(e){}
+        return {id: x.document.name.split('/').pop(), x: j, extra, team: f.team ? f.team.stringValue : '', who: f.who ? f.who.stringValue : '', comments: parseComments(f), at: +(f.at && f.at.integerValue || 0)}; }).filter(q => q.x && isLib(q.x));
+      if(!box.isConnected) return;
+      box.innerHTML = ps.length ? ps.map(q => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-cplook="${q.id}">${icon(q.x)} ${esc(itemName(q.x))}</button>
+        <div class="mmeta">From ${esc(q.team || 'a team')}${q.who ? ' · ' + esc(q.who) : ''} · ${ago(q.at)}${q.extra.length ? ` · with ${q.extra.length} drill${q.extra.length > 1 ? 's' : ''} and page${q.extra.length > 1 ? 's' : ''}` : ''}</div>${commentsHtml(q.comments.slice(-2))}
+        <div class="mact"><button class="chip" data-cplook="${q.id}">Look</button><button class="chip on" data-cpacc="${q.id}">Add to the club library</button><button class="chip" data-cpback="${q.id}">Send back</button></div></div></div>`).join('')
+        : '<p class="hint">Nothing waiting. Team admins send drills, pages and sessions from their Drills tab.</p>';
+      const of = id => ps.find(q => q.id === id);
+      $$('[data-cplook]', box).forEach(b => b.addEventListener('click', () => look(of(b.dataset.cplook).x, 'From ' + (of(b.dataset.cplook).team || 'a team'))));
+      $$('[data-cpacc]', box).forEach(b => b.addEventListener('click', async () => { const q = of(b.dataset.cpacc); b.disabled = true;
+        try { const now = String(Date.now()), writes = [q.x, ...q.extra].map(y => ({update:{name: DOCNAME(`clubs/${c}/library/${libDocId(y)}`), fields:{kind:{stringValue: libKind(y)}, json:{stringValue: JSON.stringify(y)}, team:{stringValue: q.team}, at:{integerValue: now}}}}));
+          writes.push({update:{name: DOCNAME(`clubs/${c}/proposals/${q.id}`), fields:{status:{stringValue: 'accepted'}}}, updateMask:{fieldPaths: ['status']}, currentDocument:{exists: true}});
+          await fb('POST', ':commit', {writes}); toast(`${itemName(q.x)} added to the club library`); loadProps(); loadLib(); }
+        catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+      $$('[data-cpback]', box).forEach(b => b.addEventListener('click', () => { const q = of(b.dataset.cpback);
+        openSheet(`<div class="eyebrow">From ${esc(q.team || 'a team')}</div><h2>Send back ${esc(itemName(q.x))}</h2>${commentsHtml(q.comments)}
+          <div class="field"><label class="field-label" for="cbText">What needs changing?</label><textarea id="cbText" rows="3" maxlength="1000"></textarea></div>
+          <div class="row-btns"><button class="btn" id="cbGo">Send back</button><button class="btn ghost" data-close>Cancel</button></div>`, s2 => $('#cbGo', s2).addEventListener('click', async e => {
+            const t = $('#cbText', s2).value.trim(); if(!t) return toast('Say what needs changing'); e.target.disabled = true;
+            try { await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`clubs/${c}/proposals/${q.id}`), fields:{status:{stringValue: 'returned'}, comments:{stringValue: JSON.stringify(q.comments.concat({who: 'Club admin', at: Date.now(), text: t, kind: 'returned'}))}}},
+              updateMask:{fieldPaths: ['status', 'comments']}, currentDocument:{exists: true}}]}); closeSheet(); toast('Sent back'); loadProps(); }
+            catch(err){ e.target.disabled = false; toast(niceErr(err)); } })); }));
+    } catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; } };
+  const loadLib = async () => { const box = $('#clLib', el); if(!box) return;
+    try {
+      const items = (await listDocs(`/clubs/${c}/library`)).map(d => { let j = null; try { j = JSON.parse(d.fields.json.stringValue); } catch(e){} return {id: d.name.split('/').pop(), x: j, team: d.fields.team ? d.fields.team.stringValue : ''}; }).filter(q => q.x && isLib(q.x));
+      if(!box.isConnected) return;
+      box.innerHTML = items.length ? items.map(q => `<div class="mem"><div><button class="memlink" data-cllook="${q.id}">${icon(q.x)} ${esc(itemName(q.x))}</button><small>${esc(libKind(q.x))}${q.team ? ' · from ' + esc(q.team) : ''}</small></div><button class="chip" data-clrm="${q.id}">Remove</button></div>`).join('') : '<p class="hint">Empty so far.</p>';
+      $$('[data-cllook]', box).forEach(b => b.addEventListener('click', () => look(items.find(q => q.id === b.dataset.cllook).x, 'Club library')));
+      $$('[data-clrm]', box).forEach(b => b.addEventListener('click', async () => { if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
+        b.disabled = true; try { await fb('DELETE', `/clubs/${c}/library/${b.dataset.clrm}`); toast('Removed from the club library'); loadLib(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+    } catch(e){ box.innerHTML = `<p class="hint">Could not load: ${esc(niceErr(e))}</p>`; } };
+  loadProps(); loadLib();
+}
 function renderClubTab(which){
   const el = $('#clubBody'), club = clubOfHat(); if(!club){ el.innerHTML = ''; return; }
-  const c = club.id, head = `<div class="gcard" style="--gc:var(--accent)"><span class="eyebrow">Club admin</span><b>${esc(club.name)}</b><small>${which === 'cteams' ? 'Teams and their admins' : which === 'ccal' ? 'Every team’s fixtures' : 'Parent code and club admins'}</small></div>`;
+  const c = club.id, head = `<div class="gcard" style="--gc:var(--accent)"><span class="eyebrow">Club admin</span><b>${esc(club.name)}</b><small>${which === 'cteams' ? 'Teams and their admins' : which === 'ccal' ? 'Every team’s fixtures' : which === 'clib' ? 'Drills, pages and sessions for every team' : 'Parent code and club admins'}</small></div>`;
+  if(which === 'clib') return renderClubLib(el, c, head);
   if(which === 'cteams'){
     el.innerHTML = `${head}<div class="field"><div class="field-label">Teams</div><div id="clTeams"><p class="muted">Loading…</p></div></div>
       <div class="field"><label class="field-label" for="clNew">New team in ${esc(club.name)}</label><div class="add-row"><input id="clNew" type="text" placeholder="e.g. U10, 2nd XV"><button class="btn" id="clMake">Create</button></div>
