@@ -276,7 +276,7 @@ textarea{resize:vertical;min-height:84px}
 
 /* moves */
 .mcard{display:grid;grid-template-columns:62px 1fr;gap:12px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px;margin-bottom:10px}
-.cattabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;padding:4px;margin-bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
+.cattabs{display:grid;grid-template-columns:repeat(auto-fill,minmax(78px,1fr));gap:4px;padding:4px;margin-bottom:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px}
 .cattabs button{border:0;border-radius:9px;padding:9px 2px;background:none;color:var(--muted);font:700 12.5px/1.1 var(--body);letter-spacing:.03em;text-transform:uppercase;display:flex;flex-direction:column;align-items:center;gap:3px}
 .cattabs button small{font:600 11px/1 var(--body);opacity:.8}
 .cattabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
@@ -623,8 +623,19 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
 const FRAMES_DEFAULT = 20, FRAMES_MAX = 100;
 const framesOf = m => Math.min(FRAMES_MAX, Math.max(FRAMES_DEFAULT, Math.round(+(m && m.frames) || FRAMES_DEFAULT)));
 const lastOf = m => framesOf(m) - 1;
-// Drill categories; drills made before categories count as Backs
-const CATS = [['forwards','Forwards'], ['backs','Backs'], ['penalty','Penalty'], ['skills','Skills']];
+// Drill classifications: the app's six, then the team's own (Admin → Training, kept in settings/training as
+// classes [{key, label}]). Older categories map across (Penalty → Set piece, Skills → Handling); drills with none,
+// or with a classification this team doesn't have, count as Backs.
+const DEFAULT_CLASSES = [['contact', 'Contact'], ['forwards', 'Forwards'], ['backs', 'Backs'], ['setpiece', 'Set piece'], ['activate', 'Activate'], ['handling', 'Handling']];
+const OLD_CATS = {penalty: 'setpiece', skills: 'handling'};
+const ownClasses = () => (S.sync && S.sync.training && Array.isArray(S.sync.training.classes) ? S.sync.training.classes : []).filter(c => c && c.key && c.label);
+const CLS = () => DEFAULT_CLASSES.concat(ownClasses().filter(c => !DEFAULT_CLASSES.some(d => d[0] === c.key)).map(c => [c.key, c.label]));
+const clsName = k => (CLS().find(c => c[0] === k) || [k, 'Backs'])[1];
+// Age groups a team can be (Admin → Training), used for age ratings
+const AGE_GROUPS = [...Array(12)].map((_, i) => ['u' + (i + 7), 'U' + (i + 7)]).concat([['adult', 'Adult']]);
+const teamAge = (z = S.sync) => z && z.training && AGE_GROUPS.some(a => a[0] === z.training.age) ? z.training.age : '';
+// a guess from the team's name ("Old Pats U13" → u13), offered until the team admin picks one
+const guessAge = name => { const m = /\bU\s?(\d{1,2})s?\b/i.exec(name || ''), n = m ? +m[1] : 0; return n >= 7 && n <= 18 ? 'u' + n : /\b(XV|seniors?|vets|veterans|adults?|men|women|ladies)\b/i.test(name || '') ? 'adult' : ''; };
 // Cones placed on a drill's pitch. Runs snap onto a cone when a shirt or path dot is released within SNAP metres,
 // and points sitting on a cone move with it.
 const CONES = [['blue', '#2F7CF0', 'Blue'], ['white', '#F4F4F2', 'White'], ['red', '#D92D2D', 'Red'], ['green', '#1E9E4A', 'Green']];
@@ -640,7 +651,7 @@ function moveCone(m, c, x, y){
 }
 // a drill has shirts (icons); anything else in the drills list (e.g. a training plan synced by a phone on an old version) is dropped
 function isDrill(m){ return !!(m && m.icons && typeof m.icons === 'object' && !Array.isArray(m.icons)); }
-const catOf = m => CATS.some(c => c[0] === (m && m.cat)) ? m.cat : 'backs';
+const catOf = m => { const k = m && (OLD_CATS[m.cat] || m.cat); return CLS().some(c => c[0] === k) ? k : 'backs'; };
 const FRAME_MS = 250; // each frame is 0.25 s of match time; playback at Real plays it at that speed
 const secs = n => { const t = n * FRAME_MS / 1000; return (Number.isInteger(t) ? t : t.toFixed(2).replace(/0+$/, '')) + ' s'; };
 const PLAY_SPEEDS = [[0.5, '½'], [0.25, '¼'], [1, 'Real']];
@@ -2229,8 +2240,8 @@ function renderMoves(){
   if(isViewer() || hatKind() === 'parent') return renderViewerMoves();
   if(syncing() && S.ui.drillCat === 'pages') return renderPages();
   if(syncing() && S.ui.drillCat === 'sessions') return renderSessions();
-  const all = S.moves.filter(m => isDrill(m) && !m.peek), el = $('#movesList'), grp = syncing(), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
-  const mv = all.filter(m => catOf(m) === cur), catName = CATS.find(c => c[0] === cur)[1];
+  const all = S.moves.filter(m => isDrill(m) && !m.peek), el = $('#movesList'), grp = syncing(), cur = CLS().some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
+  const mv = all.filter(m => catOf(m) === cur), catName = esc(clsName(cur));
   const cur8 = curated(), card = m => { const ids = iconIds(m), np = ids.filter(i=>i!=='ball').length, draft = grp && m.draft, pr = draft && m.prop;
       return `<div class="mcard tapcard${draft?' draft':''}"><button class="thumb" data-open="${m.id}" aria-label="Open ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>
@@ -2247,9 +2258,9 @@ function renderMoves(){
   const propCard = p => { const m = JSON.parse(p.json);
     return `<div class="mcard"><button class="thumb" data-peek="${p.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
       <button class="mname" data-peek="${p.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
-      <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)} · ${CATS.find(c => c[0] === catOf(m))[1]}</div>${commentsHtml(p.comments.slice(-2))}
+      <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)} · ${clsName(catOf(m))}</div>${commentsHtml(p.comments.slice(-2))}
       <div class="mact"><button class="chip" data-peek="${p.id}">Watch</button><button class="chip on" data-pacc="${p.id}">Add to team drills</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
-  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${grp ? pagesTab(false) : ''}</div>
+  el.innerHTML = `<div class="cattabs" role="tablist">${CLS().map(([k,l]) => { const n = all.filter(m => catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="${k===cur}">${esc(l)}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${grp ? pagesTab(false) : ''}</div>
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <button class="btn wide" id="newMove">New ${catName.toLowerCase()} drill</button>
     ${grp ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only you see these</span></div>
@@ -2283,15 +2294,15 @@ function renderMoves(){
 }
 const forPlayersToast = m => toast(m.forPlayers ? `Players and parents will see ${m.name} shortly` : `${m.name} will be taken off players' phones shortly`);
 function renderViewerMoves(){
-  const z = S.sync, el = $('#movesList'), cur = CATS.some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
+  const z = S.sync, el = $('#movesList'), cur = CLS().some(c => c[0] === S.ui.drillCat) ? S.ui.drillCat : 'backs';
   // a coach in the parent role sees what the team's parents see: the drills shared with players
   const coachParent = !viewerRole(z.role), moves = S.moves.filter(m => isDrill(m) && (!coachParent || (m.forPlayers && !m.draft)));
-  const cats = CATS.filter(([k]) => moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CATS[0])[0];
+  const cats = CLS().filter(([k]) => moves.some(m => catOf(m) === k)), c = cats.some(x => x[0] === cur) ? cur : (cats[0] || CLS()[0])[0];
   const mv = moves.filter(m => catOf(m) === c);
   const pts = coachParent ? [] : teamsOnPhone().filter(x => x.role === z.role);
   el.innerHTML = `${pts.length > 1 ? `<div class="mact fixbar">${pts.map(x => `<button class="chip tchip${x === z ? ' on' : ''}" data-vteam="${x.group}" style="--gc:${groupColour(x.group)}"><span class="gdot"></span>${esc(x.groupName)}</button>`).join('')}</div>` : ''}
     <div class="section-h"><span>${esc(z.groupName)} · ${coachParent ? 'Shared with players and parents' : ROLE_NAMES[z.role]}</span><span>Updated ${ago(z.lastSync)}</span></div>
-    ${moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${l}<small>${moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
+    ${moves.length ? `${cats.length > 1 ? `<div class="cattabs" role="tablist">${cats.map(([k,l]) => `<button role="tab" data-tabcat="${k}" aria-selected="${k===c}">${esc(l)}<small>${moves.filter(m => catOf(m) === k).length}</small></button>`).join('')}</div>` : ''}
       ${mv.map(m => `<div class="mcard tapcard"><button class="thumb" data-open="${m.id}" aria-label="Watch ${esc(m.name)}">${moveThumb(m)}</button><div class="mbody">
         <button class="mname" data-open="${m.id}">${esc(m.name)}</button>${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}
         <div class="mmeta">${framesOf(m)} frames · ${secs(framesOf(m))}</div><div class="mact"><button class="chip on" data-open="${m.id}">Watch</button></div></div></div>`).join('')}`
@@ -2423,7 +2434,7 @@ const commentsHtml = cs => (cs || []).map(c => `<div class="propnote">${esc(c.te
 function proposeSheet(m){
   const p = m.prop, again = !!p;
   openSheet(`<div class="eyebrow">${esc(S.sync.groupName)} · team ${libKind(m)}</div><h2>${again ? (p.status === 'returned' ? 'Resend ' : 'Send changes to ') : 'Propose '}${esc(itemName(m))}</h2>
-    <p class="muted">${again ? 'The team admin or a library editor will see the new version.' : `The team admin or a library editor looks at it, then adds it to the team’s ${libKind(m)} or sends it back with comments.`} You keep your draft either way.</p>
+    <p class="muted">${again ? 'A training coach will see the new version.' : `A training coach looks at it, then adds it to the team’s ${libKind(m)} or sends it back with comments.`} You keep your draft either way.</p>
     ${commentsHtml(p && p.comments)}
     ${again ? `<div class="field"><label class="field-label" for="ppReply">Reply (optional)</label><textarea id="ppReply" rows="2" maxlength="500" placeholder="e.g. Shortened it as asked"></textarea></div>` : ''}
     <div class="row-btns"><button class="btn" id="ppGo">${again ? 'Send' : 'Propose'}</button><button class="btn ghost" data-close>Cancel</button></div>`,
@@ -2484,7 +2495,7 @@ function renderPages(){
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${resIcon(r)} ${esc(r.title)}</button>
       <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)}</div>${commentsHtml(p.comments.slice(-2))}
       <div class="mact"><button class="chip" data-ppeek="${p.id}">Read</button><button class="chip on" data-pacc="${p.id}">Add to team pages</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
-  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k, l]) => { const n = S.moves.filter(m => isDrill(m) && !m.peek && catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="false">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${pagesTab(true)}</div>
+  el.innerHTML = `<div class="cattabs" role="tablist">${CLS().map(([k, l]) => { const n = S.moves.filter(m => isDrill(m) && !m.peek && catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="false">${esc(l)}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${pagesTab(true)}</div>
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <div class="row-btns"><button class="btn" id="rsNewPage">New page</button><button class="btn ghost" id="rsNewLink">New link</button></div>
     ${S.siteAdmin && STARTER_DRAFT.pages.length ? `<button class="btn ghost wide" id="rsLoadDraft">Load the draft starter content (${STARTER_DRAFT.pages.length} pages, ${STARTER_DRAFT.sessions.length} sessions)</button>` : ''}
@@ -2565,7 +2576,7 @@ function renderSessions(){
     return `<div class="mcard plcard"><div class="mbody"><button class="mname" data-ppeek="${p.id}">${esc(r.name)}</button>
       <div class="mmeta">Proposed by ${esc(p.who || 'a coach')} · ${ago(p.at)} · ${esc(sesInfo(r))}</div>${commentsHtml(p.comments.slice(-2))}
       <div class="mact"><button class="chip" data-ppeek="${p.id}">Look</button><button class="chip on" data-pacc="${p.id}">Add to team sessions</button><button class="chip" data-pback="${p.id}">Send back</button></div></div></div>`; };
-  el.innerHTML = `<div class="cattabs" role="tablist">${CATS.map(([k, l]) => { const n = S.moves.filter(m => isDrill(m) && !m.peek && catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="false">${l}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${pagesTab('ses')}</div>
+  el.innerHTML = `<div class="cattabs" role="tablist">${CLS().map(([k, l]) => { const n = S.moves.filter(m => isDrill(m) && !m.peek && catOf(m) === k).length; return `<button role="tab" data-tabcat="${k}" aria-selected="false">${esc(l)}${n ? `<small>${n}</small>` : ''}</button>`; }).join('')}${pagesTab('ses')}</div>
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <p class="hint">Sessions and blocks to use again. In a training plan, tap Save as session (or Save block on one block), then start other plans from it, or add its blocks to them.</p>
     ${cur8 || drafts.length ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only you see these</span></div>
@@ -2822,11 +2833,11 @@ function startPathEdit(id){ stopPlay(); if(ME.editing !== id && (!ME.runSel || M
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
   if(roMove(m)) return openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>${esc(m.name)}</h2>${m.desc ? `<p>${esc(m.desc)}</p>` : ''}
-    <p class="muted">${CATS.find(c => c[0] === catOf(m))[1]} · ${framesOf(m)} frames · ${secs(framesOf(m))}. Tap play to watch; ½ and ¼ slow it down.</p><button class="btn ghost wide" data-close>Close</button>`);
+    <p class="muted">${clsName(catOf(m))} · ${framesOf(m)} frames · ${secs(framesOf(m))}. Tap play to watch; ½ and ¼ slow it down.</p><button class="btn ghost wide" data-close>Close</button>`);
   openSheet(`<div class="eyebrow">Drill details</div>
     <div class="field"><label class="field-label" for="mvName">Name</label><input id="mvName" type="text" value="${esc(m.name)}" placeholder="e.g. Loop 10-12, Lineout 4-man drive"></div>
     <div class="field"><label class="field-label" for="mvDesc">Description</label><textarea id="mvDesc" placeholder="Calls, triggers, who does what">${esc(m.desc)}</textarea></div>
-    <div class="field"><div class="field-label">Category</div><div class="cats" id="mvCat">${CATS.map(([k,l]) => `<button type="button" class="chip${catOf(m)===k?' on':''}" data-cat="${k}">${l}</button>`).join('')}</div></div>
+    <div class="field"><div class="field-label">Classification</div><div class="cats" id="mvCat">${CLS().map(([k,l]) => `<button type="button" class="chip${catOf(m)===k?' on':''}" data-cat="${k}">${esc(l)}</button>`).join('')}</div></div>
     <div class="field"><label class="field-label" for="mvFrames">Length</label><select id="mvFrames">${[...Array(17)].map((_,i) => 20 + i*5).map(n => `<option value="${n}"${n===framesOf(m)?' selected':''}>${n} frames · ${secs(n)}${n===20?' (standard)':''}</option>`).join('')}</select>
       <p class="hint">Extra frames are added at the end: everyone holds their last position until you give them more to do. Shortening cuts frames off the end.</p></div>
     ${syncing() && !curated() ? `<label class="check"><input type="checkbox" id="mvPlayers"${m.forPlayers ? ' checked' : ''}> Share with players and parents</label>
@@ -4868,7 +4879,7 @@ function renderPlan(box, p, e, ref, st){
   const tpages = pages().filter(r => !r.draft && !r.peek).concat(clubPages(), appPages()), adrills = appDrills(), cdrills = clubDrills();
   const drillName = x => { const m = x.drillId && drillById(x.drillId); return m ? m.name : x.text || 'Drill no longer in the team'; };
   const adding = i => st.i !== i ? '' : st.kind === 'drill'
-    ? (drills.length || adrills.length || cdrills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CATS.map(([k, l]) => (ds => ds.length ? `<optgroup label="${l}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => (m.cat || 'backs') === k))).join('')}${cdrills.length ? `<optgroup label="Club drills">${cdrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}${adrills.length ? `<optgroup label="Starter drills">${adrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}</select>`
+    ? (drills.length || adrills.length || cdrills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CLS().map(([k, l]) => (ds => ds.length ? `<optgroup label="${esc(l)}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => catOf(m) === k))).join('')}${cdrills.length ? `<optgroup label="Club drills">${cdrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}${adrills.length ? `<optgroup label="Starter drills">${adrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}</select>`
       : '<small class="muted">No team drills yet: make one on the Drills tab and share it with the coaches.</small>')
     : st.kind === 'page' ? (tpages.length ? `<select data-pickp="${i}"><option value="">Choose a team page or link…</option>${tpages.map(r => `<option value="${r.id}">${resIcon(r)} ${esc(r.title)}</option>`).join('')}</select>`
       : '<small class="muted">No team pages yet: they’re made on the Drills tab, under Pages.</small>')
@@ -4996,13 +5007,39 @@ function openDrillFromPlan(id, ref, reopen = isGuest() ? showGuestPlan : showPla
     () => { stopPlay(); ME.moveId = null; ME.editing = null; tripLabel(); showTab(fromTab); reopen(ref); sheetEl.scrollTop = top; });
 }
 // the team admin's template: the length new plans start with, and its blocks
-async function setTraining(tpl){
-  const z = S.sync, json = JSON.stringify({length: tpl.length, blocks: tpl.blocks.map(b => ({name: b.name, mins: b.mins}))});
+// settings/training holds the template (length, blocks), the team's age group (age) and its own classifications
+// (classes); each change keeps the other parts
+async function setTrainingParts(patch){
+  const z = S.sync, json = JSON.stringify(Object.assign({}, z.training || {}, patch));
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/settings/training`), fields:{json:{stringValue: json}}}}]});
   z.training = JSON.parse(json); save();
 }
+const setTraining = tpl => setTrainingParts({length: tpl.length, blocks: tpl.blocks.map(b => ({name: b.name, mins: b.mins}))});
+// Admin → Training: the team's age group (a guess from the team's name until one is saved)
+function renderTeamAge(box){
+  const cur = teamAge(), guess = cur ? '' : guessAge(S.sync.groupName);
+  box.innerHTML = `<select id="tgAge" aria-label="Team age group"><option value="">Not set</option>${AGE_GROUPS.map(([k, l]) => `<option value="${k}"${k === (cur || guess) ? ' selected' : ''}>${l}</option>`).join('')}</select>
+    ${guess ? `<p class="hint">Guessed from the team’s name, not saved yet. <button class="chip on" id="tgOk">Save ${esc(AGE_GROUPS.find(a => a[0] === guess)[1])}</button></p>` : ''}`;
+  const put = async v => { try { await setTrainingParts({age: v}); toast(v ? `Team age group: ${AGE_GROUPS.find(a => a[0] === v)[1]}` : 'Team age group cleared'); } catch(e){ toast(niceErr(e)); } renderTeamAge(box); };
+  $('#tgAge', box).addEventListener('change', e => put(e.target.value));
+  const ok = $('#tgOk', box); if(ok) ok.addEventListener('click', () => { ok.disabled = true; put(guess); });
+}
+// Admin → Training: the app's classifications (fixed) and the team's own (add, remove)
+function renderClasses(box){
+  const own = ownClasses();
+  box.innerHTML = `<div class="cats">${DEFAULT_CLASSES.map(([, l]) => `<span class="chip">${esc(l)}</span>`).join('')}${own.map(c => `<button type="button" class="chip on" data-clx="${esc(c.key)}" aria-label="Remove ${esc(c.label)}">${esc(c.label)} ✕</button>`).join('')}</div>
+    <div class="add-row" style="margin-top:8px"><input type="text" id="clNew" maxlength="24" placeholder="e.g. Kicking, Defence" aria-label="New classification"><button class="btn ghost" id="clAdd">Add</button></div>`;
+  const put = async (list, msg) => { try { await setTrainingParts({classes: list}); toast(msg); } catch(e){ toast(niceErr(e)); } renderClasses(box); };
+  const add = () => { const label = $('#clNew', box).value.trim().replace(/\s+/g, ' '); if(!label) return;
+    if(CLS().some(c => c[1].toLowerCase() === label.toLowerCase())) return toast(`${label} is already there`);
+    put(own.concat({key: 'c_' + Math.random().toString(36).slice(2, 8), label}), `${label} added`); };
+  $('#clAdd', box).addEventListener('click', add);
+  $('#clNew', box).addEventListener('keydown', e => { if(e.key === 'Enter') add(); });
+  $$('[data-clx]', box).forEach(b => b.addEventListener('click', () => { const c = own.find(x => x.key === b.dataset.clx);
+    askConfirm(`Remove ${c.label}?`, 'Drills filed under it show under Backs until you choose another classification for them.', 'Remove', () => put(own.filter(x => x !== c), `${c.label} removed`)); }));
+}
 function renderTemplate(box, tpl){
-  tpl = tpl || JSON.parse(JSON.stringify(trainingTemplate()));
+  tpl = tpl || (t => ({length: t.length, blocks: t.blocks.map(b => ({name: b.name, mins: b.mins}))}))(trainingTemplate());
   const used = blockMins(tpl.blocks), redo = () => renderTemplate(box, tpl);
   box.innerHTML = `<div class="field"><label class="field-label plain" for="tpLen">Session length</label><select id="tpLen">${PLAN_LENGTHS.map(m => `<option value="${m}"${m === tpl.length ? ' selected' : ''}>${lengthName(m)}</option>`).join('')}</select></div>
     ${tpl.blocks.map((b, i) => `<div class="tprow"><input type="text" data-tn="${i}" value="${esc(b.name)}" maxlength="40" aria-label="Block name"><select data-tm="${i}" aria-label="Minutes">${minsOpts(b.mins)}</select>
@@ -5541,7 +5578,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 06:38</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 09:50</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6053,8 +6090,10 @@ function renderAdminTab(){
       <div class="row-btns"><button class="btn ghost" id="gpInvC">Invite a coach</button><button class="btn ghost" id="gpInvA">Invite a team admin</button></div><div id="gpInvites"></div></div>
     <div class="field" data-sec="scores"><div class="field-label">Scores</div><div class="cats" id="gpScoring"><button type="button" class="chip" data-scm="tries">Tries only</button><button type="button" class="chip" data-scm="full">Full score</button></div>
       <p class="hint">Full score records tries, conversions, penalties and drop goals (usually from U14); tries only records tries.</p></div>
-    <div class="field" data-sec="training"><div class="field-label">Training session template</div><p class="hint">Each new training plan starts from this. Plans already made keep their own blocks.</p><div id="gpTraining"></div>
-      <div class="field-label" style="margin-top:18px">Library editors</div><p class="hint">Team admins look after the team’s drills. Tick coaches who can help: they can add, change and remove team drills, and accept drills other coaches propose or send them back with comments.</p><div id="gpLibEd"><p class="muted">Loading…</p></div>
+    <div class="field" data-sec="training"><div class="field-label">Team age group</div><p class="hint">Drills and plans promoted from this team are rated for this age group to start with, and libraries show what suits it first.</p><div id="gpAge"></div>
+      <div class="field-label" style="margin-top:18px">Drill classifications</div><p class="hint">Every team has the first six. Add your own for this team; drills can be filed under any of them.</p><div id="gpClasses"></div>
+      <div class="field-label" style="margin-top:18px">Training session template</div><p class="hint">Each new training plan starts from this. Plans already made keep their own blocks.</p><div id="gpTraining"></div>
+      <div class="field-label" style="margin-top:18px">Training coaches</div><p class="hint">Team admins are always training coaches. Tick coaches who can help: they can add, change and remove team drills, and accept drills other coaches propose or send them back with comments.</p><div id="gpLibEd"><p class="muted">Loading…</p></div>
       <div class="field-label" style="margin-top:18px">Training guests</div><p class="hint">People who help with training but aren’t coaches in the team, such as a visiting coach. They see the team’s drills and training plans, can change plans and propose drills, and see nothing else: no squad, selections, fixtures or people. Each invite works once, on one phone, for someone aged 18 or over.</p>
       <button class="btn ghost" id="gpInvG">Invite a training guest</button><div id="gpGuests"><p class="muted">Loading…</p></div>
       ${z.club ? `<div class="field-label" style="margin-top:18px">Sent to ${esc(z.clubName || 'the club')}</div><p class="hint">Team drills, pages and sessions you send to the club (Send to club, on the Drills tab). Once the club adds one, every team in the club can use it.</p><div id="gpClubSent"></div>` : ''}</div>
@@ -6062,7 +6101,7 @@ function renderAdminTab(){
     <div class="field" data-sec="people"><div class="field-label">People</div><div id="gpPeople"><p class="muted">Loading…</p></div></div>`;
   const pick = k => { S.ui.adminSec = k; save(); $$('[data-asec]', bar).forEach(b => b.classList.toggle('on', b.dataset.asec === k)); $$('[data-sec]', el).forEach(f => { f.hidden = f.dataset.sec !== k; }); el.scrollTop = 0; };
   $$('[data-asec]', bar).forEach(b => b.addEventListener('click', () => pick(b.dataset.asec))); pick(S.ui.adminSec);
-  loadCodesInto($('#gpCodes', el), true); loadKidsAdmin($('#gpKidsAdm', el)); renderTemplate($('#gpTraining', el)); loadLibEd(); loadGuests(); loadClubSent();
+  loadCodesInto($('#gpCodes', el), true); loadKidsAdmin($('#gpKidsAdm', el)); renderTemplate($('#gpTraining', el)); renderTeamAge($('#gpAge', el)); renderClasses($('#gpClasses', el)); loadLibEd(); loadGuests(); loadClubSent();
   const scm = () => $$('[data-scm]', el).forEach(b => b.classList.toggle('on', b.dataset.scm === (z.scoring || 'tries'))); scm();
   $$('[data-scm]', el).forEach(b => b.addEventListener('click', async () => {
     try { await setScoring(b.dataset.scm); scm(); toast(b.dataset.scm === 'full' ? 'Scores record tries, conversions, penalties and drop goals' : 'Scores record tries only'); }
@@ -6081,11 +6120,11 @@ function renderAdminTab(){
       $$('[data-led]', box).forEach(c => c.addEventListener('change', async () => {
         const want = $$('[data-led]', box).filter(x => x.checked).map(x => x.dataset.led), nm = (coaches.find(m => personKey(m) === c.dataset.led) || {}).who || 'They';
         $$('[data-led]', box).forEach(x => x.disabled = true);
-        try { await setLibEditors(want); toast(c.checked ? `${nm} can now look after the team’s drills` : `${nm} is no longer a library editor`); }
+        try { await setLibEditors(want); toast(c.checked ? `${nm} is now a training coach` : `${nm} is no longer a training coach`); }
         catch(e){ c.checked = !c.checked; toast(niceErr(e)); }
         $$('[data-led]', box).forEach(x => x.disabled = false);
       }));
-    } catch(e){ box.innerHTML = `<p class="hint">Could not load library editors: ${esc(niceErr(e))}</p>`; }
+    } catch(e){ box.innerHTML = `<p class="hint">Could not load training coaches: ${esc(niceErr(e))}</p>`; }
   }
   async function loadClubSent(){
     const box = $('#gpClubSent', el); if(!box) return;
@@ -6371,7 +6410,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 06:38'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 09:50'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -6437,7 +6476,7 @@ function renderClubLib(el, c, head){
     <div class="field"><div class="field-label">The club library</div><p class="hint">Everyone who helps with training in a team of the club can use these, and copy them into their own team.</p><div id="clLib"><p class="muted">Loading…</p></div></div>`;
   const icon = x => isDrill(x) ? '▶' : isRes(x) ? resIcon(x) : '🗂';
   const look = (x, eyebrow) => isSes(x) ? showSesSummary(x, eyebrow) : isRes(x) ? showRes(x, {eyebrow})
-    : openSheet(`<div class="eyebrow">${esc(eyebrow)}</div><h2>${esc(x.name)}</h2><div class="mcard" style="grid-template-columns:120px 1fr"><div class="thumb" style="width:120px;height:170px">${moveThumb(x)}</div><div class="mbody">${x.desc ? `<div class="mdesc">${esc(x.desc)}</div>` : ''}<div class="mmeta">${CATS.find(q => q[0] === catOf(x))[1]} · ${framesOf(x)} frames</div></div></div>${x.page ? `<div class="mdpage">${mdHtml(x.page)}</div>` : ''}${(x.links || []).length ? linksHtml(x.links) : ''}<button class="btn wide" data-close>Done</button>`, s2 => wireLinks(s2, x.links));
+    : openSheet(`<div class="eyebrow">${esc(eyebrow)}</div><h2>${esc(x.name)}</h2><div class="mcard" style="grid-template-columns:120px 1fr"><div class="thumb" style="width:120px;height:170px">${moveThumb(x)}</div><div class="mbody">${x.desc ? `<div class="mdesc">${esc(x.desc)}</div>` : ''}<div class="mmeta">${clsName(catOf(x))} · ${framesOf(x)} frames</div></div></div>${x.page ? `<div class="mdpage">${mdHtml(x.page)}</div>` : ''}${(x.links || []).length ? linksHtml(x.links) : ''}<button class="btn wide" data-close>Done</button>`, s2 => wireLinks(s2, x.links));
   const loadProps = async () => { const box = $('#clProps', el); if(!box) return;
     try {
       const r = await fb('POST', `/clubs/${c}:runQuery`, {structuredQuery:{from:[{collectionId: 'proposals'}], where:{fieldFilter:{field:{fieldPath: 'status'}, op: 'EQUAL', value:{stringValue: 'proposed'}}}}});
