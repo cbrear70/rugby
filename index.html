@@ -281,7 +281,8 @@ textarea{resize:vertical;min-height:84px}
 .cattabs button small{font:600 11px/1 var(--body);opacity:.8}
 .cattabs button[aria-selected="true"]{background:var(--accent);color:var(--accent-ink)}
 .cats{display:flex;flex-wrap:wrap;gap:6px}
-.clsrow{margin:-2px 0 12px}.clsrow .chip small{opacity:.7;margin-left:2px}
+.clsrow{margin:-2px 0 12px}
+.field.dlnums{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.dlnums label{display:block}.dlnums input,.dlnums select{width:100%;box-sizing:border-box}.clsrow .chip small{opacity:.7;margin-left:2px}
 .dparts .mem{padding:6px 0}.dparts .mem>div{flex:1;min-width:0}
 .pitch .cone{cursor:grab}
 .pitch .cone.dim{opacity:.45}
@@ -2659,6 +2660,10 @@ const readAge = el => { const on = $$('[data-age].on', el).map(b => b.dataset.ag
    drills the coach can't. Curated like the rest: training coaches change the team's; other coaches keep drafts and
    propose them, and a proposed drill takes the rest of its series and the draft animations and pages they use. */
 const allDrls = () => [...drls(), ...clubDrls(), ...appDrls()].filter(d => !d.peek);
+// the RFU's principles of play, picked on the drill sheet (one or more)
+const PRINCIPLES = [['goforward', 'Go forward'], ['support', 'Support'], ['continuity', 'Continuity'], ['pressure', 'Pressure'], ['contest', 'Contest possession'], ['regain', 'Regain possession']];
+const principleNames = x => PRINCIPLES.filter(q => (x.principles || []).includes(q[0])).map(q => q[1]);
+const playersText = x => { const p = x.players || {}, a = +p.min || 0, b = +p.max || 0; return a && b ? (a === b ? `${a} players` : `${a}–${b} players`) : a ? `${a}+ players` : b ? `up to ${b} players` : ''; };
 const resById = id => pages().find(r => r.id === id && !r.peek) || (clubLib().pages || []).find(r => r.id === id) || (appLib().pages || []).find(r => r.id === id) || null;
 const animOf = (id, extra = []) => extra.find(y => y.id === id && isDrill(y)) || drillById(id);
 const resOf = (id, extra = []) => extra.find(y => y.id === id && isRes(y)) || resById(id);
@@ -2673,7 +2678,7 @@ const drlOrder = (a, b) => { const ka = a.series ? a.series.name : a.name, kb = 
   return ka.localeCompare(kb) || (a.series && b.series && a.series.id === b.series.id ? a.series.step - b.series.step : 0) || a.name.localeCompare(b.name); };
 function drlMeta(x, pool){
   const sr = x.series ? seriesOf(x, pool) : [], a = (x.parts || []).filter(q => q.a).length, r = (x.parts || []).length - a;
-  return [clsName(catOf(x)), (x.mins || 10) + ' min', ageLabel(ratedAge(x)), x.series ? `${x.series.name} ${sr.indexOf(x) + 1} of ${sr.length}` : '',
+  return [clsName(catOf(x)), (x.mins || 10) + ' min', playersText(x), ageLabel(ratedAge(x)), x.series ? `${x.series.name} ${sr.indexOf(x) + 1} of ${sr.length}` : '',
     a ? `${a} animation${a > 1 ? 's' : ''}` : '', r ? `${r} page${r > 1 ? 's' : ''} or link${r > 1 ? 's' : ''}` : ''].filter(Boolean).join(' · ');
 }
 // watch an animation from a drill; Back comes back to the drill
@@ -2693,7 +2698,8 @@ function showDrl(x, opts = {}){
   const parts = (x.parts || []).map((q, k) => { const a = q.a && animOf(q.a, ex), r = q.r && resOf(q.r, ex);
     return `<button class="linkrow" data-dpart="${k}">${q.a ? '▶ ' + esc(a ? a.name : 'Animation no longer there') : (r ? resIcon(r) + ' ' + esc(r.title) : '📄 Page no longer there')}<small>${q.a ? 'Animation' : r && resIcon(r) === '🔗' ? esc(hostOf(r.url)) : 'Page'}</small></button>`; }).join('');
   const edit = !opts.readOnly && drlEditable(x);
-  openSheet(`<div class="eyebrow">${esc(opts.eyebrow || drlWhere(x))}</div><h2>${esc(x.name)}</h2><p class="muted">${esc(drlMeta(x, pool))}</p>
+  openSheet(`<div class="eyebrow">${esc(opts.eyebrow || drlWhere(x))}</div><h2>${esc(x.name)}</h2>${x.purpose ? `<p><b>Purpose:</b> ${esc(x.purpose)}</p>` : ''}<p class="muted">${esc(drlMeta(x, pool))}</p>
+    ${principleNames(x).length ? `<div class="cats" style="margin-bottom:10px">${principleNames(x).map(n => `<span class="chip">${esc(n)}</span>`).join('')}</div>` : ''}
     ${sr.length > 1 ? `<div class="row-btns"><button class="chip" data-sstep="-1"${i > 0 ? '' : ' disabled'}>◀ ${i > 0 ? esc(sr[i - 1].name) : 'First in the series'}</button><button class="chip" data-sstep="1"${i < sr.length - 1 ? '' : ' disabled'}>${i < sr.length - 1 ? esc(sr[i + 1].name) : 'Last in the series'} ▶</button></div>` : ''}
     ${x.text && x.text.trim() ? `<div class="mdpage">${mdHtml(x.text)}</div>` : ''}
     ${parts ? `<div class="field-label" style="margin-top:14px">In this drill</div>${parts}` : !(x.text || '').trim() ? '<p class="muted">Nothing added to it yet.</p>' : ''}
@@ -2735,10 +2741,14 @@ function editDrl(x, w){
   const partRow = (q, k) => { const a = q.a && drillById(q.a), r = q.r && resById(q.r);
     return `<div class="mem"><div>${q.a ? '▶ ' + esc(a ? a.name : 'Animation no longer there') : r ? resIcon(r) + ' ' + esc(r.title) : '📄 Page no longer there'}<small>${q.a ? 'Animation' : r && resIcon(r) === '🔗' ? 'Link' : 'Page'}${(a && a.draft) || (r && r.draft) ? ' · your draft' : ''}</small></div>
       <button type="button" class="chip" data-pu="${k}" aria-label="Move up"${k ? '' : ' disabled'}>▲</button><button type="button" class="chip" data-px="${k}" aria-label="Take out">✕</button></div>`; };
-  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)} · ${x && !x.draft ? 'team drill' : cur8 ? 'my draft drill' : 'drill'}</div><h2>${isNew ? 'New drill' : 'Edit drill'}</h2>
+  openSheet(`<div class="eyebrow">${esc(S.sync.groupName)} · ${x && !x.draft ? 'team drill' : cur8 ? 'my draft drill' : 'drill'}</div><h2>${isNew ? 'New drill sheet' : 'Drill sheet'}</h2>
     <div class="field"><label class="field-label" for="dlName">Name</label><input id="dlName" type="text" maxlength="80" value="${esc(w.name)}" placeholder="e.g. 2v1 off the line"></div>
     ${clsPickHtml(w.cat)}
-    <div class="field"><label class="field-label" for="dlMins">Usual time</label><select id="dlMins">${minsOpts(w.mins || 10, 5, 60)}</select><p class="hint">A plan starts with this; the coach can change it for one session.</p></div>
+    <div class="field"><label class="field-label" for="dlPurp">Purpose</label><input id="dlPurp" type="text" maxlength="140" value="${esc(w.purpose || '')}" placeholder="e.g. Win the gain line in contact"></div>
+    <div class="field"><div class="field-label">Principles of play</div><div class="cats">${PRINCIPLES.map(([k, l]) => { const on = (w.principles || []).includes(k); return `<button type="button" class="chip${on ? ' on' : ''}" data-prin="${k}" aria-pressed="${on}">${l}</button>`; }).join('')}</div><p class="hint">Tick the ones this drill works on.</p></div>
+    <div class="field dlnums"><div><label class="field-label plain" for="dlMins">Time</label><select id="dlMins">${minsOpts(w.mins || 10, 5, 60)}</select></div>
+      <div><label class="field-label plain" for="dlPmin">Players, from</label><input id="dlPmin" type="text" maxlength="2" inputmode="numeric" pattern="[0-9]*" value="${(w.players || {}).min || ''}" placeholder="e.g. 6"></div>
+      <div><label class="field-label plain" for="dlPmax">to</label><input id="dlPmax" type="text" maxlength="2" inputmode="numeric" pattern="[0-9]*" value="${(w.players || {}).max || ''}" placeholder="e.g. 16"></div></div>
     <div class="field"><label class="field-label" for="dlSer">Series</label><select id="dlSer"><option value="">Not in a series</option>${sers.map(q => `<option value="${esc(q.id)}"${w.series && w.series.id === q.id ? ' selected' : ''}>${esc(q.name)}</option>`).join('')}<option value="+">New series…</option></select>
       <input id="dlSerNew" type="text" maxlength="60" placeholder="Series name, e.g. Tackle progression" style="margin-top:8px" hidden>
       ${w.series && sibs.length ? `<label class="field-label plain" for="dlPos" style="margin-top:8px">Where in ${esc(w.series.name)}</label><select id="dlPos">${sibs.map((d, j) => `<option value="b${j}"${posNow === 'b' + j ? ' selected' : ''}>Before ${j + 1}. ${esc(d.name)}</option>`).join('')}<option value="end"${posNow === 'end' ? ' selected' : ''}>At the end (${sibs.length + 1})</option></select>` : ''}
@@ -2752,7 +2762,11 @@ function editDrl(x, w){
     <div class="row-btns"><button class="btn" id="dlSave">Save</button><button class="btn ghost" data-close>Cancel</button></div>
     ${!isNew ? '<button class="btn danger" id="dlDel">Delete drill</button>' : ''}`, el => {
     wireClsPick(el); wireAgeTicks(el);
+    $$('[data-prin]', el).forEach(b => b.addEventListener('click', () => { const on = !b.classList.contains('on'); b.classList.toggle('on', on); b.setAttribute('aria-pressed', on); }));
     const read = () => { w.name = $('#dlName', el).value.trim(); w.cat = readClsPick(el) || w.cat; w.mins = +$('#dlMins', el).value; w.age = readAge(el); w.text = $('#dlText', el).value.replace(/\s+$/, '');
+      w.purpose = $('#dlPurp', el).value.trim(); w.principles = $$('[data-prin].on', el).map(b => b.dataset.prin);
+      const pn = id => Math.max(0, Math.min(99, Math.round(+$(id, el).value || 0))), lo = pn('#dlPmin'), hi = pn('#dlPmax');
+      w.players = lo || hi ? Object.assign({}, lo ? {min: lo} : {}, hi ? {max: hi} : {}) : null;
       const sv = $('#dlSer', el).value, nn = $('#dlSerNew', el).value.trim();
       if(sv === '+') w.series = {id: 'sr' + uid(), name: nn, step: 1, fresh: true};
       else if(!sv) delete w.series;
@@ -2770,11 +2784,13 @@ function editDrl(x, w){
       if(!w.name){ toast('Give the drill a name'); return null; }
       if(!w.cat){ toast('Choose a classification'); return null; }
       if(w.series && !w.series.name){ toast('Give the series a name'); return null; }
+      if(w.players && w.players.min && w.players.max && w.players.min > w.players.max){ toast('Players: the first number should be the smaller one'); return null; }
       if(w.series && !w.series.fresh){ const pos = w.series.pos || posNow, j = pos === 'end' ? -1 : +pos.slice(1);
         w.series.step = j < 0 ? (sibs.length ? sibs[sibs.length - 1].series.step + 1 : 1) : (j > 0 ? (sibs[j - 1].series.step + sibs[j].series.step) / 2 : sibs[j].series.step - 1); }
       const out = x || {id: w.id, type: 'drl'};
       for(const k of ['name', 'cat', 'mins']) out[k] = w[k];
-      for(const k of ['text', 'age']) if(w[k]) out[k] = w[k]; else delete out[k];
+      for(const k of ['text', 'age', 'purpose', 'players']) if(w[k]) out[k] = w[k]; else delete out[k];
+      if((w.principles || []).length) out.principles = w.principles.slice(); else delete out.principles;
       out.parts = w.parts.slice();
       if(w.series) out.series = {id: w.series.id, name: w.series.name, step: w.series.step}; else delete out.series;
       if(!x){ if(cur8) out.draft = true; drls().unshift(out); x = out; }
@@ -2782,7 +2798,7 @@ function editDrl(x, w){
       if(!out.draft && libEditor()) for(const q of out.parts){ const y = q.a ? S.moves.find(m => m.id === q.a && m.draft) : pages().find(r => r.id === q.r && r.draft);
         if(y){ if(isDrill(y)) shareDrill(y); else { delete y.draft; delete y.prop; } } }
       save(); return out; };
-    $('#dlSave', el).addEventListener('click', () => { const out = keep(); if(!out) return; closeSheet(); renderMoves(); toast(isNew ? (out.draft ? `${out.name} saved in your drafts` : `${out.name} added to the team’s drills`) : 'Drill saved'); });
+    $('#dlSave', el).addEventListener('click', () => { const out = keep(); if(!out) return; closeSheet(); renderMoves(); toast(isNew ? (out.draft ? `${out.name} saved in your drafts` : `${out.name} added to the team’s drills`) : 'Drill sheet saved'); });
     $('#dlNewA', el).addEventListener('click', () => { const out = keep(); if(!out) return;
       const m = newDrill(out.cat); m.name = out.name; if(!out.draft) shareDrill(m); out.parts.push({a: m.id}); save();
       goAndReturn(() => { closeSheet(); openMove(m.id); pickPlayers(); tripLabel(); },
@@ -2804,8 +2820,9 @@ function renderDrls(){
   const status = pr => !pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for the team';
   const card = x => { const pr = x.draft && x.prop, main = pr && !pr.extra;
     return `<div class="mcard plcard${x.draft ? ' draft' : ''}"><div class="mbody"><button class="mname" data-dlopen="${x.id}">🧩 ${esc(x.name)}</button>
+      ${x.purpose ? `<div class="mdesc">${esc(x.purpose)}</div>` : ''}
       ${pr && pr.status === 'returned' && main ? commentsHtml(pr.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}
-      <div class="mmeta">${x.draft ? `<span class="dtag">${status(pr)}</span> ` : ''}${esc(drlMeta(x))}</div>
+      <div class="mmeta">${x.draft ? `<span class="dtag">${status(pr)}</span> ` : ''}${esc(drlMeta(x))}${principleNames(x).length ? ' · ' + esc(principleNames(x).join(', ')) : ''}</div>
       <div class="mact">${x.draft ? `<button class="chip" data-dled="${x.id}">Edit</button>${cur8 ? (!pr ? `<button class="chip on" data-prop="${x.id}">Propose to the team</button>` : pr.status === 'returned' ? `<button class="chip on" data-prop="${x.id}">Resend</button>` : propChanged(x) ? `<button class="chip on" data-prop="${x.id}">Send changes</button>` : '') + (pr && pr.status === 'proposed' ? `<button class="chip" data-wd="${x.id}">Withdraw</button>` : '')
           : `<button class="chip on" data-dladd="${x.id}">Add to team drills</button>`}<button class="chip" data-dldel="${x.id}">Delete</button>`
         : ed ? `<button class="chip" data-dled="${x.id}">Edit</button><button class="chip" data-dldup="${x.id}">Duplicate</button><button class="chip" data-dldel="${x.id}">Delete</button>${toTeamChip(x)}${pubChips(x, 'd')}${toClubChip(x)}`
@@ -2818,7 +2835,7 @@ function renderDrls(){
   el.innerHTML = `${kindTabs('drills')}${clsFilter(cur, k => every.filter(x => !k || catOf(x) === k).length)}
     ${props.length ? `<div class="section-h"><span>Proposed to the team · ${props.length}</span><span>Waiting for you</span></div>${props.map(propCard).join('')}` : ''}
     <button class="btn wide" id="dlNew">New ${cur ? esc(clsName(cur).toLowerCase()) + ' ' : ''}drill</button>
-    <p class="hint">A drill is what goes in a training plan: a name, how long it usually takes, and any notes, animations, pages and links that go with it.</p>
+    <p class="hint">A drill is what happens during a block of a training plan. Its drill sheet says what it’s for, how long it takes and how many players it needs, with any notes, animations, pages and links.</p>
     ${cur8 || drafts.length ? `<div class="section-h"><span>${cur8 ? 'My drafts' : 'Drafts'} · ${drafts.length}</span><span>Only you see these</span></div>
       ${drafts.length ? drafts.map(card).join('') : '<p class="hint">New drills start here. When one is ready, tap Propose to the team: a training coach adds it to the team’s drills or sends it back with comments.</p>'}` : ''}
     <div class="section-h"><span>Team drills · ${team.length}</span><span></span></div>
@@ -5905,7 +5922,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 11:57</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 12:11</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6737,7 +6754,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 11:57'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 12:11'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
