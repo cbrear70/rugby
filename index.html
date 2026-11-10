@@ -1819,7 +1819,9 @@ const appDrills = () => [], appPages = () => [], appSessions = () => [], appDrls
    helps with training in any team of the club. Each phone keeps the open team's copy (S.sync.clubLib), fetched on sync.
    To read it, the phone shows it's in a team of the club with a club pass (clubs/<club>/trainers/<phone id> = {g}). */
 const clubLib = () => (syncing() && S.sync.clubLib) || {moves: [], pages: [], sessions: [], drills: []};
-const clubDrills = () => appOnly(clubLib().moves, S.moves), clubPages = () => appOnly(clubLib().pages, pages()), clubSessions = () => appOnly(clubLib().sessions, sessions()), clubDrls = () => appOnly(clubLib().drills, drls());
+// a team sees the club's items that suit its age group (see suitsTeam); plans that point at others still find them by id
+const clubDrills = () => appOnly(clubLib().moves, S.moves).filter(suitsTeam), clubPages = () => appOnly(clubLib().pages, pages()).filter(suitsTeam),
+  clubSessions = () => appOnly(clubLib().sessions, sessions()).filter(suitsTeam), clubDrls = () => appOnly(clubLib().drills, drls()).filter(suitsTeam);
 const drillById = id => S.moves.find(d => d.id === id) || clubLib().moves.find(d => d.id === id) || appLib().moves.find(d => d.id === id) || null;
 const pageById = id => pages().find(r => r.id === id && !r.draft) || clubLib().pages.find(r => r.id === id) || appLib().pages.find(r => r.id === id) || null;
 const shelfArr = k => ({m: appLib().moves, r: appLib().pages, s: appLib().sessions, d: appLib().drills, cm: clubLib().moves, cr: clubLib().pages, cs: clubLib().sessions, cd: clubLib().drills})[k] || [];
@@ -1837,19 +1839,24 @@ async function refreshClubLib(){
 // a drill takes the rest of its series, and the team animations and pages they use
 const withParts = x => { const items = [x], add = y => { if(y && !items.includes(y)) items.push(y); };
   if(isSes(x)) for(const b of x.blocks) for(const it of b.items || []){ const m = it.drillId && S.moves.find(d => d.id === it.drillId && !d.draft), r = it.resId && pages().find(q => q.id === it.resId && !q.draft);
-    if(m && !items.includes(m)) items.push(m); if(r && !items.includes(r)) items.push(r); }
-  if(isDrl(x)){ if(x.series) drls().filter(d => !d.draft && !d.peek && d.series && d.series.id === x.series.id).forEach(d => add(d));
-    for(const d of items.filter(isDrl)) for(const q of d.parts || []) add(q.a ? S.moves.find(m => m.id === q.a && !m.draft) : pages().find(r => r.id === q.r && !r.draft)); }
+    if(m && !items.includes(m)) items.push(m); if(r && !items.includes(r)) items.push(r); add(it.drlId && drls().find(d => d.id === it.drlId && !d.draft && !d.peek)); }
+  for(const d of items.filter(isDrl)) if(d.series) drls().filter(y => !y.draft && !y.peek && y.series && y.series.id === d.series.id).forEach(y => add(y));
+  for(const d of items.filter(isDrl)) for(const q of d.parts || []) add(q.a ? S.moves.find(m => m.id === q.a && !m.draft) : pages().find(r => r.id === q.r && !r.draft));
   return items; };
 /* A team admin sends a team drill, page or session to the club (clubs/<club>/proposals/<id>: {by, who, g, team,
    status, json, extra (the drills and pages a session uses), comments, src (the team item's id), at}); the club's
    admins add it to the club library or send it back with comments. The team admin's phone remembers what it sent
    (z.clubSent) and checks on it in Admin → Training. */
-async function sendToClub(x, again){
+// age: the age groups it suits (null: any), put on it and on any part with none of its own. src: what to send again
+// (a team item's id, or pl:<event id> for a live plan, sent as a session)
+async function sendToClub(x, again, age, src){
   const z = S.sync, me = tokenUid(await fbToken()), parts = withParts(x), id = again ? again.id : uid();
+  if(age === undefined) age = ratedAge(x); if(age) x.age = age; else delete x.age;
+  const json = y => { const j = JSON.parse(drillJson(y)); if(age && !ratedAge(j)) j.age = age; return j; };
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`clubs/${z.club}/proposals/${id}`), fields:{by:{stringValue: me}, who:{stringValue: z.who || ''}, g:{stringValue: z.group}, team:{stringValue: z.groupName},
-    status:{stringValue: 'proposed'}, json:{stringValue: drillJson(x)}, extra:{stringValue: JSON.stringify(parts.slice(1).map(y => JSON.parse(drillJson(y))))},
-    comments:{stringValue: JSON.stringify(again ? again.comments : [])}, src:{stringValue: x.id}, at:{integerValue: String(Date.now())}}}}]});
+    status:{stringValue: 'proposed'}, json:{stringValue: JSON.stringify(json(x))}, extra:{stringValue: JSON.stringify(parts.slice(1).map(json))},
+    comments:{stringValue: JSON.stringify(again ? again.comments : [])}, src:{stringValue: src || (again && again.src) || x.id}, at:{integerValue: String(Date.now())}}}}]});
+  x = Object.assign({}, x, {id: src || (again && again.src) || x.id});
   z.clubSent = (z.clubSent || []).filter(q => q.id !== id).concat({id, src: x.id, name: itemName(x)}); save();
 }
 const libDocId = x => (isDrill(x) ? 'mv_' : isRes(x) ? 'rs_' : isDrl(x) ? 'dr_' : 'ss_') + x.id;
@@ -1944,7 +1951,19 @@ const pageShelf = (list, title, sub, k) => list.length ? `<div class="section-h"
 const sessionShelf = (list, title, sub, k) => list.length ? `<div class="section-h"><span>${title} · ${list.length}</span><span>${esc(sub)}</span></div>${list.map(r => `<div class="mcard plcard"><div class="mbody"><button class="mname" data-aopen="${k}|${r.id}">${esc(r.name)}</button><div class="mmeta">${esc(sesInfo(r))}</div><div class="mact">${starterActions(r, k)}</div></div></div>`).join('')}` : '';
 const clubSub = () => (S.sync && S.sync.clubName) || 'The club';
 const toTeamChip = x => fbOn() && !curated() ? `<button class="chip" data-tsend="${x.id}">Send to another team</button>` : '';
-const toClubChip = x => isGroupAdmin() && S.sync.club ? `<button class="chip" data-tclub="${x.id}">Send to club</button>` : '';
+const toClubChip = x => libEditor() && S.sync.club ? `<button class="chip" data-tclub="${x.id}">Send to club</button>` : '';
+// a live plan as a session, to send to the club (it has no date there)
+const planAsSession = p => Object.assign({id: uid(), type: 'ses', name: p.name, length: p.length, blocks: copyBlocks(p.blocks)}, p.notes ? {notes: p.notes} : {});
+// the sheet for sending to the club: what goes with it, and the age groups it suits
+function clubSendSheet(x, src, done){
+  const n = withParts(x).length - 1;
+  openSheet(`<div class="eyebrow">${esc(clubSub())}</div><h2>Send ${esc(itemName(x))} to the club</h2>
+    <p class="muted">The club admins look at it, then add it to the club library for every team whose age group it suits, or send it back with comments.${n ? ` It goes with ${n} more it uses (drills, animations and pages).` : ''}${isGroupAdmin() ? ' You see how it’s getting on in Admin → Training.' : ''}</p>
+    <div class="field"><div class="field-label">Age groups it suits</div>${ageTicksHtml(ratedAge(x) || defaultAge())}<p class="hint">Tick none for every age group. The club can change these.</p></div>
+    <div class="row-btns"><button class="btn" id="csGo">Send</button><button class="btn ghost" data-close>Cancel</button></div>`, el => { wireAgeTicks(el);
+    $('#csGo', el).addEventListener('click', async e => { e.target.disabled = true;
+      try { await sendToClub(x, null, readAge(el), src); save(); closeSheet(); toast(`${itemName(x)} sent to the club`); if(done) done(); } catch(err){ e.target.disabled = false; toast(niceErr(err)); } }); });
+}
 // the Drills, Pages and Sessions tabs' starter buttons
 function wireStarter(el){
   const find = v => { const [k, id] = v.split('|'); return shelfArr(k).find(x => x.id === id); };
@@ -1952,8 +1971,7 @@ function wireStarter(el){
     if(isSes(x)) showSesSummary(x, club ? 'Club session' : 'Starter session'); else if(isDrl(x)) showDrl(x); else showRes(x, {eyebrow: club ? 'Club page' : 'Starter page'}); }));
   $$('[data-tsend]', el).forEach(b => b.addEventListener('click', () => { const [arr] = findLib(b.dataset.tsend); sendToGroup(arr.find(q => q.id === b.dataset.tsend)); }));
   $$('[data-tclub]', el).forEach(b => b.addEventListener('click', () => { const [arr] = findLib(b.dataset.tclub), x = arr.find(q => q.id === b.dataset.tclub);
-    askConfirm(`Send ${itemName(x)} to ${clubSub()}?`, `The club admins look at it, then add it to the club library for every team${isSes(x) ? ' (with the team drills and pages it uses)' : ''}, or send it back with comments. You see how it’s getting on in Admin → Training.`, 'Send', async () => {
-      try { await sendToClub(x); toast(`${itemName(x)} sent to the club`); } catch(e){ toast(niceErr(e)); } }); }));
+    clubSendSheet(x); }));
   $$('[data-acopy]', el).forEach(b => b.addEventListener('click', () => { const c = copyFromApp(find(b.dataset.acopy)); renderMoves(); toast(c.draft ? `${itemName(c)} copied to your drafts` : `${itemName(c)} added to the team’s ${libKind(c)}`); }));
   $$('[data-aunpub]', el).forEach(b => b.addEventListener('click', () => { const x = find(b.dataset.aunpub);
     askConfirm(`Remove ${itemName(x)} from the starter library?`, 'New teams stop getting it. Teams that already have it keep their copy.', 'Remove', async () => {
@@ -5241,7 +5259,7 @@ function showPlan(ref){
   const sum = p => `${lengthName(p.length)} · ${p.blocks.length} block${p.blocks.length === 1 ? '' : 's'} · ${planItems(p)} item${planItems(p) === 1 ? '' : 's'}`;
   openSheet(`<div class="eyebrow">${esc(S.sync.groupName)} · Training plan</div><h2>${esc(e.title || evTitle(e))}</h2>${evLine(e) ? `<p class="muted">${esc(evLine(e))}</p>` : ''}
     <div class="field"><div class="field-label">Live plan</div>${live ? `<p class="muted">${esc(sum(live))}${live.liveFrom ? ' · ' + esc(live.liveFrom) + '’s version' : ''}</p>
-      <div class="row-btns"><button class="btn${mine ? ' ghost' : ''}" id="phLive">${ed ? 'Open the live plan' : 'Look at the live plan'}</button></div>`
+      <div class="row-btns"><button class="btn${mine ? ' ghost' : ''}" id="phLive">${ed ? 'Open the live plan' : 'Look at the live plan'}</button>${ed && S.sync.club && planItems(live) ? '<button class="btn ghost" id="phClub">Send to club</button>' : ''}</div>`
       : `<p class="hint">No live plan yet. ${ed ? 'Start a draft below and tap Make live, or make a coach’s version live.' : 'A training coach makes one live: theirs, or a version a coach proposes.'}</p>`}</div>
     <div class="field"><div class="field-label">My draft</div>${mine ? `<p class="muted"><span class="dtag">${!pr ? 'Draft' : pr.status === 'returned' ? 'Sent back' : 'Waiting for a training coach'}</span> ${esc(sum(mine))}</p>
       ${pr && pr.status === 'returned' ? commentsHtml(pr.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}<div class="row-btns"><button class="btn" id="phMine">Open my draft</button></div>`
@@ -5252,6 +5270,7 @@ function showPlan(ref){
     <div class="row-btns"><button class="btn ghost" id="phBack">${e.guestView ? 'Done' : 'Back to the session'}</button></div>`, el => {
     const on = (sel, fn) => $$(sel, el).forEach(b => b.addEventListener('click', () => fn(b)));
     on('#phLive', () => ed ? showLivePlan(ref) : showPlanRead(ref));
+    on('#phClub', () => clubSendSheet(planAsSession(live), 'pl:' + e.id, () => showPlan(ref)));
     on('#phMine', () => showDraftPlan(ref));
     on('#phCopy', () => { startDraft(e, live); showDraftPlan(ref); });
     on('#phNew', () => { startDraft(e); showDraftPlan(ref); });
@@ -6055,7 +6074,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 13:01</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 13:06</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6614,7 +6633,7 @@ function renderAdminTab(){
       ${q.status === 'returned' ? commentsHtml(q.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}
       <div class="mmeta"><span class="dtag">${q.gone ? 'Removed by the club' : q.status === 'accepted' ? 'In the club library' : q.status === 'returned' ? 'Sent back' : 'Waiting for the club'}</span></div>
       <div class="mact">${q.status === 'returned' ? `<button class="chip on" data-csag="${q.id}">Send the team’s version again</button>` : ''}<button class="chip" data-csx="${q.id}">${q.status === 'proposed' ? 'Withdraw' : 'Clear'}</button></div></div></div>`).join('');
-    $$('[data-csag]', box).forEach(b => b.addEventListener('click', async () => { const q = rows.find(r => r.id === b.dataset.csag), [arr] = findLib(q.src), x = arr.find(y => y.id === q.src);
+    $$('[data-csag]', box).forEach(b => b.addEventListener('click', async () => { const q = rows.find(r => r.id === b.dataset.csag), pl = /^pl:/.test(q.src || '') && planFor(q.src.slice(3)), [arr] = findLib(q.src), x = pl ? planAsSession(pl) : arr.find(y => y.id === q.src);
       if(!x) return toast('That’s no longer in the team’s library'); b.disabled = true;
       try { await sendToClub(x, q); toast('Sent to the club again'); loadClubSent(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
     $$('[data-csx]', box).forEach(b => b.addEventListener('click', async () => { const q = rows.find(r => r.id === b.dataset.csx); b.disabled = true;
@@ -6887,7 +6906,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 13:01'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 13:06'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -6966,11 +6985,19 @@ function renderClubLib(el, c, head){
         : '<p class="hint">Nothing waiting. Team admins send drills, pages and sessions from their Drills tab.</p>';
       const of = id => ps.find(q => q.id === id);
       $$('[data-cplook]', box).forEach(b => b.addEventListener('click', () => look(of(b.dataset.cplook).x, 'From ' + (of(b.dataset.cplook).team || 'a team'), of(b.dataset.cplook).extra)));
-      $$('[data-cpacc]', box).forEach(b => b.addEventListener('click', async () => { const q = of(b.dataset.cpacc); b.disabled = true;
+      $$('[data-cpacc]', box).forEach(b => b.addEventListener('click', () => { const q = of(b.dataset.cpacc);
+        openSheet(`<div class="eyebrow">From ${esc(q.team || 'a team')}</div><h2>Add ${esc(itemName(q.x))} to the club library</h2>
+          <p class="muted">Every team in the club whose age group it suits will see it${q.extra.length ? `, with the ${q.extra.length} more it uses` : ''}.</p>
+          <div class="field"><div class="field-label">Age groups it suits</div>${ageTicksHtml(ratedAge(q.x))}<p class="hint">As the team sent it. Change them if they’re not right for the club; tick none for every age group.</p></div>
+          <div class="row-btns"><button class="btn" id="caGo">Add to the club library</button><button class="btn ghost" data-close>Cancel</button></div>`, s2 => { wireAgeTicks(s2);
+          $('#caGo', s2).addEventListener('click', async ev => { ev.target.disabled = true; const age = readAge(s2), was = ratedAge(q.x);
+            for(const y of [q.x, ...q.extra]) if(y === q.x || !ratedAge(y) || JSON.stringify(ratedAge(y)) === JSON.stringify(was)){ if(age) y.age = age; else delete y.age; }
+            closeSheet(); await addToClub(q); }); }); }));
+      const addToClub = async q => {
         try { const now = String(Date.now()), writes = [q.x, ...q.extra].map(y => ({update:{name: DOCNAME(`clubs/${c}/library/${libDocId(y)}`), fields:{kind:{stringValue: libKind(y)}, json:{stringValue: JSON.stringify(y)}, team:{stringValue: q.team}, at:{integerValue: now}}}}));
           writes.push({update:{name: DOCNAME(`clubs/${c}/proposals/${q.id}`), fields:{status:{stringValue: 'accepted'}}}, updateMask:{fieldPaths: ['status']}, currentDocument:{exists: true}});
           await fb('POST', ':commit', {writes}); toast(`${itemName(q.x)} added to the club library`); loadProps(); loadLib(); }
-        catch(e){ b.disabled = false; toast(niceErr(e)); } }));
+        catch(e){ toast(niceErr(e)); } };
       $$('[data-cpback]', box).forEach(b => b.addEventListener('click', () => { const q = of(b.dataset.cpback);
         openSheet(`<div class="eyebrow">From ${esc(q.team || 'a team')}</div><h2>Send back ${esc(itemName(q.x))}</h2>${commentsHtml(q.comments)}
           <div class="field"><label class="field-label" for="cbText">What needs changing?</label><textarea id="cbText" rows="3" maxlength="1000"></textarea></div>
@@ -6984,7 +7011,7 @@ function renderClubLib(el, c, head){
     try {
       const items = (await listDocs(`/clubs/${c}/library`)).map(d => { let j = null; try { j = JSON.parse(d.fields.json.stringValue); } catch(e){} return {id: d.name.split('/').pop(), x: j, team: d.fields.team ? d.fields.team.stringValue : ''}; }).filter(q => q.x && isLib(q.x));
       if(!box.isConnected) return;
-      box.innerHTML = items.length ? items.map(q => `<div class="mem"><div><button class="memlink" data-cllook="${q.id}">${icon(q.x)} ${esc(itemName(q.x))}</button><small>${esc(libKind(q.x))}${q.team ? ' · from ' + esc(q.team) : ''}</small></div><button class="chip" data-clrm="${q.id}">Remove</button></div>`).join('') : '<p class="hint">Empty so far.</p>';
+      box.innerHTML = items.length ? items.map(q => `<div class="mem"><div><button class="memlink" data-cllook="${q.id}">${icon(q.x)} ${esc(itemName(q.x))}</button><small>${esc(libKind(q.x))}${ratedAge(q.x) ? ' · ' + esc(ageLabel(ratedAge(q.x))) : ''}${q.team ? ' · from ' + esc(q.team) : ''}</small></div><button class="chip" data-clrm="${q.id}">Remove</button></div>`).join('') : '<p class="hint">Empty so far.</p>';
       $$('[data-cllook]', box).forEach(b => b.addEventListener('click', () => look(items.find(q => q.id === b.dataset.cllook).x, 'Club library', items.map(q => q.x))));
       $$('[data-clrm]', box).forEach(b => b.addEventListener('click', async () => { if(!b.dataset.sure){ b.dataset.sure = 1; b.textContent = 'Remove? Tap again'; b.classList.add('on'); return; }
         b.disabled = true; try { await fb('DELETE', `/clubs/${c}/library/${b.dataset.clrm}`); toast('Removed from the club library'); loadLib(); } catch(e){ b.disabled = false; toast(niceErr(e)); } }));
