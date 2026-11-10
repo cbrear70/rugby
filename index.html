@@ -629,7 +629,9 @@ const lastOf = m => framesOf(m) - 1;
 const DEFAULT_CLASSES = [['contact', 'Contact'], ['forwards', 'Forwards'], ['backs', 'Backs'], ['setpiece', 'Set piece'], ['activate', 'Activate'], ['handling', 'Handling']];
 const OLD_CATS = {penalty: 'setpiece', skills: 'handling'};
 const ownClasses = () => (S.sync && S.sync.training && Array.isArray(S.sync.training.classes) ? S.sync.training.classes : []).filter(c => c && c.key && c.label);
-const CLS = () => DEFAULT_CLASSES.concat(ownClasses().filter(c => !DEFAULT_CLASSES.some(d => d[0] === c.key)).map(c => [c.key, c.label]));
+// players and parents can't read the team's settings, so a shared drill carries its classification's name (catName)
+const sharedClasses = () => isViewer() ? S.moves.filter(m => m && m.cat && m.catName).map(m => [m.cat, m.catName]) : [];
+const CLS = () => DEFAULT_CLASSES.concat(ownClasses().map(c => [c.key, c.label]), sharedClasses()).filter((c, i, a) => a.findIndex(d => d[0] === c[0]) === i);
 const clsName = k => (CLS().find(c => c[0] === k) || [k, 'Backs'])[1];
 // Age groups a team can be (Admin → Training), used for age ratings
 const AGE_GROUPS = [...Array(12)].map((_, i) => ['u' + (i + 7), 'U' + (i + 7)]).concat([['adult', 'Adult']]);
@@ -2697,7 +2699,7 @@ function showCone(cid){
 function renderEditor(){
   const m = curMove();
   $('#edName').textContent = m.name;
-  $('#edDesc').textContent = roMove(m) ? (m.desc || 'Tap play to watch') : m.desc || 'Tap to name, describe, set category and length';
+  $('#edDesc').textContent = roMove(m) ? (m.desc || 'Tap play to watch') : m.desc || 'Tap to name, describe, set classification and length';
   syncShowChip();
   $('#edPasses').hidden = false; // always there: in a drill without the ball, tapping it adds the ball
   document.body.classList.toggle('romove', roMove(m));
@@ -3605,7 +3607,7 @@ async function listDocs(path){
 async function publishShared(){
   const g = S.sync.group, have = {}, want = {}, writes = [];
   for(const d of await listDocs(`/groups/${g}/shared`)) have[d.name.split('/').pop()] = d.fields && d.fields.json ? d.fields.json.stringValue : '';
-  for(const m of S.moves) if(m.forPlayers && !m.draft){ const mm = Object.assign({}, m); delete mm.draft; delete mm.localOnly; want[m.id] = JSON.stringify(mm); }
+  for(const m of S.moves) if(m.forPlayers && !m.draft){ const mm = Object.assign({}, m); delete mm.draft; delete mm.localOnly; mm.cat = catOf(m); mm.catName = clsName(mm.cat); want[m.id] = JSON.stringify(mm); }
   for(const id in want) if(have[id] !== want[id]) writes.push({update:{name: DOCNAME(`groups/${g}/shared/${id}`), fields:{json:{stringValue: want[id]}, at:{integerValue: String(Date.now())}}}});
   for(const id in have) if(!(id in want)) writes.push({delete: DOCNAME(`groups/${g}/shared/${id}`)});
   for(let i=0;i<writes.length;i+=400) await fb('POST', ':commit', {writes: writes.slice(i, i+400)});
@@ -5578,7 +5580,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 09:50</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 11:07</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6410,7 +6412,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 09:50'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 11:07'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
