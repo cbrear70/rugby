@@ -2537,7 +2537,7 @@ async function decideProposal(p, accept, text){
 function peekProposal(p){
   const m = Object.assign(JSON.parse(p.json), {id: 'peek_' + p.id, draft: true, peek: true});
   if(isRes(m)) return showRes(m, {eyebrow: 'Proposed by ' + (p.who || 'a coach')});
-  if(isSes(m)) return showSesSummary(m, 'Proposed by ' + (p.who || 'a coach'));
+  if(isSes(m)) return showSesSummary(m, 'Proposed by ' + (p.who || 'a coach'), p.extra || []);
   if(isDrl(m)) return showDrl(m, {eyebrow: 'Proposed by ' + (p.who || 'a coach'), extra: p.extra || []});
   const drop = () => { S.moves = S.moves.filter(x => !x.peek); };
   goAndReturn(() => { drop(); S.moves.unshift(m); openMove(m.id); tripLabel(); },
@@ -2950,13 +2950,26 @@ function renderDrls(){
 /* ---------- SAVED SESSIONS ---------- */
 const copyBlocks = bs => clone(bs || []).map(b => Object.assign(b, {id: uid(), items: (b.items || []).map(x => Object.assign(x, {id: uid()}))}));
 const sesInfo = x => `${x.blocks.length} block${x.blocks.length === 1 ? '' : 's'} · ${x.length >= 60 ? lengthName(x.length) : x.length + ' min'}`;
-// what a session holds, to read (a coach who can't change it, or an editor looking at a proposal)
-function showSesSummary(x, eyebrow){
-  const line = it => it.drlId ? '🧩 ' + ((drlById(it.drlId, typeof extra === 'undefined' ? [] : extra) || {}).name || it.text) : it.drillId ? '▶ ' + ((drillById(it.drillId) || {}).name || it.text) : it.resId ? (pageById(it.resId) ? resIcon(pageById(it.resId)) + ' ' : '📄 ') + it.text : it.link ? '🔗 ' + it.text : it.page != null ? '📄 ' + it.text : it.text;
-  openSheet(`<div class="eyebrow">${esc(eyebrow || 'Saved session')}</div><h2>${esc(x.name)}</h2><p class="muted">${esc(sesInfo(x))}</p>
-    ${x.blocks.map(b => `<div class="plblock"><div class="plhead"><b>${esc(b.name)}</b><span class="muted" style="margin-left:auto">${b.mins} min</span></div>${(b.items || []).map(it => `<div class="plitem"><span>${esc(line(it))}</span><small class="muted" style="margin-left:auto">${it.mins} min</small></div>`).join('')}</div>`).join('')}
+// a plan not tied to a session (a team or club plan, a proposal), to read: its drills, animations, pages and links
+// open over it, and Back (or Done) comes back to it, where it was
+function showSesSummary(x, eyebrow, extra = []){
+  const again = () => { const top = sheetEl.scrollTop; return () => { showSesSummary(x, eyebrow, extra); sheetEl.scrollTop = top; }; };
+  const line = it => it.drlId ? '🧩 ' + ((drlById(it.drlId, extra) || {}).name || it.text) : it.drillId ? '▶ ' + ((animOf(it.drillId, extra) || {}).name || it.text) : it.resId ? (r => r ? resIcon(r) : '📄')(resOf(it.resId, extra)) + ' ' + it.text : it.link ? '🔗 ' + it.text : it.page != null ? '📄 ' + it.text : it.text;
+  const sub = it => (d => d ? [clsName(catOf(d)), playersText(d)].filter(Boolean).join(' · ') : '')(it.drlId && drlById(it.drlId, extra));
+  const opens = it => !!(it.drlId || it.drillId || it.resId || it.link || it.page != null);
+  openSheet(`<div class="eyebrow">${esc(eyebrow || 'Plan')}</div><h2>${esc(x.name)}</h2><p class="muted">${esc(sesInfo(x))}</p>
+    ${x.blocks.map((b, i) => `<div class="plblock"><div class="plhead"><b>${esc(b.name)}</b><span class="muted" style="margin-left:auto">${b.mins} min</span></div>
+      ${(b.items || []).map((it, j) => opens(it) ? `<button class="linkrow" data-so="${i}|${j}">${esc(line(it))}<small>${esc(sub(it))}</small></button>` : `<div class="plitem"><span>${esc(line(it))}</span></div>`).join('')}
+      ${(b.items || []).filter(it => it.drlId).length > 1 ? '<p class="hint">These drills run at the same time.</p>' : ''}</div>`).join('')}
     ${x.notes ? `<div class="mdpage"><p>${esc(x.notes)}</p></div>` : ''}
-    <button class="btn wide" data-close>Done</button>`);
+    <button class="btn wide" data-close>Done</button>`, el => $$('[data-so]', el).forEach(btn => btn.addEventListener('click', () => {
+      const [i, j] = btn.dataset.so.split('|').map(Number), it = x.blocks[i].items[j], back = again();
+      if(it.link) return openLink(it.link);
+      if(it.page != null) return showNotes({title: it.text, body: it.page, eyebrow: x.blocks[i].name}, {back});
+      if(it.drlId){ const d = drlById(it.drlId, extra); if(!d) return toast('That drill is no longer in the library'); return showDrl(d, {back, extra, readOnly: true}); }
+      if(it.resId){ const r = resOf(it.resId, extra); if(!r) return toast('That page is no longer there'); if(resIcon(r) === '🔗') return openLink(r.url); return showRes(r, {back}); }
+      if(it.drillId) return watchAnim(it.drillId, extra, back);
+    })));
 }
 // change a saved session: the same editor as a plan, without a date
 function showSessionEdit(id){
@@ -3015,7 +3028,9 @@ function renderSessions(){
   const find = id => all.find(r => r.id === id), propOf = id => props.find(p => p.id === id);
   const on = (sel, fn) => $$(sel, el).forEach(b => b.addEventListener('click', () => fn(b)));
   wireLibTabs(el);
-  on('[data-ssopen]', b => { const r = find(b.dataset.ssopen); if(r.draft) showSessionEdit(r.id); else showSesSummary(r, 'Team plan'); });
+  // a team plan opens as its session's plan does, when that session is on the calendar; otherwise on its own
+  on('[data-ssopen]', b => { const r = find(b.dataset.ssopen), ev = r.from && r.from.eventId;
+    if(r.draft) showSessionEdit(r.id); else if(ev && evFor(ev) && planFor(ev)) showPlan(ev); else showSesSummary(r, 'Team plan'); });
   const pOf = id => pprops.find(q => q.id === id);
   on('[data-plook]', b => { const q = pOf(b.dataset.plook), d = JSON.parse(q.json); showPlanRead(d.eventId, d, `${q.who || 'A coach'}’s version`, q.extra || []); });
   on('[data-plive]', b => { const q = pOf(b.dataset.plive), d = JSON.parse(q.json), live = planFor(d.eventId), go = async () => { b.disabled = true;
@@ -6152,7 +6167,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:43</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 15:05</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6984,7 +6999,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:43'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 15:05'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
@@ -7049,7 +7064,7 @@ function renderClubLib(el, c, head){
   el.innerHTML = `${head}<div class="field"><div class="field-label">Sent by the teams</div><div id="clProps"><p class="muted">Loading…</p></div></div>
     <div class="field"><div class="field-label">The club library</div><p class="hint">Everyone who helps with training in a team of the club can use these, and copy them into their own team.</p><div id="clLib"><p class="muted">Loading…</p></div></div>`;
   const icon = x => isDrill(x) ? '▶' : isRes(x) ? resIcon(x) : isDrl(x) ? '🧩' : '🗂';
-  const look = (x, eyebrow, extra) => isSes(x) ? showSesSummary(x, eyebrow) : isRes(x) ? showRes(x, {eyebrow}) : isDrl(x) ? showDrl(x, {eyebrow, extra: extra || []})
+  const look = (x, eyebrow, extra) => isSes(x) ? showSesSummary(x, eyebrow, extra || []) : isRes(x) ? showRes(x, {eyebrow}) : isDrl(x) ? showDrl(x, {eyebrow, extra: extra || []})
     : openSheet(`<div class="eyebrow">${esc(eyebrow)}</div><h2>${esc(x.name)}</h2><div class="mcard" style="grid-template-columns:120px 1fr"><div class="thumb" style="width:120px;height:170px">${moveThumb(x)}</div><div class="mbody">${x.desc ? `<div class="mdesc">${esc(x.desc)}</div>` : ''}<div class="mmeta">${clsName(catOf(x))} · ${framesOf(x)} frames</div></div></div>${x.page ? `<div class="mdpage">${mdHtml(x.page)}</div>` : ''}${(x.links || []).length ? linksHtml(x.links) : ''}<button class="btn wide" data-close>Done</button>`, s2 => wireLinks(s2, x.links));
   const loadProps = async () => { const box = $('#clProps', el); if(!box) return;
     try {
