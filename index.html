@@ -542,6 +542,7 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="edBackTxt" hidden>Plan</span>
           </button>
           <button class="ed-title" id="edTitle"><b id="edName">Move</b><small id="edDesc">Tap to name and describe</small></button>
+          <button class="chip" id="edEdit" hidden>Edit</button>
           <button class="chip" id="edPlayers">Players</button>
         </div>
         <div class="banner" id="edBanner" hidden>
@@ -1988,7 +1989,10 @@ function wireStarter(el){
         catch(err){ e.target.disabled = false; toast(niceErr(err)); } }); }); }));
   $$('[data-apeek]', el).forEach(b => b.addEventListener('click', () => peekAppDrill(b.dataset.apeek, () => renderMoves(), 'Drills')));
 }
-const roMove = (m = curMove()) => isViewer() || !!(m && (m.peek || (curated() && !m.draft)));
+// who may change an animation at all; and every animation opens read-only until Edit is tapped (ME.editId), so nothing
+// is changed by accident. A new animation opens ready to edit.
+const canEditMove = (m = curMove()) => !!m && !isViewer() && !m.peek && !(curated() && !m.draft);
+const roMove = (m = curMove()) => !canEditMove(m) || ME.editId !== m.id;
 const drillJson = m => { const mm = Object.assign({}, m); for(const k of ['draft', 'prop', 'peek', 'localOnly', 'app', 'club']) delete mm[k]; return JSON.stringify(mm); };
 const propChanged = m => !!(m.prop && m.prop.hash && m.prop.hash !== hashStr(drillJson(m)));
 // Players and parents see drills a coach marks for them, after the coach syncs; they can watch but not change them
@@ -2344,7 +2348,7 @@ function renderMoves(){
   $$('[data-tabcat]', el).forEach(b => b.addEventListener('click', () => { S.ui.drillCat = b.dataset.tabcat; save(); renderMoves(); }));
   wireStarter(el);
   $('#newMove').addEventListener('click', () => {
-    const m = newDrill(cur || 'backs'); save();
+    const m = newDrill(cur || 'backs'); ME.editId = m.id; save();
     openMove(m.id); pickPlayers();
   });
   $$('[data-undraft]', el).forEach(b => b.addEventListener('click', () => unshareMove(all.find(x => x.id===b.dataset.undraft))));
@@ -2883,7 +2887,7 @@ function editDrl(x, w){
       save(); return out; };
     $('#dlSave', el).addEventListener('click', () => { const out = keep(); if(!out) return; closeSheet(); renderMoves(); toast(isNew ? (out.draft ? `${out.name} saved in your drafts` : `${out.name} added to the team’s drills`) : 'Drill sheet saved'); });
     $('#dlNewA', el).addEventListener('click', () => { const out = keep(); if(!out) return;
-      const m = newDrill(out.cat); m.name = out.name; if(!out.draft) shareDrill(m); out.parts.push({a: m.id}); save();
+      const m = newDrill(out.cat); m.name = out.name; ME.editId = m.id; if(!out.draft) shareDrill(m); out.parts.push({a: m.id}); save();
       goAndReturn(() => { closeSheet(); openMove(m.id); pickPlayers(); tripLabel(); },
         () => { stopPlay(); ME.moveId = null; ME.editing = null; tripLabel(); renderMoves(); editDrl(out); }, 'Drill'); });
     const newRes = link => { read(); let back = false; const again = () => { if(back) return; back = true; setTimeout(() => editDrl(x, w), 0); };
@@ -3034,13 +3038,15 @@ function unshareMove(m){
   askConfirm(`Move ${m.name} back to drafts?`, `It will be removed from the other coaches’ phones in ${S.sync.groupName}. You keep it here as a draft.`, 'Move to drafts',
     () => { unshareDrill(m); save(); renderMoves(); toast(`${m.name} is a draft again. Sync to take it off the other coaches’ phones.`); });
 }
-function openMove(id){ ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
+function openMove(id){ if(ME.editId !== id) ME.editId = null; ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
 function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<framesOf(m);k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
   for(const c of m.cones || []){ xs.push(c.x); ys.push(c.y); }
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
 function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move' : 'Whole pitch'; }
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
 $('#edTripBar').addEventListener('click', () => tripBack());
+$('#edEdit').addEventListener('click', () => { const m = curMove(); if(!m) return; stopPlay(); ME.editing = null; ME.runSel = null;
+  ME.editId = roMove(m) ? m.id : null; save(); renderEditor(); toast(ME.editId ? 'Editing: tap Done when you’ve finished' : 'Saved. Read-only again'); });
 $('#edBack').addEventListener('click', () => { if(tripBack()) return; stopPlay(); ME.moveId = null; ME.editing = null; renderMoves(); });
 // the drill's Back button says where it goes when the drill was opened from a training plan
 // opened from a drill, a plan or a list to come back to: a full-width Back bar across the top, as well as the arrow
@@ -3133,6 +3139,8 @@ function renderEditor(){
   syncShowChip();
   $('#edPasses').hidden = false; // always there: in a drill without the ball, tapping it adds the ball
   document.body.classList.toggle('romove', roMove(m));
+  const eb = $('#edEdit'); eb.hidden = !canEditMove(m); eb.textContent = roMove(m) ? 'Edit' : 'Done'; eb.classList.toggle('on', !roMove(m));
+  eb.setAttribute('aria-label', roMove(m) ? 'Edit this animation' : 'Stop editing');
   const nt = $('#edNotes'), hasNotes = !!((m.page || '').trim() || (m.links || []).length); nt.hidden = !hasNotes && roMove(m);
   nt.textContent = hasNotes ? `Notes${(m.links || []).length ? ' · ' + m.links.length + ' link' + (m.links.length > 1 ? 's' : '') : ''}` : '+ Notes'; nt.classList.toggle('on', hasNotes);
   const st = $('#edState'); st.hidden = !syncing() || !!m.peek;
@@ -6144,7 +6152,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:37</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:43</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6976,7 +6984,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:37'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:43'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
