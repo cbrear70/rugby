@@ -314,7 +314,8 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
 .pltime{flex:none;width:44px;font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
 .plitem{padding:6px 0 6px 52px;border-bottom:1px solid var(--line)}
 .plitem>span,.plitem>button.memlink{flex:1;min-width:0}
-.plfoot{padding:8px 0 0 52px;flex-wrap:wrap}.plfoot small{flex:1}
+.plitem.dr{flex-wrap:wrap;gap:6px}.plitem.dr .pldrl{flex:1 1 100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}.plitem.dr .chip{padding:4px 10px}
+.plfoot{padding:8px 0 0 52px;flex-wrap:wrap}.plfoot small{flex:1}.plfoot small:not(:empty){flex-basis:100%}
 .plfoot input{flex:1;min-width:120px;padding:6px 10px}
 .tprow{padding:6px 0;border-bottom:1px solid var(--line)}
 /* Help (coaches and admins only) */
@@ -2427,6 +2428,11 @@ const parseComments = f => { try { return JSON.parse(f.comments && f.comments.st
 // what goes with a coach's draft drill when it's proposed: the rest of its series that are drafts too, and the draft
 // animations and pages they use (extra on the proposal; each is marked with the same proposal)
 function propExtras(m){
+  // a plan: the coach's draft drills in it, each with what goes with it
+  if(isPld(m)){ const out = [];
+    for(const b of m.blocks || []) for(const it of b.items || []){ const d = it.drlId && drls().find(x => x.id === it.drlId && x.draft && !x.peek);
+      if(d && !out.includes(d)){ out.push(d); for(const y of propExtras(d)) if(!out.includes(y)) out.push(y); } }
+    return out; }
   if(!isDrl(m)) return [];
   const out = m.series ? drls().filter(d => d !== m && d.draft && !d.peek && d.series && d.series.id === m.series.id) : [];
   for(const d of [m, ...out.slice()]) for(const q of d.parts || []){ const y = q.a ? S.moves.find(x => x.id === q.a && x.draft) : pages().find(x => x.id === q.r && x.draft); if(y && !out.includes(y)) out.push(y); }
@@ -2481,16 +2487,18 @@ async function decideProposal(p, accept, text){
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(propDoc(p.id)), fields:{status:{stringValue: accept ? 'accepted' : 'returned'}, comments:{stringValue: JSON.stringify(comments)}}},
     updateMask:{fieldPaths: ['status', 'comments']}, currentDocument:{exists: true}}]});
   z.proposals = (z.proposals || []).filter(x => x !== p);
-  if(accept && isPld(JSON.parse(p.json))) putLive(JSON.parse(p.json), p.who);
-  else if(accept){ const ids = {}, take = y => { const c = clone(y); for(const k of ['draft', 'prop', 'peek', 'app', 'club']) delete c[k]; ids[c.id] = c.id = uid(); return c; };
-    // a drill comes with the rest of its series and the draft animations and pages they use: all go in, pointed at each other
-    const extra = (p.extra || []).filter(isLib).map(take), m = take(JSON.parse(p.json));
+  if(accept){ const ids = {}, take = y => { const c = clone(y); for(const k of ['draft', 'prop', 'peek', 'app', 'club']) delete c[k]; ids[c.id] = c.id = uid(); return c; };
+    // a drill comes with the rest of its series and the draft animations and pages they use: all go in, pointed at each
+    // other. A plan comes with the coach's draft drills in it (and what goes with them), and then goes live.
+    const pl = isPld(JSON.parse(p.json)), extra = (p.extra || []).filter(x => isLib(x) && !isPld(x)).map(take), m = pl ? JSON.parse(p.json) : take(JSON.parse(p.json));
+    if(pl) for(const b of m.blocks || []) for(const it of b.items || []) for(const k of ['drlId', 'drillId', 'resId']) if(it[k] && ids[it[k]]) it[k] = ids[it[k]];
     for(const c of [m, ...extra]) if(isDrl(c)) c.parts = (c.parts || []).map(q => q.a && ids[q.a] ? {a: ids[q.a]} : q.r && ids[q.r] ? {r: ids[q.r]} : q);
-    for(const c of [...extra.reverse(), m]){
+    for(const c of [...extra.reverse(), ...(pl ? [] : [m])]){
       if(isRes(c)){ if(pages().some(x => !x.draft && x.title === c.title)) c.title += ` (${p.who || 'a coach'})`; pages().unshift(c); }
       else if(isSes(c)){ if(sessions().some(x => !x.draft && x.name === c.name)) c.name += ` (${p.who || 'a coach'})`; sessions().unshift(c); }
       else if(isDrl(c)){ if(drls().some(x => !x.draft && x.name === c.name)) c.name += ` (${p.who || 'a coach'})`; drls().unshift(c); }
-      else { if(S.moves.some(x => !x.draft && x.name === c.name)) c.name += ` (${p.who || 'a coach'})`; S.moves.unshift(c); } } }
+      else { if(S.moves.some(x => !x.draft && x.name === c.name)) c.name += ` (${p.who || 'a coach'})`; S.moves.unshift(c); } }
+    if(pl) putLive(m, p.who); }
   save();
 }
 // an editor watches a proposal before deciding: it plays like a drill, read-only, and Back returns to the list
@@ -2613,16 +2621,16 @@ function renderPages(){
 /* ---------- LIBRARY TAB: kinds and classification filter ----------
    The Drills tab holds the team's training library: Drills (what goes in a plan), Animations, Pages & links, and
    Sessions. Drills, animations and pages are filtered by classification (All, or one). */
-const LIB_KINDS = [['drills', 'Drills'], ['anims', 'Animations'], ['pages', 'Pages & links'], ['sessions', 'Sessions']];
+const LIB_KINDS = [['drills', 'Drills'], ['anims', 'Animations'], ['pages', 'Pages & links']];
 function libKindNow(){
   // the old tabs kept pages and sessions in drillCat
-  if(S.ui.drillCat === 'pages' || S.ui.drillCat === 'sessions'){ S.ui.libKind = S.ui.drillCat; S.ui.drillCat = ''; }
+  if(S.ui.drillCat === 'pages' || S.ui.drillCat === 'sessions'){ S.ui.libKind = 'pages'; S.ui.drillCat = ''; }
   return LIB_KINDS.some(k => k[0] === S.ui.libKind) ? S.ui.libKind : 'drills';
 }
 function kindTabs(cur){
   const waiting = f => libEditor() ? (S.sync.proposals || []).filter(p => { try { return f(JSON.parse(p.json)); } catch(e){ return false; } }).length : 0;
   const n = {drills: [drls().filter(x => !x.peek).length, waiting(isDrl)], anims: [S.moves.filter(m => isDrill(m) && !m.peek).length, waiting(isDrill)],
-    pages: [pages().filter(r => !r.peek).length, waiting(isRes)], sessions: [sessions().filter(r => !r.peek).length, waiting(isSes)]};
+    pages: [pages().filter(r => !r.peek).length, waiting(isRes)]};
   return `<div class="cattabs" role="tablist">${LIB_KINDS.map(([k, l]) => `<button role="tab" data-libk="${k}" aria-selected="${k === cur}">${l}${n[k][0] || n[k][1] ? `<small>${n[k][0]}${n[k][1] ? ' +' + n[k][1] : ''}</small>` : ''}</button>`).join('')}</div>`;
 }
 const clsFilter = (cur, count) => `<div class="cats clsrow">${[['', 'All']].concat(CLS()).map(([k, l]) => { const n = count(k); return k && !n && k !== cur ? '' : `<button type="button" class="chip${k === cur ? ' on' : ''}" data-clsf="${k}" aria-pressed="${k === cur}">${esc(l)}<small>${n}</small></button>`; }).join('')}</div>`;
@@ -2664,6 +2672,8 @@ const readAge = el => { const on = $$('[data-age].on', el).map(b => b.dataset.ag
    drills the coach can't. Curated like the rest: training coaches change the team's; other coaches keep drafts and
    propose them, and a proposed drill takes the rest of its series and the draft animations and pages they use. */
 const allDrls = () => [...drls(), ...clubDrls(), ...appDrls()].filter(d => !d.peek);
+// a drill a plan points at: the coach's own or the team's, the club's, or (older plans) a starter one; extra: a proposal's
+const drlById = (id, extra = []) => extra.find(y => y.id === id && isDrl(y)) || drls().find(d => d.id === id && !d.peek) || (clubLib().drills || []).find(d => d.id === id) || (appLib().drills || []).find(d => d.id === id) || null;
 // the RFU's principles of play, picked on the drill sheet (one or more)
 const PRINCIPLES = [['goforward', 'Go forward'], ['support', 'Support'], ['continuity', 'Continuity'], ['pressure', 'Pressure'], ['contest', 'Contest possession'], ['regain', 'Regain possession']];
 const principleNames = x => PRINCIPLES.filter(q => (x.principles || []).includes(q[0])).map(q => q[1]);
@@ -2715,6 +2725,7 @@ function showDrl(x, opts = {}){
       if(resIcon(r) === '🔗') return openLink(r.url);
       showRes(r, {eyebrow: x.name, back: again}); }));
     const e = $('#dlEdit', el); if(e) e.addEventListener('click', () => editDrl(x));
+    if(opts.back) $$('[data-close]', el).forEach(b => b.addEventListener('click', () => setTimeout(opts.back, 0)));
   });
 }
 // a coach's draft drill (or one of its parts) that a training coach puts straight into the team's library, with the
@@ -2869,7 +2880,7 @@ const copyBlocks = bs => clone(bs || []).map(b => Object.assign(b, {id: uid(), i
 const sesInfo = x => `${x.blocks.length} block${x.blocks.length === 1 ? '' : 's'} · ${x.length >= 60 ? lengthName(x.length) : x.length + ' min'}`;
 // what a session holds, to read (a coach who can't change it, or an editor looking at a proposal)
 function showSesSummary(x, eyebrow){
-  const line = it => it.drillId ? '▶ ' + ((drillById(it.drillId) || {}).name || it.text) : it.resId ? (pageById(it.resId) ? resIcon(pageById(it.resId)) + ' ' : '📄 ') + it.text : it.link ? '🔗 ' + it.text : it.page != null ? '📄 ' + it.text : it.text;
+  const line = it => it.drlId ? '🧩 ' + ((drlById(it.drlId, typeof extra === 'undefined' ? [] : extra) || {}).name || it.text) : it.drillId ? '▶ ' + ((drillById(it.drillId) || {}).name || it.text) : it.resId ? (pageById(it.resId) ? resIcon(pageById(it.resId)) + ' ' : '📄 ') + it.text : it.link ? '🔗 ' + it.text : it.page != null ? '📄 ' + it.text : it.text;
   openSheet(`<div class="eyebrow">${esc(eyebrow || 'Saved session')}</div><h2>${esc(x.name)}</h2><p class="muted">${esc(sesInfo(x))}</p>
     ${x.blocks.map(b => `<div class="plblock"><div class="plhead"><b>${esc(b.name)}</b><span class="muted" style="margin-left:auto">${b.mins} min</span></div>${(b.items || []).map(it => `<div class="plitem"><span>${esc(line(it))}</span><small class="muted" style="margin-left:auto">${it.mins} min</small></div>`).join('')}</div>`).join('')}
     ${x.notes ? `<div class="mdpage"><p>${esc(x.notes)}</p></div>` : ''}
@@ -5246,7 +5257,7 @@ function showPlan(ref){
     on('#phNew', () => { startDraft(e); showDraftPlan(ref); });
     on('#phBack', () => e.guestView ? closeSheet() : showEvent(ref));
     const of = id => waits.find(q => q.id === id);
-    on('[data-wlook]', b => { const q = of(b.dataset.wlook); showPlanRead(ref, JSON.parse(q.json), `${q.who || 'A coach'}’s version`); });
+    on('[data-wlook]', b => { const q = of(b.dataset.wlook); showPlanRead(ref, JSON.parse(q.json), `${q.who || 'A coach'}’s version`, q.extra || []); });
     on('[data-wback]', b => sendBackSheet(of(b.dataset.wback)));
     on('[data-wlive]', b => { const q = of(b.dataset.wlive), go = async () => { try { await decideProposal(q, true); toast(`${q.who || 'The coach'}’s version is the live plan now`); runSync(null, true); showPlan(ref); } catch(err){ toast(niceErr(err)); } };
       if(live && planItems(live)) askConfirm('Replace the live plan?', `${q.who || 'The coach'}’s version takes its place for everyone.`, 'Replace', go); else go(); });
@@ -5267,20 +5278,21 @@ function showDraftPlan(ref){
     el => renderPlan($('#plBody', el), d, Object.assign({}, e, {draftView: true}), ref, {}));
 }
 // a plan to read, not change: the live plan (p unset), or a version waiting for a training coach
-function showPlanRead(ref, p, eyebrow){
+function showPlanRead(ref, p, eyebrow, extra = []){
   const e = evFor(ref); if(!e) return; p = p || planFor(e.id); if(!p) return;
-  const mine = myPlanDraft(e.id), again = () => showPlanRead(ref, p, eyebrow);
+  const mine = myPlanDraft(e.id), again = () => showPlanRead(ref, p, eyebrow, extra);
   let t = toMins(e.time);
-  const line = it => it.drillId ? '▶ ' + ((drillById(it.drillId) || {}).name || it.text) : it.resId ? (r => r ? resIcon(r) : '📄')(pageById(it.resId)) + ' ' + it.text : it.link ? '🔗 ' + it.text : it.page != null ? '📄 ' + it.text : it.text;
-  const opens = it => !!(it.drillId || it.resId || it.link || it.page != null);
+  const line = it => it.drlId ? '🧩 ' + ((drlById(it.drlId, typeof extra === 'undefined' ? [] : extra) || {}).name || it.text) : it.drillId ? '▶ ' + ((drillById(it.drillId) || {}).name || it.text) : it.resId ? (r => r ? resIcon(r) : '📄')(pageById(it.resId)) + ' ' + it.text : it.link ? '🔗 ' + it.text : it.page != null ? '📄 ' + it.text : it.text;
+  const opens = it => !!(it.drlId || it.drillId || it.resId || it.link || it.page != null);
   openSheet(`<div class="eyebrow">${esc(eyebrow || 'Live plan')}</div><h2>${esc(e.title || evTitle(e))}</h2><p class="muted">${esc([evLine(e), lengthName(p.length)].filter(Boolean).join(' · '))}</p>
     ${p.blocks.map((b, i) => { const at = t != null ? clock(t) : ''; if(t != null) t += +b.mins;
       return `<div class="plblock"><div class="plhead"><span class="pltime">${at}</span><b>${esc(b.name)}</b><span class="muted" style="margin-left:auto">${b.mins} min</span></div>
-        ${b.items.map((it, j) => opens(it) ? `<button class="linkrow" data-ro="${i}|${j}">${esc(line(it))}<small>${it.mins} min</small></button>` : `<div class="plitem"><span>${esc(line(it))}</span><small class="muted" style="margin-left:auto">${it.mins} min</small></div>`).join('') || '<p class="hint">Nothing in this block yet.</p>'}</div>`; }).join('')}
+        ${b.items.map((it, j) => opens(it) ? `<button class="linkrow" data-ro="${i}|${j}">${esc(line(it))}<small>${(d => d ? esc([clsName(catOf(d)), playersText(d)].filter(Boolean).join(' · ')) : '')(it.drlId && drlById(it.drlId, extra))}</small></button>` : `<div class="plitem"><span>${esc(line(it))}</span></div>`).join('') || '<p class="hint">Nothing in this block yet.</p>'}${b.items.filter(it => it.drlId).length > 1 ? '<p class="hint">These drills run at the same time.</p>' : ''}</div>`; }).join('')}
     ${p.notes ? `<div class="field-label" style="margin-top:12px">Notes for the coaches</div><div class="mdpage"><p>${esc(p.notes)}</p></div>` : ''}
     <div class="row-btns">${eyebrow ? '' : `<button class="btn" id="roMine">${mine ? 'Open my draft' : 'Make my version'}</button>`}<button class="btn ghost" id="roBack">Back</button></div>
     ${eyebrow ? '' : '<p class="hint">Only training coaches change the live plan. To suggest changes, make your own version and propose it.</p>'}`, el => {
     $$('[data-ro]', el).forEach(b => b.addEventListener('click', () => { const [i, j] = b.dataset.ro.split('|').map(Number), it = p.blocks[i].items[j], back = () => { const top = sheetEl.scrollTop; return () => { again(); sheetEl.scrollTop = top; }; };
+      if(it.drlId){ const d = drlById(it.drlId, extra); if(!d) return toast('That drill is no longer in the library'); return showDrl(d, {back: back(), extra, readOnly: !!eyebrow}); }
       if(it.link) return openLink(it.link);
       if(it.page != null) return showNotes({title: it.text, body: it.page, eyebrow: p.blocks[i].name}, {back: back()});
       if(it.resId){ const r = pageById(it.resId); if(!r) return toast('That page is no longer in the team'); if(resIcon(r) === '🔗') return openLink(r.url); return showRes(r, {back: back()}); }
@@ -5311,11 +5323,21 @@ function renderPlan(box, p, e, ref, st){
   const used = blockMins(p.blocks), start = toMins(e.time), drills = S.moves.filter(m => !m.draft);
   const redo = () => { if(!e.guestView){ p.name = evTitle(e) + ', ' + evWhen(e).split(' · ')[0]; p.ev = planEv(e); } save(); renderPlan(box, p, e, ref, st); };
   let t = start;
-  const tpages = pages().filter(r => !r.draft && !r.peek).concat(clubPages(), appPages()), adrills = appDrills(), cdrills = clubDrills();
+  const tpages = pages().filter(r => !r.draft && !r.peek).concat(clubPages(), appPages());
+  // drills to pick: my drafts, the team's (by classification), the club's
+  const mineD = drls().filter(d => d.draft && !d.peek).sort(drlOrder), teamD = drls().filter(d => !d.draft && !d.peek).sort(drlOrder), clubD = clubDrls().slice().sort(drlOrder);
+  const dopt = d => `<option value="${d.id}">${esc(d.name)}${d.mins ? ' · ' + d.mins + ' min' : ''}</option>`;
+  const lastIJ = () => { for(let a = p.blocks.length - 1; a >= 0; a--) if(p.blocks[a].items.length) return a + '|' + (p.blocks[a].items.length - 1); return ''; };
+  // a drill in a block: its name (opens its drill sheet), what it is, and ◀ ▶ through its series
+  const drlItem = (x, i, j) => { const d = drlById(x.drlId); if(!d) return `<span class="pldrl"><span>${esc(x.text)}</span><small class="muted">No longer in the library</small></span>`;
+    const sr = d.series ? seriesOf(d) : [], k = sr.indexOf(d), b = p.blocks[i];
+    return `<span class="pldrl"><button class="memlink" data-dro="${i}|${j}">🧩 ${esc(d.name)}</button><small class="muted">${esc([clsName(catOf(d)), d.mins && d.mins !== +b.mins ? 'usually ' + d.mins + ' min' : '', playersText(d), d.series ? `${d.series.name} ${k + 1} of ${sr.length}` : '', d.draft ? 'my draft' : d.club ? 'club' : ''].filter(Boolean).join(' · '))}</small></span>
+      ${sr.length > 1 ? `<button class="chip" data-sstp="${i}|${j}|-1"${k > 0 ? '' : ' disabled'} aria-label="Previous drill in the series">◀</button><button class="chip" data-sstp="${i}|${j}|1"${k < sr.length - 1 ? '' : ' disabled'} aria-label="Next drill in the series">▶</button>` : ''}`; };
+  const moveBtns = (i, j) => `<button class="chip" data-imv="${i}|${j}|-1"${i || j ? '' : ' disabled'} aria-label="Move up">▲</button><button class="chip" data-imv="${i}|${j}|1"${lastIJ() === i + '|' + j ? ' disabled' : ''} aria-label="Move down">▼</button>`;
   const drillName = x => { const m = x.drillId && drillById(x.drillId); return m ? m.name : x.text || 'Drill no longer in the team'; };
   const adding = i => st.i !== i ? '' : st.kind === 'drill'
-    ? (drills.length || adrills.length || cdrills.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${CLS().map(([k, l]) => (ds => ds.length ? `<optgroup label="${esc(l)}">${ds.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : '')(drills.filter(m => catOf(m) === k))).join('')}${cdrills.length ? `<optgroup label="Club drills">${cdrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}${adrills.length ? `<optgroup label="Starter drills">${adrills.map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</optgroup>` : ''}</select>`
-      : '<small class="muted">No team drills yet: make one on the Drills tab and share it with the coaches.</small>')
+    ? (mineD.length || teamD.length || clubD.length ? `<select data-pickd="${i}"><option value="">Choose a drill…</option>${mineD.length ? `<optgroup label="My drafts">${mineD.map(dopt).join('')}</optgroup>` : ''}${CLS().map(([k, l]) => (ds => ds.length ? `<optgroup label="${esc(l)}">${ds.map(dopt).join('')}</optgroup>` : '')(teamD.filter(d => catOf(d) === k))).join('')}${clubD.length ? `<optgroup label="Club drills">${clubD.map(dopt).join('')}</optgroup>` : ''}</select>`
+      : '<small class="muted">No drills yet: make one on the Drills tab.</small>')
     : st.kind === 'page' ? (tpages.length ? `<select data-pickp="${i}"><option value="">Choose a team page or link…</option>${tpages.map(r => `<option value="${r.id}">${resIcon(r)} ${esc(r.title)}</option>`).join('')}</select>`
       : '<small class="muted">No team pages yet: they’re made on the Drills tab, under Pages.</small>')
     : st.kind === 'link' ? `<input type="text" data-lkt="${i}" placeholder="Name, e.g. RFU Activate warm-up" maxlength="80"><input type="url" data-lku="${i}" placeholder="https://…" inputmode="url" autocapitalize="off"><button class="chip on" data-lkok="${i}">Add</button>`
@@ -5325,17 +5347,17 @@ function renderPlan(box, p, e, ref, st){
       ${start != null && !e.guestView && evLength(e) !== p.length ? `<p class="hint">The session is set for ${esc(e.time)}${e.end ? '–' + esc(e.end) : ''}. <button class="chip" id="plEnd">End it at ${clock(start + p.length)}</button></p>` : ''}</div>
     ${p.blocks.map((b, i) => { const at = t != null ? clock(t) : ''; if(t != null) t += +b.mins; const im = itemMins(b);
       return `<div class="plblock"><div class="plhead"><span class="pltime">${at}</span><input type="text" data-bn="${i}" value="${esc(b.name)}" maxlength="40" aria-label="Block name"><select data-bm="${i}" aria-label="Minutes for ${esc(b.name)}">${minsOpts(b.mins)}</select><button class="chip" data-bx="${i}" aria-label="Remove ${esc(b.name)}">✕</button></div>
-        ${b.items.map((x, j) => `<div class="plitem">${x.resId ? (r => r ? `<button class="memlink" data-res="${i}|${j}">${resIcon(r)} ${esc(r.title)}</button>` : `<span>${esc(x.text)} <small class="muted">(no longer in the team pages)</small></span>`)(pageById(x.resId)) : x.drillId ? `<button class="memlink" data-io="${esc(x.drillId)}">▶ ${esc(drillName(x))}</button>` : x.link ? `<button class="memlink" data-lnk="${i}|${j}">🔗 ${esc(x.text)}</button><button class="chip" data-lnked="${i}|${j}" aria-label="Change link">✎</button>` : x.page != null ? `<button class="memlink" data-pg="${i}|${j}">📄 ${esc(x.text)}</button>` : `<span>${esc(x.text)}</span>`}<select data-im="${i}|${j}" aria-label="Minutes">${minsOpts(x.mins)}</select><button class="chip" data-ix="${i}|${j}" aria-label="Remove">✕</button></div>`).join('')}
-        <div class="plfoot"><small class="${im > b.mins ? 'st-no' : 'muted'}">${im} of ${b.mins} min planned</small>${st.i === i || e.session ? '' : `<button class="chip" data-saveb="${i}">Save block</button>`}${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button><button class="chip" data-addp="${i}">+ Team page</button><button class="chip" data-addl="${i}">+ Link</button><button class="chip" data-addn="${i}">+ Notes</button>`}</div></div>`; }).join('')}
+        ${b.items.map((x, j) => `<div class="plitem${x.drlId ? ' dr' : ''}">${x.drlId ? drlItem(x, i, j) : x.resId ? (r => r ? `<button class="memlink" data-res="${i}|${j}">${resIcon(r)} ${esc(r.title)}</button>` : `<span>${esc(x.text)} <small class="muted">(no longer in the team pages)</small></span>`)(pageById(x.resId)) : x.drillId ? `<button class="memlink" data-io="${esc(x.drillId)}">▶ ${esc(drillName(x))}</button>` : x.link ? `<button class="memlink" data-lnk="${i}|${j}">🔗 ${esc(x.text)}</button><button class="chip" data-lnked="${i}|${j}" aria-label="Change link">✎</button>` : x.page != null ? `<button class="memlink" data-pg="${i}|${j}">📄 ${esc(x.text)}</button>` : `<span>${esc(x.text)}</span>`}${moveBtns(i, j)}<button class="chip" data-ix="${i}|${j}" aria-label="Remove">✕</button></div>`).join('')}
+        <div class="plfoot"><small class="muted">${(n => n > 1 ? `${n} drills at the same time` : '')(b.items.filter(x => x.drlId).length)}</small>${st.i === i ? adding(i) : `<button class="chip" data-addd="${i}">+ Drill</button><button class="chip" data-addt="${i}">+ Text</button><button class="chip" data-addp="${i}">+ Team page</button><button class="chip" data-addl="${i}">+ Link</button><button class="chip" data-addn="${i}">+ Notes</button>`}</div></div>`; }).join('')}
     <button class="btn ghost wide" id="plAddB">+ Add a block</button>
     <div class="field"><div class="field-label">Use again</div><div class="mact">
-      ${e.session ? '' : '<button class="chip" id="plFrom">Start from…</button>'}<button class="chip" id="plAddFrom">+ Blocks from…</button>${e.session ? '' : '<button class="chip" id="plSaveS">Save as session</button>'}${e.guestView || e.draftView ? '' : '<button class="chip" id="plCopyTo">Copy to another session</button>'}${e.guestView || e.draftView || curated() || !fbOn() ? '' : '<button class="chip" id="plSendT">Send to another team</button>'}
+      ${e.session ? '' : '<button class="chip" id="plFrom">Start from…</button>'}<button class="chip" id="plAddFrom">+ Blocks from…</button>${p.blocks.some(b => b.items.some(x => (d => d && d.series)(x.drlId && drlById(x.drlId)))) ? '<button class="chip" id="plStep">Step all on ▶</button>' : ''}${e.guestView || e.draftView ? '' : '<button class="chip" id="plCopyTo">Copy to another session</button>'}${e.guestView || e.draftView || curated() || !fbOn() ? '' : '<button class="chip" id="plSendT">Send to another team</button>'}
     </div></div>
     <div class="field"><label class="field-label plain" for="plNotes">Notes for the coaches</label><textarea id="plNotes" rows="3" maxlength="2000">${esc(p.notes || '')}</textarea></div>
     ${e.draftView ? (pr => `${pr && pr.status === 'returned' ? commentsHtml(pr.comments.filter(c => c.kind === 'returned').slice(-1)) : ''}
       <div class="row-btns">${libEditor() ? '<button class="btn" id="plLive">Make live</button>' : !pr ? '<button class="btn" id="plProp">Propose to the training coaches</button>' : pr.status === 'returned' ? '<button class="btn" id="plProp">Resend</button>' : propChanged(p) ? '<button class="btn" id="plProp">Send changes</button>' : '<button class="btn ghost" disabled>Waiting for a training coach</button>'}<button class="btn ghost" id="plBack">Back</button></div>
       ${pr && pr.status === 'proposed' ? '<button class="btn ghost wide" id="plWd">Withdraw it</button>' : ''}<button class="btn danger wide" id="plDel">Delete my draft</button>
-      <p class="hint">Your draft: only you see it until you ${libEditor() ? 'make it live. That replaces the live plan for everyone' : 'propose it. A training coach makes it the live plan or sends it back with comments'}.</p>`)(p.prop)
+      <p class="hint">Your draft: only you see it until you ${libEditor() ? 'make it live. That replaces the live plan for everyone, and puts any of your draft drills in it into the team’s drills' : 'propose it. Any of your draft drills in it go with it. A training coach makes it the live plan or sends it back with comments'}.</p>`)(p.prop)
     : `<div class="row-btns"><button class="btn ghost" id="plBack">${e.session ? 'Done' : 'Back'}</button></div>
     ${e.session ? '' : '<button class="btn danger wide" id="plDel">Delete the live plan</button>'}
     <p class="hint">${e.session ? (p.draft ? 'Your draft: only you see it until you propose it (Drills → Sessions).' : 'A team session: plans started from it get their own copy of its blocks.') : 'The live plan: every coach sees it, and only training coaches change it. Your changes go to them shortly after you close this.'}</p>`}`;
@@ -5356,8 +5378,19 @@ function renderPlan(box, p, e, ref, st){
   on('[data-addt]', 'click', x => { Object.assign(st, {i: +x.dataset.addt, kind: 'text'}); renderPlan(box, p, e, ref, st); const inp = $('[data-textin]', box); if(inp) inp.focus(); });
   // a new item gets what's left of its block, 5 to 15 minutes
   const fill = b => Math.min(15, Math.max(5, Math.round((b.mins - itemMins(b)) / 5) * 5));
-  on('[data-pickd]', 'change', x => { const m = drillById(x.value); if(!m) return; const b = p.blocks[+x.dataset.pickd];
-    b.items.push({id: uid(), drillId: m.id, text: m.name, mins: fill(b)}); st.i = null; redo(); });
+  on('[data-pickd]', 'change', x => { const d = drlById(x.value); if(!d) return; const b = p.blocks[+x.dataset.pickd];
+    b.items.push({id: uid(), drlId: d.id, text: d.name}); st.i = null; redo(); });
+  // drills in a block run at the same time; ▲ ▼ move an item, and past the top or bottom of its block into the next
+  on('[data-imv]', 'click', x => { const [i, j, dir] = x.dataset.imv.split('|').map(Number), from = p.blocks[i].items, it = from[j];
+    if(dir < 0){ if(j > 0) [from[j - 1], from[j]] = [from[j], from[j - 1]]; else if(i > 0){ from.splice(j, 1); p.blocks[i - 1].items.push(it); } }
+    else { if(j < from.length - 1) [from[j + 1], from[j]] = [from[j], from[j + 1]]; else if(i < p.blocks.length - 1){ from.splice(j, 1); p.blocks[i + 1].items.unshift(it); } }
+    redo(); });
+  // ◀ ▶: swap a drill for the one before or after it in its series, in the same place
+  const stepDrl = (it, dir) => { const d = drlById(it.drlId), sr = d && d.series ? seriesOf(d) : [], y = sr[sr.indexOf(d) + dir]; if(!y) return false; it.drlId = y.id; it.text = y.name; return true; };
+  on('[data-sstp]', 'click', x => { const [i, j, dir] = x.dataset.sstp.split('|').map(Number); if(stepDrl(p.blocks[i].items[j], dir)) redo(); });
+  on('#plStep', 'click', () => { let n = 0; for(const b of p.blocks) for(const it of b.items) if(it.drlId && stepDrl(it, 1)) n++;
+    toast(n ? `${n} drill${n > 1 ? 's' : ''} stepped on to the next in ${n > 1 ? 'their series' : 'its series'}` : 'Every drill is already the last in its series'); if(n) redo(); });
+  on('[data-dro]', 'click', x => { const [i, j] = x.dataset.dro.split('|').map(Number), d = drlById(p.blocks[i].items[j].drlId); if(d) showDrl(d, {back: backToPlan()}); });
   const addText = i => { const inp = $(`[data-textin="${i}"]`, box), v = inp && inp.value.trim(); if(!v) return; const b = p.blocks[i];
     b.items.push({id: uid(), text: v, mins: fill(b)}); st.i = null; redo(); };
   on('[data-textok]', 'click', x => addText(+x.dataset.textok));
@@ -5395,7 +5428,8 @@ function renderPlan(box, p, e, ref, st){
   on('#plAddB', 'click', () => { p.blocks.push({id: uid(), name: 'New block', mins: Math.max(5, Math.min(30, p.length - used)) || 10, items: []}); redo(); });
   on('#plNotes', 'change', x => { p.notes = x.value; save(); });
   on('#plBack', 'click', () => e.session ? closeSheet() : showPlan(ref));
-  on('#plLive', 'click', () => { const live = planFor(p.eventId), go = () => { putLive(p, S.sync.who || ''); dropLib(p); save(); toast('Your plan is the live plan now'); runSync(null, true); showPlan(ref); };
+  on('#plLive', 'click', () => { const live = planFor(p.eventId), go = () => { for(const b of p.blocks) for(const it of b.items){ const d = it.drlId && drls().find(y => y.id === it.drlId && y.draft); if(d) drlToTeam(d); }
+      putLive(p, S.sync.who || ''); dropLib(p); save(); toast('Your plan is the live plan now'); runSync(null, true); showPlan(ref); };
     if(live && planItems(live)) askConfirm('Replace the live plan?', 'Your draft takes its place for everyone.', 'Make live', go); else go(); });
   on('#plProp', 'click', async x => { x.disabled = true; try { await proposeDrill(p, ''); toast('Sent to the training coaches'); showPlan(ref); } catch(err){ x.disabled = false; toast(niceErr(err)); } });
   on('#plWd', 'click', async x => { x.disabled = true; try { await withdrawProposal(p); toast('Withdrawn: it’s just your draft again'); renderPlan(box, p, e, ref, st); } catch(err){ x.disabled = false; toast(niceErr(err)); } });
@@ -6021,7 +6055,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 12:53</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 13:01</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6853,7 +6887,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 12:53'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 13:01'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
