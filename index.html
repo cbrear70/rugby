@@ -405,6 +405,7 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
 .mact{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
 
 .ed-head{display:flex;align-items:center;gap:6px;padding:6px 10px;border-bottom:1px solid var(--line)}
+#edTripBar{flex:none;margin:6px 12px 4px;width:auto;border-radius:12px}
 #edBack.trip{width:auto;padding:0 10px 0 2px;gap:2px;display:flex;align-items:center;font-weight:700;font-size:14px;color:var(--accent, var(--ink));white-space:nowrap}
 .ed-title{flex:1;min-width:0;background:none;border:0;text-align:left;padding:2px 4px}
 .ed-title b{display:block;font:800 19px/1.05 var(--display);text-transform:uppercase;letter-spacing:.02em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -535,6 +536,7 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
     <section class="view" id="v-moves" hidden>
       <div class="scroll" id="movesList"></div>
       <div id="moveEditor" hidden style="display:flex;flex-direction:column;flex:1;min-height:0">
+        <button class="btn wide" id="edTripBar" hidden>‹ Back</button>
         <div class="ed-head">
           <button class="icon-btn" id="edBack" aria-label="Back to moves">
             <svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg><span id="edBackTxt" hidden>Plan</span>
@@ -2738,8 +2740,13 @@ function watchAnim(id, extra, back){
     return goAndReturn(() => { closeSheet(); showTab('moves'); openMove(id); tripLabel(); },
       () => { stopPlay(); ME.moveId = null; ME.editing = null; tripLabel(); showTab(fromTab); back(); }, 'Drill'); }
   if((clubLib().moves || []).some(m => m.id === id) || (appLib().moves || []).some(m => m.id === id)) return peekAppDrill(id, () => { renderMoves(); back(); }, 'Drill');
-  const m = animOf(id, extra); if(!m) return toast('That animation is no longer there');
-  // only in a proposal or the club's list: a still picture of it
+  // only in a proposal (its own, or one it came with): it plays read-only, like a proposal does on its own
+  const m = animOf(id, extra) || (S.sync && S.sync.proposals || []).map(q => { try { return JSON.parse(q.json); } catch(e){ return null; } }).find(y => y && y.id === id && isDrill(y));
+  if(!m) return toast('That animation is no longer there');
+  if(!clubOfHat()){ const fromTab = TAB, pm = Object.assign(clone(m), {id: 'peek_' + id, draft: true, peek: true}), drop = () => { S.moves = S.moves.filter(x => !x.peek); };
+    return goAndReturn(() => { closeSheet(); drop(); showTab('moves'); S.moves.unshift(pm); openMove(pm.id); tripLabel(); },
+      () => { stopPlay(); drop(); ME.moveId = null; ME.editing = null; tripLabel(); showTab(fromTab); back(); }, 'Drill'); }
+  // a club admin looking at what a team sent (no Drills tab there): a still picture of it
   openSheet(`<div class="eyebrow">Animation</div><h2>${esc(m.name)}</h2><div class="mcard" style="grid-template-columns:120px 1fr"><div class="thumb" style="width:120px;height:170px">${moveThumb(m)}</div><div class="mbody">${m.desc ? `<div class="mdesc">${esc(m.desc)}</div>` : ''}<div class="mmeta">${clsName(catOf(m))} · ${framesOf(m)} frames</div></div></div>
     <button class="btn wide" id="anBack">Back to the drill</button>`, el => $('#anBack', el).addEventListener('click', back));
 }
@@ -3009,12 +3016,16 @@ function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(c
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
 function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move' : 'Whole pitch'; }
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
+$('#edTripBar').addEventListener('click', () => tripBack());
 $('#edBack').addEventListener('click', () => { if(tripBack()) return; stopPlay(); ME.moveId = null; ME.editing = null; renderMoves(); });
 // the drill's Back button says where it goes when the drill was opened from a training plan
+// opened from a drill, a plan or a list to come back to: a full-width Back bar across the top, as well as the arrow
 function tripLabel(){
-  const b = $('#edBack'), t = TRIPS[TRIPS.length - 1], on = !!t;
-  b.classList.toggle('trip', on); $('#edBackTxt').hidden = !on; if(on) $('#edBackTxt').textContent = t.label;
-  b.setAttribute('aria-label', on ? (t.label === 'Plan' ? 'Back to the training plan' : 'Back to ' + t.label.toLowerCase()) : 'Back to moves');
+  const b = $('#edBack'), bar = $('#edTripBar'), t = TRIPS[TRIPS.length - 1], on = !!t;
+  const to = on ? (t.label === 'Plan' ? 'the training plan' : t.label === 'Drill' ? 'the drill' : t.label.toLowerCase()) : '';
+  $('#edBackTxt').hidden = true; b.classList.remove('trip');
+  bar.hidden = !on; if(on) bar.textContent = '‹ Back to ' + to;
+  b.setAttribute('aria-label', on ? 'Back to ' + to : 'Back to moves');
 }
 
 const moveCtl = PitchCtl($('#movePitch'), {
@@ -6109,7 +6120,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 13:49</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:25</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6941,7 +6952,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 13:49'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:25'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
