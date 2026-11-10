@@ -307,17 +307,18 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
 .propnote small{display:block;color:var(--muted, inherit);opacity:.8}
 .mem{display:flex;align-items:center;gap:8px;padding:8px 0;border-bottom:1px solid var(--line)}
 .mem.sub{margin-left:18px;padding:4px 0;border-bottom-style:dashed}
-.plblock{border:1px solid var(--line);border-radius:12px;padding:10px;margin:10px 0;background:var(--panel)}
+.plblock{border:1px solid var(--line);border-radius:10px;padding:6px 10px;margin:4px 0;background:var(--panel)}
 .plhead,.plitem,.plfoot,.tprow{display:flex;align-items:center;gap:8px}
 .plhead input,.tprow input{flex:1;min-width:0;font-weight:700;padding:8px 10px}
 .plhead select,.plitem select,.plfoot select,.tprow select{width:auto;min-width:0;padding:6px 8px}
 .pltime{flex:none;width:44px;font-variant-numeric:tabular-nums;color:var(--muted);font-size:13px}
-.plitem{padding:6px 0 6px 52px;border-bottom:1px solid var(--line)}
+.plitem{padding:4px 0 4px 52px;border-bottom:1px solid var(--line)}
 .plitem>span,.plitem>button.memlink{flex:1;min-width:0}
 .plitem.dr{flex-wrap:wrap;gap:6px}.plitem.dr .pldrl{flex:1 1 100%;display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0}.plitem.dr .chip{padding:4px 10px}
-.plfoot{padding:8px 0 0 52px;flex-wrap:wrap}.plfoot small{flex:1}.plfoot small:not(:empty){flex-basis:100%}
+.plfoot{padding:4px 0 0 52px;flex-wrap:wrap}.plfoot small{flex:1}.plfoot small:not(:empty){flex-basis:100%}
 .plfoot input{flex:1;min-width:120px;padding:6px 10px}
-.tprow{padding:6px 0;border-bottom:1px solid var(--line)}
+.tprow{padding:6px 0 2px}
+.tptext{padding:0 0 6px;border-bottom:1px solid var(--line)}.tptext input{width:100%;box-sizing:border-box;padding:6px 10px;font-size:14px}
 /* Help (coaches and admins only) */
 .help details{border-bottom:1px solid var(--line)}
 .help summary{padding:12px 0;font-weight:700;cursor:pointer;list-style:none;display:flex;gap:8px;align-items:baseline}
@@ -5305,7 +5306,7 @@ function fitBlocks(blocks, to){
 const planEv = e => ({date: e.date, time: e.time || '', end: e.end || '', title: evTitle(e)});
 function newPlan(e){
   const t = trainingTemplate(), len = evLength(e) || t.length;
-  const blocks = t.blocks.map(b => ({id: uid(), name: b.name, mins: b.mins, items: []}));
+  const blocks = t.blocks.map(b => ({id: uid(), name: b.name, mins: b.mins, items: (b.text || '').trim() ? [{id: uid(), text: b.text.trim()}] : []}));
   if(len !== blockMins(blocks)) fitBlocks(blocks, len);
   return {id: e.id, name: evTitle(e) + ', ' + evWhen(e).split(' · ')[0], ev: planEv(e), length: len, blocks, notes: '', ready: false};
 }
@@ -5603,7 +5604,7 @@ async function setTrainingParts(patch){
   await fb('POST', ':commit', {writes:[{update:{name: DOCNAME(`groups/${z.group}/settings/training`), fields:{json:{stringValue: json}}}}]});
   z.training = JSON.parse(json); save();
 }
-const setTraining = tpl => setTrainingParts({length: tpl.length, blocks: tpl.blocks.map(b => ({name: b.name, mins: b.mins}))});
+const setTraining = tpl => setTrainingParts({length: tpl.length, blocks: tpl.blocks.map(b => Object.assign({name: b.name, mins: b.mins}, (b.text || '').trim() ? {text: b.text.trim()} : {}))});
 // Admin → Training: the team's age group (a guess from the team's name until one is saved)
 function renderTeamAge(box){
   const cur = teamAge(), guess = cur ? '' : guessAge(S.sync.groupName);
@@ -5628,11 +5629,13 @@ function renderClasses(box){
     askConfirm(`Remove ${c.label}?`, 'Drills filed under it show under Backs until you choose another classification for them.', 'Remove', () => put(own.filter(x => x !== c), `${c.label} removed`)); }));
 }
 function renderTemplate(box, tpl){
-  tpl = tpl || (t => ({length: t.length, blocks: t.blocks.map(b => ({name: b.name, mins: b.mins}))}))(trainingTemplate());
+  tpl = tpl || (t => ({length: t.length, blocks: t.blocks.map(b => ({name: b.name, mins: b.mins, text: b.text || ''}))}))(trainingTemplate());
   const used = blockMins(tpl.blocks), redo = () => renderTemplate(box, tpl);
   box.innerHTML = `<div class="field"><label class="field-label plain" for="tpLen">Session length</label><select id="tpLen">${PLAN_LENGTHS.map(m => `<option value="${m}"${m === tpl.length ? ' selected' : ''}>${lengthName(m)}</option>`).join('')}</select></div>
     ${tpl.blocks.map((b, i) => `<div class="tprow"><input type="text" data-tn="${i}" value="${esc(b.name)}" maxlength="40" aria-label="Block name"><select data-tm="${i}" aria-label="Minutes">${minsOpts(b.mins)}</select>
-      <button class="chip" data-tu="${i}" aria-label="Move up"${i ? '' : ' disabled'}>▲</button><button class="chip" data-tx="${i}" aria-label="Remove">✕</button></div>`).join('')}
+      <button class="chip" data-tu="${i}" aria-label="Move up"${i ? '' : ' disabled'}>▲</button><button class="chip" data-tx="${i}" aria-label="Remove">✕</button></div>
+      <div class="tptext"><input type="text" data-tt="${i}" value="${esc(b.text || '')}" maxlength="120" placeholder="Standard text (optional), e.g. Water break" aria-label="Standard text for ${esc(b.name)}"></div>`).join('')}
+    <p class="hint">Standard text goes into that block of every new plan, as a line coaches can keep or take out.</p>
     <div class="row-btns"><button class="btn ghost" id="tpAdd">+ Add a block</button></div>
     <p class="hint">${used === tpl.length ? `${used} of ${used} min planned ✓` : used < tpl.length ? `${tpl.length - used} min left to plan` : `${used - tpl.length} min over`}</p>
     <div class="row-btns"><button class="btn" id="tpSave">Save template</button><button class="btn ghost" id="tpDef">Use the app’s default</button></div>`;
@@ -5640,6 +5643,7 @@ function renderTemplate(box, tpl){
   on('#tpLen', 'change', x => { tpl.length = +x.value; fitBlocks(tpl.blocks, tpl.length); redo(); });
   on('[data-tn]', 'change', x => { tpl.blocks[+x.dataset.tn].name = x.value.trim() || 'Block'; });
   on('[data-tm]', 'change', x => { tpl.blocks[+x.dataset.tm].mins = +x.value; redo(); });
+  on('[data-tt]', 'change', x => { tpl.blocks[+x.dataset.tt].text = x.value.trim(); });
   on('[data-tu]', 'click', x => { const i = +x.dataset.tu; [tpl.blocks[i - 1], tpl.blocks[i]] = [tpl.blocks[i], tpl.blocks[i - 1]]; redo(); });
   on('[data-tx]', 'click', x => { if(tpl.blocks.length < 2) return toast('A template needs at least one block'); tpl.blocks.splice(+x.dataset.tx, 1); redo(); });
   on('#tpAdd', 'click', () => { tpl.blocks.push({name: 'New block', mins: Math.max(5, Math.min(30, tpl.length - used)) || 10}); redo(); });
@@ -6167,7 +6171,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 15:05</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 17:14</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6999,7 +7003,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 15:05'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 17:14'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
