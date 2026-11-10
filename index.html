@@ -2718,8 +2718,10 @@ const PRINCIPLES = [['goforward', 'Go forward'], ['support', 'Support'], ['conti
 const principleNames = x => PRINCIPLES.filter(q => (x.principles || []).includes(q[0])).map(q => q[1]);
 const playersText = x => { const p = x.players || {}, a = +p.min || 0, b = +p.max || 0; return a && b ? (a === b ? `${a} players` : `${a}–${b} players`) : a ? `${a}+ players` : b ? `up to ${b} players` : ''; };
 const resById = id => pages().find(r => r.id === id && !r.peek) || (clubLib().pages || []).find(r => r.id === id) || (appLib().pages || []).find(r => r.id === id) || null;
-const animOf = (id, extra = []) => extra.find(y => y.id === id && isDrill(y)) || drillById(id);
-const resOf = (id, extra = []) => extra.find(y => y.id === id && isRes(y)) || resById(id);
+// an item still waiting for approval, from the proposals a training coach's phone has (for showing a proposed drill's parts)
+const proposedItem = (id, is) => (S.sync && S.sync.proposals || []).map(q => { try { return JSON.parse(q.json); } catch(e){ return null; } }).find(y => y && y.id === id && is(y)) || null;
+const animOf = (id, extra = []) => extra.find(y => y.id === id && isDrill(y)) || drillById(id) || proposedItem(id, isDrill);
+const resOf = (id, extra = []) => extra.find(y => y.id === id && isRes(y)) || resById(id) || proposedItem(id, isRes);
 const drlEditable = x => drls().includes(x) && !x.peek && (x.draft || libEditor());
 const drlWhere = x => x.club ? 'Club drill' : x.app ? 'Starter drill' : x.draft ? 'My draft drill' : 'Team drill';
 function seriesOf(x, pool = allDrls()){
@@ -2741,7 +2743,7 @@ function watchAnim(id, extra, back){
       () => { stopPlay(); ME.moveId = null; ME.editing = null; tripLabel(); showTab(fromTab); back(); }, 'Drill'); }
   if((clubLib().moves || []).some(m => m.id === id) || (appLib().moves || []).some(m => m.id === id)) return peekAppDrill(id, () => { renderMoves(); back(); }, 'Drill');
   // only in a proposal (its own, or one it came with): it plays read-only, like a proposal does on its own
-  const m = animOf(id, extra) || (S.sync && S.sync.proposals || []).map(q => { try { return JSON.parse(q.json); } catch(e){ return null; } }).find(y => y && y.id === id && isDrill(y));
+  const m = animOf(id, extra);
   if(!m) return toast('That animation is no longer there');
   if(!clubOfHat()){ const fromTab = TAB, pm = Object.assign(clone(m), {id: 'peek_' + id, draft: true, peek: true}), drop = () => { S.moves = S.moves.filter(x => !x.peek); };
     return goAndReturn(() => { closeSheet(); drop(); showTab('moves'); S.moves.unshift(pm); openMove(pm.id); tripLabel(); },
@@ -6120,7 +6122,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:25</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 14:28</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6952,7 +6954,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:25'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 14:28'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
