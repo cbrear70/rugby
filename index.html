@@ -1807,7 +1807,9 @@ const LIB_ID = /^(mv|rs|ss|dr)_/;
    page or session to it from the Drills tab (a session takes the team drills and pages it uses with it). */
 const appLib = () => S.app || (S.app = {version: 0, moves: [], pages: [], sessions: [], drills: []});
 const appOnly = (arr, mine) => (arr || []).filter(x => !mine.some(y => y.id === x.id));
-const appDrills = () => appOnly(appLib().moves, S.moves), appPages = () => appOnly(appLib().pages, pages()), appSessions = () => appOnly(appLib().sessions, sessions()), appDrls = () => appOnly(appLib().drills, drls());
+// The starter pack is copied into every team's own library (see STARTER PACK), so it's no longer a shelf of its own:
+// these lists are empty, while lookups by id (drillById, resById) still find starter items older plans point at.
+const appDrills = () => [], appPages = () => [], appSessions = () => [], appDrls = () => [];
 /* The club library: what the club has accepted from its teams' admins (clubs/<club>/library), seen by everyone who
    helps with training in any team of the club. Each phone keeps the open team's copy (S.sync.clubLib), fetched on sync.
    To read it, the phone shows it's in a team of the club with a club pass (clubs/<club>/trainers/<phone id> = {g}). */
@@ -1859,12 +1861,15 @@ async function refreshSiteAdmin(){
   try { const d = await fb('GET', '/admins/' + tokenUid(await fbToken())); S.siteAdmin = !!d; } catch(e){ if(e.status === 403) S.siteAdmin = false; }
   save();
 }
-async function publishStarter(x){
+// age: the age groups it suits (null: any), set on the item and on any part that has none of its own
+async function publishStarter(x, age){
+  if(age) x.age = age; else delete x.age;
   const items = isDrl(x) ? withParts(x) : [x];
   if(isSes(x)) for(const b of x.blocks) for(const it of b.items || []){ const m = it.drillId && S.moves.find(d => d.id === it.drillId), r = it.resId && pages().find(q => q.id === it.resId);
     if(m && !items.includes(m)) items.push(m); if(r && !items.includes(r)) items.push(r); }
   const now = String(Date.now()), who = (S.sync && S.sync.who) || '';
-  const writes = items.map(y => ({update:{name: DOCNAME('library/' + libDocId(y)), fields:{kind:{stringValue: libKind(y)}, json:{stringValue: drillJson(y)}, at:{integerValue: now}, by:{stringValue: who}}}}));
+  const json = y => { const j = JSON.parse(drillJson(y)); if(age && !ratedAge(j)) j.age = age; return JSON.stringify(j); };
+  const writes = items.map(y => ({update:{name: DOCNAME('library/' + libDocId(y)), fields:{kind:{stringValue: libKind(y)}, json:{stringValue: json(y)}, at:{integerValue: now}, by:{stringValue: who}}}}));
   writes.push({update:{name: DOCNAME('config/app'), fields:{libraryVersion:{integerValue: now}}}, updateMask:{fieldPaths: ['libraryVersion']}});
   await fb('POST', ':commit', {writes}); await refreshAppLib();
   return items.length;
@@ -1872,6 +1877,29 @@ async function publishStarter(x){
 async function unpublishStarter(x){
   await fb('POST', ':commit', {writes:[{delete: DOCNAME('library/' + libDocId(x))}, {update:{name: DOCNAME('config/app'), fields:{libraryVersion:{integerValue: String(Date.now())}}}, updateMask:{fieldPaths: ['libraryVersion']}}]});
   await refreshAppLib();
+}
+/* ---------- STARTER PACK ----------
+   Every team gets a copy of the starter library in its own team library: the items that suit its age group (all of
+   them while no age group is set). A team admin's phone does it as it syncs, so a new team has it from its first sync
+   and items published later still arrive. settings/training.starter lists the starter items the team has taken, so one
+   the team removes stays removed. Copies get new ids, and drills and sessions are pointed at the copies of their parts. */
+const suitsTeam = x => { const a = ratedAge(x), t = teamAge(); return !a || !t || (t === 'adult' ? !!a.adult : !a.adult && (a.youth || []).includes(t)); };
+async function takeStarterPack(){
+  const z = S.sync, a = appLib(); if(!syncing() || !isGroupAdmin() || !a.loaded) return 0;
+  // read the team's training settings afresh: the list is saved alongside the template, age group and classifications
+  const tr = await fb('GET', `/groups/${z.group}/settings/training`).catch(e => { if(e.status === 404) return null; throw e; });
+  z.training = tr && tr.fields && tr.fields.json ? JSON.parse(tr.fields.json.stringValue) : null;
+  const taken = new Set((z.training && z.training.starter) || []);
+  const fresh = [...(a.moves || []), ...(a.pages || []), ...(a.drills || []), ...(a.sessions || [])].filter(x => !taken.has(x.id) && suitsTeam(x));
+  if(!fresh.length) return 0;
+  const ids = {}, copies = fresh.map(x => { const c = clone(x); for(const k of ['app', 'club', 'draft', 'prop', 'peek']) delete c[k]; ids[x.id] = c.id = uid(); c.from = {where: 'app', id: x.id}; return c; });
+  for(const c of copies){
+    if(isDrl(c)) c.parts = (c.parts || []).map(q => q.a && ids[q.a] ? {a: ids[q.a]} : q.r && ids[q.r] ? {r: ids[q.r]} : q);
+    if(isSes(c)) for(const b of c.blocks || []) for(const it of b.items || []){ if(it.drillId && ids[it.drillId]) it.drillId = ids[it.drillId]; if(it.resId && ids[it.resId]) it.resId = ids[it.resId]; }
+  }
+  await setTrainingParts({starter: [...taken, ...fresh.map(x => x.id)]});
+  for(const c of copies) libArr(c).push(c);
+  save(); return copies.length;
 }
 // take a starter item into the team (an editor) or the coach's drafts, as a copy with its own id
 function copyFromApp(x){
@@ -1923,11 +1951,16 @@ function wireStarter(el){
       try { await sendToClub(x); toast(`${itemName(x)} sent to the club`); } catch(e){ toast(niceErr(e)); } }); }));
   $$('[data-acopy]', el).forEach(b => b.addEventListener('click', () => { const c = copyFromApp(find(b.dataset.acopy)); renderMoves(); toast(c.draft ? `${itemName(c)} copied to your drafts` : `${itemName(c)} added to the team’s ${libKind(c)}`); }));
   $$('[data-aunpub]', el).forEach(b => b.addEventListener('click', () => { const x = find(b.dataset.aunpub);
-    askConfirm(`Remove ${itemName(x)} from the starter library?`, 'Every team stops seeing it. Copies teams have made, and plans that use it, keep what they have.', 'Remove', async () => {
+    askConfirm(`Remove ${itemName(x)} from the starter library?`, 'New teams stop getting it. Teams that already have it keep their copy.', 'Remove', async () => {
       try { await unpublishStarter(x); renderMoves(); toast('Removed from the starter library'); } catch(e){ toast(niceErr(e)); } }); }));
   $$('[data-apub]', el).forEach(b => b.addEventListener('click', () => { const [arr] = findLib(b.dataset.apub), x = arr.find(q => q.id === b.dataset.apub);
-    askConfirm(`Publish ${itemName(x)} to the starter library?`, `Every team using the app will be able to see and copy it${isSes(x) ? ', with the team drills and pages it uses' : ''}. Only publish what you wrote or have permission to share.`, 'Publish', async () => {
-      try { const n = await publishStarter(x); renderMoves(); if(n === 1 && b.textContent === 'Update starter') return toast('Starter copy updated'); toast(n > 1 ? `Published, with ${n - 1} drill${n > 2 ? 's' : ''} and page${n > 2 ? 's' : ''} it uses` : 'Published to the starter library'); } catch(e){ toast(niceErr(e)); } }); }));
+    openSheet(`<div class="eyebrow">Starter pack</div><h2>${b.textContent === 'Update starter' ? 'Update' : 'Publish'} ${esc(itemName(x))}</h2>
+      <p class="muted">It goes into the library of every team whose age group it suits${isSes(x) || isDrl(x) ? ', with the team drills, animations and pages it uses' : ''}. Teams get it on their team admin’s next sync. Only publish what you wrote or have permission to share.</p>
+      <div class="field"><div class="field-label">Age groups it suits</div>${ageTicksHtml(ratedAge(x))}<p class="hint">Tick none for every age group. Adult is for adult teams only.</p></div>
+      <div class="row-btns"><button class="btn" id="apGo">${b.textContent === 'Update starter' ? 'Update' : 'Publish'}</button><button class="btn ghost" data-close>Cancel</button></div>`, el => { wireAgeTicks(el);
+      $('#apGo', el).addEventListener('click', async e => { e.target.disabled = true;
+        try { const n = await publishStarter(x, readAge(el)); closeSheet(); save(); renderMoves(); if(n === 1 && b.textContent === 'Update starter') return toast('Starter copy updated'); toast(n > 1 ? `Published, with ${n - 1} more it uses` : 'Published to the starter pack'); }
+        catch(err){ e.target.disabled = false; toast(niceErr(err)); } }); }); }));
   $$('[data-apeek]', el).forEach(b => b.addEventListener('click', () => peekAppDrill(b.dataset.apeek, () => renderMoves(), 'Drills')));
 }
 const roMove = (m = curMove()) => isViewer() || !!(m && (m.peek || (curated() && !m.draft)));
@@ -4173,7 +4206,8 @@ async function runSync(choices, quiet, auto){
   if(SYNCING || !syncing()) return; SYNCING = true; $('#syncBtn').classList.add('spin');
   try {
     await refreshRole(); await refreshClub().catch(() => {}); loadConfig();
-    if(!isViewer()){ await refreshAppLib().catch(e => console.warn('Starter library', e)); await refreshSiteAdmin().catch(() => {}); await refreshClubLib().catch(e => console.warn('Club library', e)); }
+    if(!isViewer()){ await refreshAppLib().catch(e => console.warn('Starter library', e)); await refreshSiteAdmin().catch(() => {}); await refreshClubLib().catch(e => console.warn('Club library', e));
+      const sp = await takeStarterPack().catch(e => { console.warn('Starter pack', e); return 0; }); if(sp) setTimeout(() => toast(`${sp} item${sp > 1 ? 's' : ''} from the starter pack added to the team’s library`), 2500); }
     if(isViewer()){
       const linked = await claimApprovals(S.sync).catch(() => 0); if(linked){ await refreshRole(); }
       const answer = S.sync.role === 'parent' ? (await approvalsToAnswer(S.sync).catch(() => [])).length : 0;
@@ -5871,7 +5905,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 11:19</p>`,
+    <p class="hint" style="text-align:center">Version 10 Nov 2026, 11:57</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -6703,7 +6737,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 11:19'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 11:57'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
