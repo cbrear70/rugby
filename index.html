@@ -918,10 +918,17 @@ function periodMap(t, k){
 const halfPick = (t, n) => periodMap(t, curPeriod(t))[n] || null;
 // how many pitch shirts in team k have nobody in them
 const periodShort = (t, k) => { const m = periodMap(t, k); return pitchNums(t).filter(n => !m[n]).length; };
-// player id -> share of the whole game they play, across every team (each team is 1/N of it)
+// player ids who came on or went off at the change into the team on show (none for team 1)
+function subbedNow(t){
+  const k = curPeriod(t), out = new Set(); if(k < 2) return out;
+  const on = m => new Set(pitchNums(t).map(n => m[n]).filter(Boolean)), a = on(periodMap(t, k - 1)), b = on(periodMap(t, k));
+  for(const id of a) if(!b.has(id)) out.add(id); for(const id of b) if(!a.has(id)) out.add(id);
+  return out;
+}
+// player id -> which teams they're on the pitch in: [true, false, true] = on for teams 1 and 3 of 3
 function playedShare(t){
   const N = periodCount(t), out = {};
-  for(let k = 1; k <= N; k++){ const m = periodMap(t, k); for(const n of pitchNums(t)) if(m[n]) out[m[n]] = (out[m[n]] || 0) + 1 / N; }
+  for(let k = 1; k <= N; k++){ const m = periodMap(t, k); for(const n of pitchNums(t)) if(m[n]) (out[m[n]] = out[m[n]] || Array(N).fill(false))[k - 1] = true; }
   return out;
 }
 const halfPlayer = (t, n) => { const pid = halfPick(t, n); return pid ? playerById(t, pid) : null; };
@@ -1104,12 +1111,12 @@ function pitchLines(){
   s += T(35,5.8,'ATTACKING ↑','middle');
   return `<g class="lines">${s}</g><g class="layer"></g>`;
 }
-function shirtSVG({x,y,n,color,label,hit,dim,ghost,sel,ring,missing}){
+function shirtSVG({x,y,n,color,label,hit,dim,ghost,sel,ring,missing,subbed}){
   const tc = textOn(color), stroke = tc==='#fff' ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.6)';
   const fs = String(n).length>1 ? 5.1 : 5.8;
   return `<g class="tok${dim?' dim':''}${ghost?' ghost':''}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${TOK})"${hit?` data-hit="${hit}" data-x="${x}" data-y="${y}"`:''}>`+
     `<circle r="8.5" fill="transparent"/>`+
-    (ring != null ? timeRing(ring, 8.6, 1.2) : '')+
+    (ring != null ? timeRing(ring, 8.6, 1.2, subbed) : '')+
     (missing ? `<circle r="8.6" fill="none" style="stroke:var(--danger)" stroke-width="1.2" stroke-dasharray="2 1.5"/>` : '')+
     (sel?`<circle r="8.6" fill="none" stroke="#F2C230" stroke-width="1.1"/>`:'')+
     `<path d="${SHIRT}" fill="${color}" stroke="${stroke}" stroke-width=".6" stroke-linejoin="round"/>`+
@@ -1367,8 +1374,8 @@ function subToast(t, a, b){
 }
 const half2Note = () => { const t = team(); toast(`${periodName(t, curPeriod(t))}: drag players between the bench and the pitch. Switch to ${periodName(t, 1)} to change the team sheet.`); };
 function renderTeamPitch(){
-  const t = team(), teams = !!benchSize(t), share = teams ? playedShare(t) : {}; let out = '';
-  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = halfPlayer(t,n); out += shirtSVG({x, y, n, color: halfColour(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n, ring: teams && p ? share[p.id] || 0 : null, missing: teams && !p}); }
+  const t = team(), teams = !!benchSize(t), share = teams ? playedShare(t) : {}, subbed = subbedNow(t); let out = '';
+  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = halfPlayer(t,n); out += shirtSVG({x, y, n, color: halfColour(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n, ring: teams && p ? share[p.id] || [] : null, missing: teams && !p, subbed: !!p && subbed.has(p.id)}); }
   teamCtl.layer.innerHTML = out;
   $('#namesChip').classList.toggle('on', S.ui.names!==false);
   const N = periodCount(t), k = curPeriod(t), short = periodShort(t, k);
@@ -1390,21 +1397,26 @@ $('#dropPeriodBtn').addEventListener('click', () => { const t = team(), N = peri
 $('#undoSubsChip').addEventListener('click', () => { const t = team(), k = curPeriod(t);
   askConfirm('Undo the subs?', `${periodName(t, k)} goes back to ${periodName(t, k - 1)}’s team${k < periodCount(t) ? ', and the teams after it follow' : ''}.`, 'Undo subs', () => {
   undoSubs(t); renderTeamPitch(); renderBench(); toast('Subs undone'); }); });
-// a ring showing share (0 to 1) of the game played, drawn from the top, clockwise; r in the drawing's own units
-function timeRing(share, r, w){
-  const c = 2 * Math.PI * r, f = clamp(share, 0, 1);
-  return `<circle r="${r}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="${w}"/>` +
-    (f > 0 ? `<circle r="${r}" fill="none" style="stroke:var(--accent)" stroke-width="${w}" stroke-dasharray="${(f * c).toFixed(3)} ${c.toFixed(3)}" transform="rotate(-90)"/>` : '');
+// a ring split into one slice per team, team 1 starting at the top and going clockwise; a slice is filled when the
+// player is on the pitch for that team (on: [true, false, ...]). r in the drawing's own units. Blue for a player who
+// came on or went off at the change into the team on show.
+function timeRing(on, r, w, subbed){
+  const c = 2 * Math.PI * r, N = on.length || 1, col = subbed ? 'var(--jog)' : 'var(--accent)';
+  let out = `<circle r="${r}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="${w}"/>`;
+  // each run of teams in a row is one arc, so neighbouring slices join up
+  for(let k = 0; k < N; k++){ if(!on[k] || (k && on[k - 1])) continue; let e = k; while(e + 1 < N && on[e + 1]) e++;
+    out += `<circle r="${r}" fill="none" style="stroke:${col}" stroke-width="${w}" stroke-dasharray="${((e - k + 1) / N * c).toFixed(3)} ${c.toFixed(3)}" transform="rotate(${(-90 + 360 * k / N).toFixed(2)})"/>`; }
+  return out;
 }
-const playedText = f => f >= 0.999 ? 'played all game' : f > 0 ? `played ${Math.round(f * 100)}% of the game` : '';
+const playedText = on => { const k = on.filter(Boolean).length; return !k ? '' : k === on.length ? 'plays all game' : `on for ${k} of ${on.length} teams`; };
 function dualTap(onTap, onDouble){ let last={id:null,t:0}, timer; return id => { const now=performance.now(); if(last.id===id && now-last.t<330){ clearTimeout(timer); last={id:null,t:0}; onDouble(id); } else { last={id,t:now}; clearTimeout(timer); timer=setTimeout(()=>{ last={id:null,t:0}; onTap(id); },300); } }; }
 const benchTap = dualTap(n => showSlot(n), n => onHalf2() ? half2Note() : editSlot(n));
 function renderBench(){
   const t = team(); let h = `<span class="bl">Bench</span>`;
   // the ring round each player shows how much of the whole game they play
-  const share = playedShare(t);
-  for(const n of benchNums(t)){ const p = halfPlayer(t,n), f = p ? share[p.id] || 0 : 0;
-    h += `<button data-n="${n}" aria-label="Shirt ${n}${p?', '+esc(p.name):''}${f ? ', ' + playedText(f) : ''}"><span class="ring">${p ? `<svg class="tring" viewBox="-21 -21 42 42" aria-hidden="true">${timeRing(f, 19.5, 2.5)}</svg>` : ''}${miniShirt(n, halfColour(t,n), 34)}</span><small>${p?esc(surname(p.name)):'—'}</small></button>`; }
+  const share = playedShare(t), subbed = subbedNow(t);
+  for(const n of benchNums(t)){ const p = halfPlayer(t,n), f = p ? share[p.id] || [] : [], off = !!p && subbed.has(p.id);
+    h += `<button data-n="${n}" aria-label="Shirt ${n}${p?', '+esc(p.name):''}${playedText(f) ? ', ' + playedText(f) : ''}${off ? ', just went off' : ''}"><span class="ring">${p ? `<svg class="tring" viewBox="-21 -21 42 42" aria-hidden="true">${timeRing(f, 19.5, 2.5, off)}</svg>` : ''}${miniShirt(n, halfColour(t,n), 34)}</span><small>${p?esc(surname(p.name)):'—'}</small></button>`; }
   const b = $('#bench'); b.innerHTML = h; b.hidden = !benchSize(t);
   $$('button', b).forEach(x => { benchDrag(x); x.addEventListener('click', () => { if(performance.now() - (+x.dataset.dragged || 0) < 500) return; benchTap(+x.dataset.n); }); });
 }
@@ -6223,7 +6235,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 12 Nov 2026, 22:42</p>`,
+    <p class="hint" style="text-align:center">Version 12 Nov 2026, 23:05</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -7055,7 +7067,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('12 Nov 2026, 22:42'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('12 Nov 2026, 23:05'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
