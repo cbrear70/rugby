@@ -188,9 +188,14 @@ main{flex:1;min-height:0;position:relative}
 .bench button{flex:0 0 auto;width:52px;background:none;border:0;display:flex;flex-direction:column;align-items:center;gap:2px;padding:2px 0;border-radius:8px}
 .bench button:active{background:var(--panel2)}
 .bench button[data-n]{touch-action:pan-x}
-.bench .ring{display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;border:2.5px solid transparent}
-.bench button.played .ring{border-color:var(--accent)}
-.halfbtn{display:block;width:calc(100% - 24px);margin:0 12px 8px;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:800 20px/1 var(--display);letter-spacing:.1em;text-transform:uppercase}
+.bench .ring{position:relative;display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;border:2.5px solid transparent}
+.halfrow{display:flex;gap:6px;margin:0 12px 8px}
+.halfrow[hidden],.periodbtn[hidden]{display:none}
+.periodbtn{flex:0 0 46px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:800 24px/1 var(--display)}
+.periodwarn{margin:-2px 12px 8px;padding:6px 10px;border-radius:8px;background:rgba(228,87,63,.15);color:var(--danger);font:700 12.5px/1.3 var(--body)}
+.halfbtn.short,.halfbtn.h2.short{background:var(--danger);border-color:var(--danger);color:#fff}
+.bench .tring{position:absolute;inset:-2.5px;width:calc(100% + 5px);height:calc(100% + 5px);pointer-events:none}
+.halfbtn{display:block;flex:1;min-width:0;padding:12px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);font:800 20px/1 var(--display);letter-spacing:.1em;text-transform:uppercase}
 .halfbtn.h2{background:var(--accent);border-color:var(--accent);color:#111}
 .benchghost{position:fixed;z-index:999;pointer-events:none;transform:translate(-50%,-60%) scale(1.25);filter:drop-shadow(0 4px 8px rgba(0,0,0,.5))}
 .bench small{font:600 10.5px/1.1 var(--body);color:var(--muted);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -519,7 +524,12 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
         <button class="chip" id="undoSubsChip" hidden>Undo subs</button>
         <button class="chip" id="resetPosChip">Reset positions</button>
       </div>
-      <button type="button" class="halfbtn" id="halfBtn">First half</button>
+      <div class="halfrow" id="halfRow">
+        <button type="button" class="halfbtn" id="halfBtn">First half</button>
+        <button type="button" class="periodbtn" id="dropPeriodBtn" aria-label="Remove the last team" hidden>−</button>
+        <button type="button" class="periodbtn" id="addPeriodBtn" aria-label="Add a team">+</button>
+      </div>
+      <div class="periodwarn" id="periodWarn" hidden></div>
       <div class="pitch-wrap">
         <svg class="pitch" id="teamPitch" preserveAspectRatio="xMidYMid meet" aria-label="Rugby pitch with team shirts"></svg>
         <div class="zoomhint">Pinch to zoom · drag grass to pan</div>
@@ -890,31 +900,51 @@ function removeBenchSlot(t, n){
   delete t.selection[nums[nums.length - 1]];
   t.bench = nums.length - 1; save(); return was;
 }
-// First half / Second half on the Pitch tab (S.ui.half, this phone's view). The second half is the first half's team
-// with the subs made since: t.half2 = [[a, b], ...], shirts whose players swapped, in order, so a later change to the
-// team sheet carries into it. Only the Pitch tab shows it; the team sheet, Selection tab and published sheet are the
-// first half's.
-const onHalf2 = () => S.ui.half === 2;
-function halfPick(t, n){
-  if(!onHalf2()) return (t.selection[n] || {}).playerId || null;
-  const m = {}; for(const k of allShirts(t)) m[k] = (t.selection[k] || {}).playerId || null;
-  for(const [a, b] of t.half2 || []) if(a in m && b in m) [m[a], m[b]] = [m[b], m[a]];
-  return m[n] || null;
+// Teams on the Pitch tab: 2 to 4 of them (t.periods, default 2: First half / Second half), S.ui.half is the one this
+// phone shows. Team 1 is the team sheet; each later team k is the team before it with the subs made since:
+// t['half'+k] = [[a, b], ...], shirts whose players swapped, in order, so a change to an earlier team carries into every
+// team after it. Only the Pitch tab shows them; the team sheet, Selection tab and published sheet are team 1's.
+const MAX_PERIODS = 4;
+const periodCount = t => clamp(Math.round(+(t && t.periods) || 2), 2, MAX_PERIODS);
+const curPeriod = (t = team()) => clamp(Math.round(+S.ui.half || 1), 1, periodCount(t));
+const onHalf2 = () => curPeriod() > 1;
+const periodName = (t, k) => periodCount(t) === 2 ? (k === 1 ? 'First half' : 'Second half') : `Team ${k} of ${periodCount(t)}`;
+// shirt -> player id in team k
+function periodMap(t, k){
+  const m = {}; for(const s of allShirts(t)) m[s] = (t.selection[s] || {}).playerId || null;
+  for(let j = 2; j <= k; j++) for(const [a, b] of t['half' + j] || []) if(a in m && b in m) [m[a], m[b]] = [m[b], m[a]];
+  return m;
+}
+const halfPick = (t, n) => periodMap(t, curPeriod(t))[n] || null;
+// how many pitch shirts in team k have nobody in them
+const periodShort = (t, k) => { const m = periodMap(t, k); return pitchNums(t).filter(n => !m[n]).length; };
+// player id -> share of the whole game they play, across every team (each team is 1/N of it)
+function playedShare(t){
+  const N = periodCount(t), out = {};
+  for(let k = 1; k <= N; k++){ const m = periodMap(t, k); for(const n of pitchNums(t)) if(m[n]) out[m[n]] = (out[m[n]] || 0) + 1 / N; }
+  return out;
 }
 const halfPlayer = (t, n) => { const pid = halfPick(t, n); return pid ? playerById(t, pid) : null; };
 const halfColour = (t, n) => (t.selection[n] && t.selection[n].color) || benchColour(t, n, halfPlayer(t, n)) || defaultColor(n, t);
-// swap the players in shirts a and b (dragged between the bench and the pitch): on the team sheet in the first half,
-// as a sub in the second. False if nothing changed.
+// swap the players in shirts a and b (dragged between the bench and the pitch): on the team sheet in team 1, as a sub
+// in a later team. False if nothing changed.
 function swapShirts(t, a, b){
   a = +a; b = +b;
   if(readOnlySheet(t) || a === b || (!halfPick(t, a) && !halfPick(t, b))) return false;
-  if(onHalf2()){ const hs = t.half2 || [], l = hs[hs.length - 1];
+  const k = curPeriod(t);
+  if(k > 1){ const key = 'half' + k, hs = t[key] || [], l = hs[hs.length - 1];
     // swapping straight back undoes the last sub
-    t.half2 = l && ((l[0] === a && l[1] === b) || (l[0] === b && l[1] === a)) ? hs.slice(0, -1) : hs.concat([[a, b]]); save(); return true; }
+    t[key] = l && ((l[0] === a && l[1] === b) || (l[0] === b && l[1] === a)) ? hs.slice(0, -1) : hs.concat([[a, b]]);
+    if(!t[key].length) delete t[key]; save(); return true; }
   const pa = (t.selection[a] || {}).playerId || null, pb = (t.selection[b] || {}).playerId || null;
   setSel(t, a, {playerId: pb}); setSel(t, b, {playerId: pa}); return true;
 }
-function undoSubs(t){ if(readOnlySheet(t)) return; delete t.half2; save(); }
+// undo the subs made for the team on show (the teams after it follow)
+function undoSubs(t){ if(readOnlySheet(t)) return; delete t['half' + curPeriod(t)]; save(); }
+// add a team after the last one (it starts as the last team), and show it
+function addPeriod(t){ const N = periodCount(t); if(N >= MAX_PERIODS) return false; t.periods = N + 1; S.ui.half = N + 1; save(); return true; }
+// drop the last team and its subs
+function removePeriod(t){ const N = periodCount(t); if(N <= 2) return false; delete t['half' + N]; t.periods = N - 1; if(+S.ui.half > N - 1) S.ui.half = N - 1; save(); return true; }
 // open another selection
 function openSelection(tid){ S.currentTeamId = tid; save(); }
 // a new empty selection, opened
@@ -1074,15 +1104,17 @@ function pitchLines(){
   s += T(35,5.8,'ATTACKING ↑','middle');
   return `<g class="lines">${s}</g><g class="layer"></g>`;
 }
-function shirtSVG({x,y,n,color,label,hit,dim,ghost,sel}){
+function shirtSVG({x,y,n,color,label,hit,dim,ghost,sel,ring,missing}){
   const tc = textOn(color), stroke = tc==='#fff' ? 'rgba(255,255,255,.9)' : 'rgba(0,0,0,.6)';
   const fs = String(n).length>1 ? 5.1 : 5.8;
   return `<g class="tok${dim?' dim':''}${ghost?' ghost':''}" transform="translate(${x.toFixed(2)} ${y.toFixed(2)}) scale(${TOK})"${hit?` data-hit="${hit}" data-x="${x}" data-y="${y}"`:''}>`+
     `<circle r="8.5" fill="transparent"/>`+
+    (ring != null ? timeRing(ring, 8.6, 1.2) : '')+
+    (missing ? `<circle r="8.6" fill="none" style="stroke:var(--danger)" stroke-width="1.2" stroke-dasharray="2 1.5"/>` : '')+
     (sel?`<circle r="8.6" fill="none" stroke="#F2C230" stroke-width="1.1"/>`:'')+
     `<path d="${SHIRT}" fill="${color}" stroke="${stroke}" stroke-width=".6" stroke-linejoin="round"/>`+
     `<text y="${fs>5.5?3:2.8}" text-anchor="middle" font-size="${fs}" fill="${tc}" class="num">${n}</text>`+
-    (label?`<text y="10.2" text-anchor="middle" font-size="4.3" class="lbl">${esc(label)}</text>`:'')+
+    (label?`<text y="${ring != null ? 12.6 : 10.2}" text-anchor="middle" font-size="4.3" class="lbl">${esc(label)}</text>`:'')+
   `</g>`;
 }
 function ballSVG({x,y,hit,dim,sel}){
@@ -1333,26 +1365,46 @@ function subToast(t, a, b){
   const on = first(a) ? pb : pa, off = first(a) ? pa : pb;
   toast(on && off ? `${on.name} on, ${off.name} off` : on ? `${on.name} on` : off ? `${off.name} to the bench` : 'Swapped');
 }
-const half2Note = () => toast('Second half: drag players between the bench and the pitch. Switch to First half to change the team sheet.');
+const half2Note = () => { const t = team(); toast(`${periodName(t, curPeriod(t))}: drag players between the bench and the pitch. Switch to ${periodName(t, 1)} to change the team sheet.`); };
 function renderTeamPitch(){
-  const t = team(); let out = '';
-  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = halfPlayer(t,n); out += shirtSVG({x, y, n, color: halfColour(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n}); }
+  const t = team(), teams = !!benchSize(t), share = teams ? playedShare(t) : {}; let out = '';
+  for(const n of pitchNums(t)){ const [x,y] = teamPos(t,n); const p = halfPlayer(t,n); out += shirtSVG({x, y, n, color: halfColour(t,n), label: S.ui.names!==false ? (p ? surname(p.name) : '') : '', hit:'n:'+n, ring: teams && p ? share[p.id] || 0 : null, missing: teams && !p}); }
   teamCtl.layer.innerHTML = out;
   $('#namesChip').classList.toggle('on', S.ui.names!==false);
-  const hb = $('#halfBtn'); hb.textContent = onHalf2() ? 'Second half' : 'First half'; hb.classList.toggle('h2', onHalf2()); hb.hidden = !benchSize(t);
-  $('#undoSubsChip').hidden = !(onHalf2() && (t.half2 || []).length);
+  const N = periodCount(t), k = curPeriod(t), short = periodShort(t, k);
+  const hb = $('#halfBtn'); hb.textContent = periodName(t, k) + (short ? ` · ${short} short` : ''); hb.classList.toggle('h2', k > 1); hb.classList.toggle('short', !!short);
+  $('#halfRow').hidden = !teams;
+  $('#addPeriodBtn').hidden = N >= MAX_PERIODS; $('#dropPeriodBtn').hidden = N <= 2;
+  // the other teams that are short of players
+  const others = []; for(let j = 1; j <= N; j++){ const sj = j === k ? 0 : periodShort(t, j); if(sj) others.push(`${periodName(t, j)}: ${sj} short`); }
+  const pw = $('#periodWarn'); pw.textContent = others.join(' · '); pw.hidden = !teams || !others.length;
+  $('#undoSubsChip').hidden = !(k > 1 && (t['half' + k] || []).length);
 }
-$('#halfBtn').addEventListener('click', () => { S.ui.half = onHalf2() ? 1 : 2; save(); renderTeamPitch(); renderBench();
-  if(onHalf2()) toast('Second half: drag subs from the bench onto the pitch. The team sheet stays as picked.'); });
-$('#undoSubsChip').addEventListener('click', () => askConfirm('Undo the subs?', 'The second half goes back to the first half’s team.', 'Undo subs', () => {
-  undoSubs(team()); renderTeamPitch(); renderBench(); toast('Subs undone'); }));
+$('#halfBtn').addEventListener('click', () => { const t = team(); S.ui.half = curPeriod(t) % periodCount(t) + 1; save(); renderTeamPitch(); renderBench();
+  if(onHalf2()) toast(`${periodName(t, curPeriod(t))}: drag subs from the bench onto the pitch. The team sheet stays as picked.`); });
+$('#addPeriodBtn').addEventListener('click', () => { const t = team(); if(readOnlySheet(t) || !addPeriod(t)) return; renderTeamPitch(); renderBench();
+  toast(`Team ${curPeriod(t)} added: it starts as team ${curPeriod(t) - 1}. Drag subs from the bench.`); });
+$('#dropPeriodBtn').addEventListener('click', () => { const t = team(), N = periodCount(t); if(readOnlySheet(t)) return;
+  const go = () => { removePeriod(t); renderTeamPitch(); renderBench(); toast(`Team ${N} removed`); };
+  if((t['half' + N] || []).length) askConfirm(`Remove team ${N}?`, `Its subs go too.`, 'Remove', go); else go(); });
+$('#undoSubsChip').addEventListener('click', () => { const t = team(), k = curPeriod(t);
+  askConfirm('Undo the subs?', `${periodName(t, k)} goes back to ${periodName(t, k - 1)}’s team${k < periodCount(t) ? ', and the teams after it follow' : ''}.`, 'Undo subs', () => {
+  undoSubs(t); renderTeamPitch(); renderBench(); toast('Subs undone'); }); });
+// a ring showing share (0 to 1) of the game played, drawn from the top, clockwise; r in the drawing's own units
+function timeRing(share, r, w){
+  const c = 2 * Math.PI * r, f = clamp(share, 0, 1);
+  return `<circle r="${r}" fill="none" stroke="rgba(0,0,0,.35)" stroke-width="${w}"/>` +
+    (f > 0 ? `<circle r="${r}" fill="none" style="stroke:var(--accent)" stroke-width="${w}" stroke-dasharray="${(f * c).toFixed(3)} ${c.toFixed(3)}" transform="rotate(-90)"/>` : '');
+}
+const playedText = f => f >= 0.999 ? 'played all game' : f > 0 ? `played ${Math.round(f * 100)}% of the game` : '';
 function dualTap(onTap, onDouble){ let last={id:null,t:0}, timer; return id => { const now=performance.now(); if(last.id===id && now-last.t<330){ clearTimeout(timer); last={id:null,t:0}; onDouble(id); } else { last={id,t:now}; clearTimeout(timer); timer=setTimeout(()=>{ last={id:null,t:0}; onTap(id); },300); } }; }
 const benchTap = dualTap(n => showSlot(n), n => onHalf2() ? half2Note() : editSlot(n));
 function renderBench(){
   const t = team(); let h = `<span class="bl">Bench</span>`;
-  // second half: a player on the bench who started the first half is circled (they've played)
-  const started = new Set(onHalf2() ? pitchNums(t).map(k => (t.selection[k] || {}).playerId).filter(Boolean) : []);
-  for(const n of benchNums(t)){ const p = halfPlayer(t,n), played = p && started.has(p.id); h += `<button data-n="${n}"${played ? ' class="played"' : ''} aria-label="Shirt ${n}${p?', '+esc(p.name):''}${played ? ', played first half' : ''}"><span class="ring">${miniShirt(n, halfColour(t,n), 34)}</span><small>${p?esc(surname(p.name)):'—'}</small></button>`; }
+  // the ring round each player shows how much of the whole game they play
+  const share = playedShare(t);
+  for(const n of benchNums(t)){ const p = halfPlayer(t,n), f = p ? share[p.id] || 0 : 0;
+    h += `<button data-n="${n}" aria-label="Shirt ${n}${p?', '+esc(p.name):''}${f ? ', ' + playedText(f) : ''}"><span class="ring">${p ? `<svg class="tring" viewBox="-21 -21 42 42" aria-hidden="true">${timeRing(f, 19.5, 2.5)}</svg>` : ''}${miniShirt(n, halfColour(t,n), 34)}</span><small>${p?esc(surname(p.name)):'—'}</small></button>`; }
   const b = $('#bench'); b.innerHTML = h; b.hidden = !benchSize(t);
   $$('button', b).forEach(x => { benchDrag(x); x.addEventListener('click', () => { if(performance.now() - (+x.dataset.dragged || 0) < 500) return; benchTap(+x.dataset.n); }); });
 }
@@ -1405,7 +1457,7 @@ function showSlot(n){
     ${p&&p.notes?`<p class="notes">${esc(p.notes)}</p>`:''}
     <div class="field"><div class="field-label">Shirt colour</div>${swatchRow((t.selection[n]||{}).color, defaultColor(n))}</div>
     <div class="row-btns">${onHalf2() ? '' : '<button class="btn" id="slEdit">Edit</button>'}<button class="btn ghost" data-close>Close</button></div>
-    <p class="hint">${onHalf2() ? 'Second half: drag players between the bench and the pitch to make subs.' : 'Double-tap a shirt to edit it straight away. Drag a shirt to move it, or onto the bench.'}</p>`,
+    <p class="hint">${onHalf2() ? esc(periodName(t, curPeriod(t))) + ': drag players between the bench and the pitch to make subs.' : 'Double-tap a shirt to edit it straight away. Drag a shirt to move it, or onto the bench.'}</p>`,
     el => {
       wireSwatches(el, c => { setSel(t,n,{color:c}); renderTeamPitch(); renderBench(); });
       const ed = $('#slEdit', el); if(ed) ed.addEventListener('click', () => editSlot(n));
@@ -6171,7 +6223,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 10 Nov 2026, 17:14</p>`,
+    <p class="hint" style="text-align:center">Version 12 Nov 2026, 22:42</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -7003,7 +7055,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('10 Nov 2026, 17:14'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('12 Nov 2026, 22:42'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
