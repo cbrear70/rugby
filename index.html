@@ -427,6 +427,33 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
 .transport .play{background:var(--accent);color:var(--accent-ink)}
 .transport input[type=range]{flex:1;min-width:0;accent-color:var(--accent)}
 .fcount{font:800 17px/1 var(--display);font-variant-numeric:tabular-nums;min-width:44px;text-align:center}
+/* Quick draw: place shirts, draw their runs, tap the passing order */
+.qdbar{background:var(--panel);border-bottom:1px solid var(--line);padding:8px 12px 6px}
+.qdsteps{display:flex;gap:6px;align-items:center}
+.qdsteps .qdstep{flex:1;min-width:0;border:1px solid var(--line);background:var(--panel2);color:var(--ink);border-radius:10px;padding:7px 4px;font:700 13px/1.1 var(--body);white-space:nowrap}
+.qdsteps .qdstep b{display:inline-block;width:18px;height:18px;line-height:18px;border-radius:50%;background:var(--line);margin-right:4px;font-size:11px}
+.qdsteps .qdstep.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.qdsteps .qdstep.on b{background:var(--accent-ink);color:var(--accent)}
+.qdsteps .chip:disabled{opacity:.4}
+.qdctx{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:7px;min-height:30px}
+.qdctx #qdHint{flex:1 1 180px;font-size:13.5px;font-weight:600;line-height:1.25}
+.qdctx #qdChips{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.qdctx .qdwait{display:inline-flex;align-items:center;gap:4px;font:600 13px/1.1 var(--body)}
+.qdctx .qdwait .chip{padding:5px 10px;min-width:30px}
+.qdtray{display:flex;gap:6px;align-items:stretch;padding:8px 12px;overflow-x:auto;scrollbar-width:none;border-top:1px solid var(--line);background:var(--panel)}
+.qdtray::-webkit-scrollbar{display:none}
+.qdtray>*{flex:none}
+.qdtray .qdgrp{border:1px dashed var(--muted);background:transparent;color:var(--ink);border-radius:12px;padding:6px 10px;font:700 12.5px/1.15 var(--body)}
+.qdtray .qdshirt{width:52px;border-radius:12px;border:1px solid var(--line);background:var(--panel2);color:var(--ink);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:5px 2px}
+.qdtray .qdshirt small{font-size:10px;color:var(--muted);max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qdtray .qdshirt.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 22%,var(--panel2));box-shadow:0 0 0 2px var(--accent) inset}
+.qdtray .qdnone{align-self:center;font-size:13px;color:var(--muted)}
+.pitch .qdtrail{fill:none;stroke:var(--accent);stroke-width:.7;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:1.6 1;pointer-events:none}
+.pitch .qdtrail.other{opacity:.55}
+.pitch .qdend{fill:var(--accent);stroke:#1A1405;stroke-width:.25;pointer-events:none}
+.pitch .qdord{pointer-events:none}
+body.qd #edPlayers, body.qd #showChip, body.qd #edPasses, body.qd #edHint, body.qd #edBanner, body.qd #tPrev, body.qd #tNext, body.qd #tCount{display:none!important}
+body.romove #edQuick, body.romove #qdBar, body.romove #qdTray{display:none!important}
 .fcount small{display:block;font:600 9.5px/1 var(--body);color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
 
 /* sheet */
@@ -561,7 +588,17 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
           <button class="chip" id="edStraight">Straighten</button>
           <button class="chip" id="edDone">Done</button>
         </div>
+        <div class="qdbar" id="qdBar" hidden>
+          <div class="qdsteps">
+            <button class="qdstep" data-qs="place"><b>1</b>Place</button>
+            <button class="qdstep" data-qs="trace"><b>2</b>Runs</button>
+            <button class="qdstep" data-qs="ball"><b>3</b>Ball</button>
+            <button class="chip" id="qdUndo" data-qa="undo">Undo</button>
+          </div>
+          <div class="qdctx"><span id="qdHint"></span><span id="qdChips"></span></div>
+        </div>
         <div class="toolrow">
+          <button class="chip" id="edQuick">Quick draw</button>
           <button class="chip" id="showChip">Show</button>
           <button class="chip" id="edPasses" hidden>Passes</button>
           <button class="chip" id="edCones">Cones</button>
@@ -574,6 +611,7 @@ body.romove #edPlayers, body.romove #edBanner, body.romove #edPasses, body.romov
         <div class="pitch-wrap">
           <svg class="pitch" id="movePitch" preserveAspectRatio="xMidYMid meet" aria-label="Move editor pitch"></svg>
         </div>
+        <div class="qdtray" id="qdTray" hidden></div>
         <div class="transport">
           <button class="icon-btn" id="tPrev" aria-label="Previous frame"><svg width="20" height="20" viewBox="0 0 24 24"><path d="M6 5v14M18 5l-9 7 9 7z" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg></button>
           <button class="icon-btn play" id="tPlay" aria-label="Play"><svg width="20" height="20" viewBox="0 0 24 24" id="tPlayIcon"><path d="M7 4l13 8-13 8z" fill="currentColor"/></svg></button>
@@ -1158,6 +1196,8 @@ function PitchCtl(svg, h){
   if('ResizeObserver' in window) new ResizeObserver(apply).observe(svg); else window.addEventListener('resize', apply);
 
   function tap(id){
+    // h.instant: no waiting to see if it's a double-tap, so quick taps on one shirt after another all count
+    if(h.instant && h.instant()){ clearTimeout(tapTimer); last = {id:null, t:0}; h.tap && h.tap(id); return; }
     const now = performance.now();
     if(last.id === id && now - last.t < 330){ clearTimeout(tapTimer); last = {id:null,t:0}; h.doubleTap && h.doubleTap(id); }
     else { last = {id, t:now}; clearTimeout(tapTimer); tapTimer = setTimeout(()=>{ last={id:null,t:0}; h.tap && h.tap(id); }, 300); }
@@ -1220,6 +1260,7 @@ function PitchCtl(svg, h){
       if(cur.dragging) h.dragEnd && h.dragEnd(cur.id, cancelled ? null : e);
       else if(!cancelled) tap(cur.id);
     } else if(!cur.dragging && !cancelled){
+      if(h.tapEmpty && h.tapEmpty(cur.at[0], cur.at[1])){ last = {id:null, t:0}; return; } // a tap on the grass that the screen used
       const now = performance.now();
       if(last.id === '__empty' && now - last.t < 330){ last = {id:null,t:0}; toggleZoom(cur.at); }
       else last = {id:'__empty', t:now};
@@ -2337,6 +2378,99 @@ function removeLastRun(m, id){
   ic.keys[L] = [r1(P[0]), r1(P[1])];
   if(ic.breaks){ ic.breaks = ic.breaks.filter(b => b < r.s); if(!ic.breaks.length) delete ic.breaks; }
 }
+/* ---------- Quick draw: the data side ---------- */
+// put a shirt in the drill standing still at x, y (no default run)
+function placeShirt(m, id, x, y){ const p = [r1(clamp(x, -3, 73)), r1(clamp(y, -3, 123))]; m.icons[id] = {keys: {0: p, [lastOf(m)]: [...p]}, color: null}; return m.icons[id]; }
+// slide a player's whole path by dx, dy
+function shiftIcon(m, id, dx, dy){ const ic = m.icons[id]; for(const k in ic.keys){ const q = ic.keys[k]; ic.keys[k] = [r1(clamp(q[0] + dx, -3, 73)), r1(clamp(q[1] + dy, -3, 123))]; } }
+// make a player stand still at their start for the whole drill
+function clearRun(m, id){ const ic = m.icons[id], a = posAt(ic, 0); ic.keys = {0: [...a], [lastOf(m)]: [...a]}; delete ic.breaks; }
+// A finger-drawn line reduced to its turning points (Ramer-Douglas-Peucker), so it saves as a handful of keyframes
+// that the frame editor can still reshape. eps is how far (metres) the line may stray from what was drawn.
+function simplifyTrail(pts, eps = 0.6, max = 10){
+  const rdp = (P, e) => {
+    if(P.length < 3) return P.slice();
+    const a = P[0], b = P[P.length-1], dx = b[0]-a[0], dy = b[1]-a[1], len = Math.hypot(dx, dy) || 1e-9;
+    let far = 0, at = 0;
+    for(let i=1;i<P.length-1;i++){ const d = Math.abs(dy*(P[i][0]-a[0]) - dx*(P[i][1]-a[1])) / len; if(d > far){ far = d; at = i; } }
+    if(far <= e) return [a, b];
+    return rdp(P.slice(0, at+1), e).slice(0, -1).concat(rdp(P.slice(at), e));
+  };
+  let out = rdp(pts, eps);
+  while(out.length > max){ eps *= 1.5; out = rdp(pts, eps); }
+  return out.map(p => [r1(p[0]), r1(p[1])]);
+}
+const trailLength = pts => { let d = 0; for(let i=1;i<pts.length;i++) d += Math.hypot(pts[i][0]-pts[i-1][0], pts[i][1]-pts[i-1][1]); return d; };
+// the line a player runs along: their keyframe positions with the standing-still repeats taken out
+function pathPoints(ic){ const G = []; for(const k of keyList(ic)){ const q = ic.keys[k]; if(!G.length || !samePt(G[G.length-1], q)) G.push([q[0], q[1]]); } return G; }
+// the pace (1 jog, 2 run, 3 sprint) nearest to how fast a player moves while running; `dflt` if they stand still
+function paceOf(m, ic, dflt = 2){
+  const runs = runsOf(ic, lastOf(m)); let d = 0, n = 0; for(const r of runs){ d += runLength(ic, r); n += r.e - r.s; }
+  if(!n) return dflt; const v = d / n; let best = 1; for(const i of [1, 2, 3]) if(Math.abs(SPEEDS[i][1] - v) < Math.abs(SPEEDS[best][1] - v)) best = i; return best;
+}
+// Give a player one run along pts (first point = where they start): still for `wait` frames, then moving at v metres
+// a frame, then still. The time comes from the distance, and the drill lengthens to fit (up to 100 frames; a run too
+// long for that is squeezed in, so it goes faster). Returns {frames, metres}, or null if pts isn't a line.
+function drawRun(m, id, pts, wait, v){
+  const ic = m.icons[id], G = [];
+  for(const p of pts){ const q = [r1(clamp(p[0], -3, 73)), r1(clamp(p[1], -3, 123))]; if(!G.length || !samePt(G[G.length-1], q)) G.push(q); }
+  if(!ic || G.length < 2) return null;
+  const cum = [0]; for(let i=1;i<G.length;i++) cum.push(cum[i-1] + Math.hypot(G[i][0]-G[i-1][0], G[i][1]-G[i-1][1]));
+  const total = cum[cum.length-1];
+  wait = clamp(Math.round(wait) || 0, 0, FRAMES_MAX - 2);
+  const n = clamp(Math.round(total / v), 1, FRAMES_MAX - 1 - wait), e = wait + n;
+  if(e > lastOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil((e + 1) / 5) * 5));
+  const L = lastOf(m), keys = {0: [...G[0]]}; if(wait) keys[wait] = [...G[0]];
+  let prev = wait;
+  for(let i=1;i<G.length-1;i++){ const f = wait + Math.round(cum[i] / total * n); if(f > prev && f < e){ keys[f] = G[i]; prev = f; } } // a corner with no frame of its own is cut
+  keys[e] = G[G.length-1]; if(e < L) keys[L] = [...G[G.length-1]];
+  ic.keys = keys; delete ic.breaks;
+  return {frames: n, metres: total};
+}
+// Set the drill's length to what's in it: the last run or catch, a short beat after it, to the next 5 frames.
+function fitFrames(m){
+  let end = 0; const cs = carries(m), loose = cs.some(c => c.p === '');
+  for(const id of Object.keys(m.icons)){ if(id === 'ball' && cs.length && !loose) continue; // a carried ball goes where its carriers go
+    const rs = runsOf(m.icons[id], lastOf(m)); if(rs.length) end = Math.max(end, rs[rs.length-1].e); }
+  for(const c of cs) end = Math.max(end, c.f);
+  setFrames(m, Math.min(FRAMES_MAX, Math.max(FRAMES_DEFAULT, Math.ceil((end + 3) / 5) * 5)));
+}
+// how many frames a pass from shirt a to shirt b takes if it leaves at frame f: the ball travels about 12 m a second
+function passFrames(m, a, b, f){
+  if(!m.icons[a] || !m.icons[b]) return passLen();
+  const A = posAt(m.icons[a], f), B = posAt(m.icons[b], f + 2); return clamp(Math.round(Math.hypot(B[0]-A[0], B[1]-A[1]) / 3), 1, 8);
+}
+// The next player in the passing order: the first one starts with the ball at frame 1; each later one gets a pass
+// from the player before, who holds it for a moment first. Adds the ball if the drill has none. False if id has it already.
+function passTo(m, id){
+  if(!m.icons[id]) return false;
+  if(!m.icons.ball){ const p = posAt(m.icons[id], 0), q = [r1(p[0] + BALL_OFF[0]), r1(p[1] + BALL_OFF[1])]; m.icons.ball = {keys: {0: q, [lastOf(m)]: [...q]}}; }
+  let ch = getChain(m);
+  if(!ch) ch = {start: 0, firstPass: 0, steps: [{p: id, hold: 2, pass: passLen()}]};
+  else {
+    const lastStep = ch.steps[ch.steps.length-1]; if(lastStep.p === id) return false;
+    if(lastStep.hold < 1) lastStep.hold = 1;
+    const rel = chainFrames(ch).pop() + lastStep.hold;
+    if(lastStep.p) lastStep.pass = passFrames(m, lastStep.p, id, rel);
+    if(rel + lastStep.pass > FRAMES_MAX - 1) return false;
+    ch.steps.push({p: id, hold: 2, pass: passLen()});
+  }
+  const need = chainFrames(ch).pop() + 1; if(need > framesOf(m)) setFrames(m, Math.min(FRAMES_MAX, Math.ceil(need / 5) * 5));
+  setChain(m, ch); return true;
+}
+// where a group of shirts lines up: 'all', 'fwd' and 'backs' as on the Pitch tab; 'lineout' on the left touchline
+function groupSpots(t, kind){
+  const nums = pitchNums(t), out = {};
+  if(kind === 'lineout'){
+    const y = 78, line = [1, 4, 3, 5, 6, 8, 7].map(s => shirtFor(s, t)).filter(n => n != null);
+    line.forEach((n, i) => { out[n] = [r1(6 + i * 1.5), y]; });
+    const h = shirtFor(2, t), sh = shirtFor(9, t); if(h != null) out[h] = [0.5, y]; if(sh != null) out[sh] = [10, y + 4];
+    return out;
+  }
+  for(const n of nums){ const s = slotOf(n, t), fwd = s != null && s <= 8; if(kind === 'all' || (kind === 'fwd') === fwd) out[n] = teamPos(t, n); }
+  return out;
+}
+
 // Passing sequence: the carry list edited as a chain of steps. Each step is a carrier (or '' = let go)
 // with how long they hold it and how long the pass to the next step takes; changing one step shifts the rest.
 function getChain(m){
@@ -2414,7 +2548,7 @@ function renderMoves(){
   wireStarter(el);
   $('#newMove').addEventListener('click', () => {
     const m = newDrill(cur || 'backs'); ME.editId = m.id; save();
-    openMove(m.id); pickPlayers();
+    openMove(m.id, true);
   });
   $$('[data-undraft]', el).forEach(b => b.addEventListener('click', () => unshareMove(all.find(x => x.id===b.dataset.undraft))));
   $$('[data-fp]', el).forEach(b => b.addEventListener('click', () => { const m = all.find(x => x.id===b.dataset.fp); setForPlayers(m, !m.forPlayers); save(); forPlayersToast(m); renderMoves(); }));
@@ -2953,7 +3087,7 @@ function editDrl(x, w){
     $('#dlSave', el).addEventListener('click', () => { const out = keep(); if(!out) return; closeSheet(); renderMoves(); toast(isNew ? (out.draft ? `${out.name} saved in your drafts` : `${out.name} added to the team’s drills`) : 'Drill sheet saved'); });
     $('#dlNewA', el).addEventListener('click', () => { const out = keep(); if(!out) return;
       const m = newDrill(out.cat); m.name = out.name; ME.editId = m.id; if(!out.draft) shareDrill(m); out.parts.push({a: m.id}); save();
-      goAndReturn(() => { closeSheet(); openMove(m.id); pickPlayers(); tripLabel(); },
+      goAndReturn(() => { closeSheet(); openMove(m.id, true); tripLabel(); },
         () => { stopPlay(); ME.moveId = null; ME.editing = null; tripLabel(); renderMoves(); editDrl(out); }, 'Drill'); });
     const newRes = link => { read(); let back = false; const again = () => { if(back) return; back = true; setTimeout(() => editDrl(x, w), 0); };
       editRes(Object.assign({id: uid(), type: 'res', title: '', cat: w.cat || undefined, draft: cur8 || undefined}, link ? {url: 'https://'} : {newPage: true}),
@@ -3118,7 +3252,7 @@ function unshareMove(m){
   askConfirm(`Move ${m.name} back to drafts?`, `It will be removed from the other coaches’ phones in ${S.sync.groupName}. You keep it here as a draft.`, 'Move to drafts',
     () => { unshareDrill(m); save(); renderMoves(); toast(`${m.name} is a draft again. Sync to take it off the other coaches’ phones.`); });
 }
-function openMove(id){ if(ME.editId !== id) ME.editId = null; ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
+function openMove(id, quick){ if(ME.editId !== id) ME.editId = null; ME.moveId = id; ME.frame = 0; ME.editing = null; stopPlay(); if(quick) qdStart('place'); else ME.qd = null; renderMoves(); requestAnimationFrame(()=>{ moveCtl.refresh(); zoomMove(); }); }
 function zoomMove(){ const m = curMove(); if(!m) return; let xs=[], ys=[]; for(const id of iconIds(m)) for(let k=0;k<framesOf(m);k++){ const p = iconPos(m,id,k); xs.push(p[0]); ys.push(p[1]); }
   for(const c of m.cones || []){ xs.push(c.x); ys.push(c.y); }
   if(!xs.length){ moveCtl.focusBox(0,50,70,110); } else moveCtl.focusBox(Math.min(...xs)-10, Math.min(...ys)-10, Math.max(...xs)+10, Math.max(...ys)+10); syncEdFit(); }
@@ -3126,7 +3260,7 @@ function syncEdFit(){ $('#edFit').textContent = moveCtl.isFit() ? 'Zoom to move'
 $('#movePitch').addEventListener('pointerup', () => setTimeout(syncEdFit, 0));
 $('#edTripBar').addEventListener('click', () => tripBack());
 $('#edEdit').addEventListener('click', () => { const m = curMove(); if(!m) return; stopPlay(); ME.editing = null; ME.runSel = null;
-  ME.editId = roMove(m) ? m.id : null; save(); renderEditor(); toast(ME.editId ? 'Editing: tap Done when you’ve finished' : 'Saved. Read-only again'); });
+  ME.editId = roMove(m) ? m.id : null; if(ME.editId && !iconIds(m).length) qdStart('place'); else ME.qd = null; save(); renderEditor(); toast(ME.editId ? 'Editing: tap Done when you’ve finished' : 'Saved. Read-only again'); });
 $('#edBack').addEventListener('click', () => { if(tripBack()) return; stopPlay(); ME.moveId = null; ME.editing = null; renderMoves(); });
 // the drill's Back button says where it goes when the drill was opened from a training plan
 // opened from a drill, a plan or a list to come back to: a full-width Back bar across the top, as well as the arrow
@@ -3149,8 +3283,11 @@ const moveCtl = PitchCtl($('#movePitch'), {
     const lim = Math.max(2.2, 16/moveCtl.scale);
     return bd <= lim ? best : null;
   },
+  instant: () => qdOn(),
+  tapEmpty: (x, y) => qdOn() && qdTapEmpty(x, y),
   tap: id => {
     if(roMove()) return;
+    if(qdOn()) return qdTap(id);
     if(id.startsWith('c:')) return showCone(id.slice(2));
     if(id.startsWith('start:') || id.startsWith('end:')) return startPathEdit(id.split(':')[1]);
     if(id.startsWith('dot:')){ ME.frame = +id.slice(4); renderMoveLayer(); updateTransport(); return; }
@@ -3166,11 +3303,13 @@ const moveCtl = PitchCtl($('#movePitch'), {
   dragStart: id => {
     if(roMove()) return;
     if(ME.playing) stopPlay();
+    if(qdOn() && qdDragStart(id)) return;
     const m = curMove(), f = Math.round(ME.frame);
     if(id==='i:ball' && m && !ballFree(m,f)){ const c = carrierAt(m,f); toast(c ? `#${c} has the ball at frame ${f+1}. Drag #${c} instead.` : `The ball is being passed at frame ${f+1}`); }
   },
   drag: (id, x, y) => {
     const m = curMove(); if(!m || roMove()) return;
+    if(qdOn() && qdDrag(id, x, y)) return;
     if(id.startsWith('start:') || id.startsWith('end:')){ moveEnd(m, id, x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('c:')){ dragCone(m, id.slice(2), x, y); save(); renderMoveLayer(); return; }
     if(id.startsWith('dot:')){ const k = +id.slice(4); setKey(m, ME.editing, k, x, y); ME.frame = k; }
@@ -3178,7 +3317,9 @@ const moveCtl = PitchCtl($('#movePitch'), {
     save(); renderMoveLayer(); updateTransport();
   },
   dragEnd: id => {
-    const m = curMove(); if(!m || roMove() || !(m.cones || []).length) return;
+    const m = curMove(); if(!m || roMove()) return;
+    if(qdOn() && qdDragEnd(id)) return;
+    if(!(m.cones || []).length) return;
     const c = id.startsWith('start:') || id.startsWith('end:') ? snapEnd(m, id)
       : id.startsWith('dot:') ? snapKey(m, ME.editing, +id.slice(4)) : id.startsWith('i:') ? snapKey(m, id.slice(2), Math.round(ME.frame)) : null;
     if(c){ save(); renderMoveLayer(); toast('Snapped to the ' + (CONES.find(x => x[0] === c.c) || CONES[0])[2].toLowerCase() + ' cone'); }
@@ -3212,6 +3353,217 @@ function showCone(cid){
       $('#cnDel', el).addEventListener('click', () => { removeCone(m, cid); save(); closeSheet(); renderMoveLayer(); toast('Cone removed'); });
     });
 }
+/* ---------- Quick draw ----------
+   The quick way to make an animation, with no frames to think about. Three steps, all on the pitch:
+   1 Place: tap a shirt in the tray, then tap the pitch; or add a group and drag it as a block.
+   2 Runs:  draw from a shirt with a finger; the time comes from the distance at Jog, Run or Sprint.
+            Tap shirts first to select several, then draw from one (or tap a spot) to move them together.
+   3 Ball:  tap the players in passing order.
+   It writes the same keyframes and passing list as the frame editor (Fine-tune), so both work on any animation.
+   ME.qd = {step, pick (tray shirt waiting to be put down), sel (shirts selected on the pitch), trail (line being
+   drawn), pace and wait (for new runs), undo (snapshots of the drill)}; null when the frame editor is showing. */
+const qdOn = () => !!ME.qd && !!curMove() && !roMove();
+function qdStart(step){ ME.qd = {step, pick: null, sel: new Set(), trail: null, undo: [], pace: 2, wait: 0}; ME.editing = null; ME.runSel = null; ME.frame = 0; }
+function qdSnap(){ const q = ME.qd, j = JSON.stringify(curMove()); if(q.undo[q.undo.length-1] !== j){ q.undo.push(j); if(q.undo.length > 40) q.undo.shift(); } }
+function qdUndo(){
+  const q = ME.qd, m = curMove(), now = JSON.stringify(m); let j = q.undo.pop();
+  while(j === now && q.undo.length) j = q.undo.pop();             // snapshots taken for a touch that changed nothing
+  if(!j || j === now) return toast('Nothing to undo');
+  const o = JSON.parse(j); for(const k of Object.keys(m)) delete m[k]; Object.assign(m, o);
+  q.sel.clear(); q.pick = null; qdChanged();
+}
+// after any change: save and redraw the pitch, the bar and the play controls
+function qdChanged(){ save(); if(ME.frame > lastOf(curMove())) ME.frame = 0; renderQd(); renderMoveLayer(); updateTransport(); }
+function qdRewind(){ if(Math.round(ME.frame) === 0 && ME.frame === 0) return false; stopPlay(); ME.frame = 0; renderMoveLayer(); updateTransport(); return true; }
+// when play reaches the end, show the finish for a moment and then go back to the start, ready for the next touch
+function qdRewindSoon(){ clearTimeout(qdRewindSoon.t); qdRewindSoon.t = setTimeout(() => { if(qdOn() && !ME.playing && ME.frame >= lastOf(curMove())) qdRewind(); }, 1200); }
+const qdSecs = f => (f * FRAME_MS / 1000).toFixed(f % 4 ? (f % 2 ? 2 : 1) : 0) + ' s';
+const qdNames = ids => ids.map(i => '#' + i).join(', ');
+const qdTrayIds = m => pitchNums(team()).map(String).filter(n => !m.icons[n]);
+function qdStep(step){ const q = ME.qd; q.step = step; q.sel.clear(); q.pick = null; q.trail = null; qdRewind(); renderQd(); renderMoveLayer(); }
+
+function qdTap(id){
+  const m = curMove(), q = ME.qd;
+  if(id.startsWith('c:')){ const c = coneById(m, id.slice(2));       // a cone is a spot to put a shirt on, or to run to
+    if(c && ((q.step === 'place' && q.pick) || (q.step === 'trace' && q.sel.size))) return void qdTapEmpty(c.x, c.y);
+    return showCone(id.slice(2)); }
+  const pid = id.startsWith('i:') ? id.slice(2) : id.split(':')[1];   // the rings at each end of a path count as the shirt
+  qdRewind();
+  if(q.step === 'ball'){ if(pid !== 'ball') qdPass(pid); return; }
+  if(pid === 'ball') return toast('Set the ball in step 3');
+  q.pick = null; if(q.sel.has(pid)) q.sel.delete(pid); else q.sel.add(pid);
+  renderQd(); renderMoveLayer();
+}
+function qdTapEmpty(x, y){
+  const m = curMove(), q = ME.qd;
+  if(q.step === 'place' && q.pick){
+    if(qdRewind()) return true;
+    qdSnap(); const c = nearestCone(m, [x, y]); if(c){ x = c.x; y = c.y; }
+    placeShirt(m, q.pick, x, y);
+    const left = qdTrayIds(m); q.pick = left.find(n => +n > +q.pick) || left[0] || null;   // on to the next shirt
+    qdChanged(); return true;
+  }
+  if(q.step === 'trace' && q.sel.size){
+    if(qdRewind()) return true;
+    const ids = [...q.sel], lead = ids[ids.length-1], a = posAt(m.icons[lead], 0);
+    if(Math.hypot(x - a[0], y - a[1]) < 1.5) return true;
+    qdSnap(); const c = nearestCone(m, [x, y]); if(c){ x = c.x; y = c.y; }
+    qdRunFor(ids, lead, [a, [x, y]]); return true;
+  }
+  if(q.sel.size || q.pick){ q.sel.clear(); q.pick = null; renderQd(); renderMoveLayer(); }
+  return false;                                                       // the grass keeps its double-tap zoom
+}
+// give each of ids the run `pts` (drawn for `lead`), slid across to start from their own spot
+function qdRunFor(ids, lead, pts){
+  const m = curMove(), q = ME.qd, a = pts[0]; let made = null, first = null;
+  for(const id of ids){
+    const ic = m.icons[id], s = posAt(ic, 0), had = runsOf(ic, lastOf(m)).length > 0;
+    const res = drawRun(m, id, pts.map(p => [p[0] - a[0] + s[0], p[1] - a[1] + s[1]]),
+      had ? moveWindow(ic, lastOf(m)).s : q.wait, SPEEDS[had ? paceOf(m, ic, q.pace) : q.pace][1]);   // a redrawn run keeps its own wait and pace
+    if(res){ made = res; first = first || id; }
+  }
+  fitFrames(m); q.sel.clear(); qdChanged();
+  if(made) toast(`${ids.length > 1 ? ids.length + ' players' : '#' + first}: ${Math.round(made.metres)} m in ${qdSecs(made.frames)}`);
+}
+function qdDragStart(id){
+  const m = curMove(), q = ME.qd; q.skip = false; q.as = null;
+  // when drawing runs, a touch on a cone with a shirt standing on it is a touch on that shirt (the cone sits on top)
+  if(q.step === 'trace' && id.startsWith('c:') && Math.round(ME.frame) === 0){ const c = coneById(m, id.slice(2)), on = c && iconIds(m).find(s => s !== 'ball' && samePt(posAt(m.icons[s], 0), [c.x, c.y])); if(on) id = q.as = 'i:' + on; }
+  if(!id.startsWith('i:') || id === 'i:ball'){ qdSnap(); return false; }   // cones, path ends and a loose ball drag as in the frame editor
+  const pid = id.slice(2);
+  if(qdRewind()){ q.skip = true; toast('Back at the start. Go again'); return true; }
+  if(q.step === 'ball'){ q.skip = true; return true; }
+  qdSnap(); q.pick = null;
+  q.auto = !q.sel.has(pid); if(q.auto) q.sel = new Set([pid]);
+  q.last = [...posAt(m.icons[pid], 0)]; q.lead = pid;
+  if(q.step === 'trace') q.trail = [[...q.last]];
+  renderMoveLayer(); return true;   // the bar is redrawn when the finger lifts: changing its height now would shift the pitch under the finger
+}
+function qdDrag(id, x, y){
+  const m = curMove(), q = ME.qd; id = q.as || id;
+  if(!id.startsWith('i:') || id === 'i:ball') return false;
+  if(q.skip || !q.last) return true;
+  if(q.step === 'place'){
+    const dx = r1(x - q.last[0]), dy = r1(y - q.last[1]); if(!dx && !dy) return true;
+    for(const s of q.sel) if(m.icons[s]) shiftIcon(m, s, dx, dy);
+    q.last = [r1(q.last[0] + dx), r1(q.last[1] + dy)]; save(); renderMoveLayer(); return true;
+  }
+  const p = q.trail[q.trail.length-1]; if(Math.hypot(x - p[0], y - p[1]) >= 0.5){ q.trail.push([x, y]); renderMoveLayer(); }
+  return true;
+}
+function qdDragEnd(id){
+  const m = curMove(), q = ME.qd; id = q.as || id; q.as = null;
+  if(!id.startsWith('i:') || id === 'i:ball') return false;
+  if(q.skip){ q.skip = false; return true; }
+  if(q.step === 'place'){
+    if(q.sel.size === 1){ const s = [...q.sel][0], p = posAt(m.icons[s], 0), c = nearestCone(m, p); if(c) shiftIcon(m, s, c.x - p[0], c.y - p[1]); }
+    if(q.auto) q.sel.clear();
+    q.last = null; qdChanged(); return true;
+  }
+  const pts = q.trail || []; q.trail = null; q.last = null;
+  if(trailLength(pts) < 1.5){ if(q.auto) q.sel.clear(); renderQd(); renderMoveLayer(); toast('Draw a longer line, starting on the shirt'); return true; }
+  const end = pts[pts.length-1], c = nearestCone(m, end); if(c) pts[pts.length-1] = [c.x, c.y];
+  qdRunFor([...q.sel].filter(s => m.icons[s]), q.lead, simplifyTrail(pts)); return true;
+}
+function qdPass(pid){
+  const m = curMove(); qdSnap();
+  if(!passTo(m, pid)) return toast(carrierAt(m, lastOf(m)) === pid ? `#${pid} already has the ball: tap who they pass to` : 'No room for another pass');
+  fitFrames(m); qdChanged();
+}
+// the tray's group buttons: put the group's missing shirts on, and select the whole group to drag as a block
+function qdAddGroup(kind){
+  const m = curMove(), q = ME.qd, spots = groupSpots(team(), kind), ids = Object.keys(spots); if(!ids.length) return;
+  qdSnap(); qdRewind(); let n = 0;
+  for(const id of ids) if(!m.icons[id]){ placeShirt(m, id, spots[id][0], spots[id][1]); n++; }
+  q.pick = null; q.sel = new Set(ids); qdChanged(); zoomMove();
+  toast(n ? `${n} added. Drag any of them to move the group` : 'All on already. Drag any of them to move the group');
+}
+function qdAct(a){
+  const m = curMove(), q = ME.qd, sel = [...q.sel].filter(s => m.icons[s]);
+  const ran = sel.filter(s => runsOf(m.icons[s], lastOf(m)).length);   // selected shirts that have a run: pace and wait change theirs, otherwise the next run drawn
+  if(a === 'undo') return qdUndo();
+  if(a === 'next') return qdStep(q.step === 'place' ? 'trace' : 'ball');
+  if(a === 'play'){ q.sel.clear(); renderQd(); ME.frame = 0; return play(); }
+  if(a === 'timing') return showMoveIcon('ball');
+  if(a === 'desel'){ q.sel.clear(); q.pick = null; renderQd(); renderMoveLayer(); return; }
+  qdSnap(); qdRewind();
+  if(a === 'remove'){ for(const s of sel) removeIcon(m, s); q.sel.clear(); fitFrames(m); }
+  else if(a === 'clear'){ for(const s of sel) clearRun(m, s); fitFrames(m); }
+  else if(a === 'noball'){ if(m.icons.ball) removeIcon(m, 'ball'); fitFrames(m); }
+  else if(a === 'pace'){
+    const cur = ran.length ? paceOf(m, m.icons[ran[0]], q.pace) : q.pace, nx = cur % 3 + 1;
+    if(!ran.length) q.pace = nx;
+    for(const s of ran){ const ic = m.icons[s]; if(runsOf(ic, lastOf(m)).length) drawRun(m, s, pathPoints(ic), moveWindow(ic, lastOf(m)).s, SPEEDS[nx][1]); }
+    fitFrames(m);
+  }
+  else if(a === 'w-' || a === 'w+'){
+    const d = a === 'w+' ? 2 : -2;                                    // half a second at a time
+    if(!ran.length) q.wait = clamp(q.wait + d, 0, 40);
+    for(const s of ran){ const ic = m.icons[s]; if(runsOf(ic, lastOf(m)).length) setMoveStart(m, s, Math.min(60, moveWindow(ic, lastOf(m)).s + d)); }
+    fitFrames(m);
+  }
+  qdChanged();
+}
+function renderQd(){
+  const on = qdOn(), bar = $('#qdBar'), tray = $('#qdTray');
+  bar.hidden = !on; tray.hidden = !on || ME.qd.step !== 'place';
+  if(!on) return;
+  const m = curMove(), q = ME.qd, t = team(), L = lastOf(m);
+  for(const s of [...q.sel]) if(!m.icons[s]) q.sel.delete(s);
+  if(q.pick && m.icons[q.pick]) q.pick = null;
+  const sel = [...q.sel], shirts = iconIds(m).filter(i => i !== 'ball'), chip = (a, label, cls = '') => `<button class="chip${cls}" data-qa="${a}">${label}</button>`;
+  $$('[data-qs]', bar).forEach(b => b.classList.toggle('on', b.dataset.qs === q.step));
+  $('#qdUndo').disabled = !q.undo.length;
+  let hint = '', chips = '';
+  if(q.step === 'place'){
+    hint = q.pick ? `Tap the pitch to put <b>#${q.pick}</b> down`
+      : sel.length ? `<b>${sel.length > 3 ? sel.length + ' shirts' : qdNames(sel)}</b> selected: drag to move`
+      : shirts.length ? 'Drag a shirt to move it. Tap shirts to select several.' : 'Tap a shirt below, then tap the pitch. Or add a group.';
+    chips = (sel.length ? chip('remove', 'Remove') + chip('desel', 'Deselect') : '') + (shirts.length ? chip('next', 'Next: runs ›', ' on') : '');
+  } else if(q.step === 'trace'){
+    const one = sel.map(s => m.icons[s]).find(ic => runsOf(ic, L).length), has = !!one;
+    const pace = has ? paceOf(m, one, q.pace) : q.pace, wait = has ? moveWindow(one, L).s : q.wait;
+    hint = !shirts.length ? 'No players yet: go back to step 1.'
+      : sel.length ? `<b>${sel.length > 3 ? sel.length + ' shirts' : qdNames(sel)}</b>: draw from ${sel.length > 1 ? 'one of them' : 'the shirt'}, or tap where ${sel.length > 1 ? 'they run' : 'it runs'} to`
+      : 'Draw a run from each shirt with a finger. Tap shirts first to move several at once.';
+    if(shirts.length) chips = chip('pace', SPEEDS[pace][0]) + `<span class="qdwait">${chip('w-', '−')}${has ? 'Starts after' : 'Wait'} ${qdSecs(wait)}${chip('w+', '+')}</span>`
+      + (sel.length ? (sel.some(s => runsOf(m.icons[s], L).length) ? chip('clear', 'Clear run') : '') + chip('desel', 'Deselect') : chip('next', 'Next: ball ›', ' on'));
+  } else {
+    const cs = carries(m);
+    hint = !shirts.length ? 'No players yet: go back to step 1.'
+      : cs.length ? `<b>${cs.map(c => c.p || 'kick').join(' → ')}</b> · tap the next receiver` : 'Tap who starts with the ball, then each receiver in turn.';
+    chips = (m.icons.ball ? chip('noball', 'No ball') + (cs.length > 1 ? chip('timing', 'Timing') : '') : '') + (shirts.length ? chip('play', 'Play ▶', ' on') : '');
+  }
+  $('#qdHint').innerHTML = hint; $('#qdChips').innerHTML = chips;
+  if(tray.hidden) return;
+  const left = qdTrayIds(m), groups = [['all', 'Whole<br>team'], ['fwd', 'Forwards'], ['backs', 'Backs'], ['lineout', 'Lineout']];
+  tray.innerHTML = groups.map(([k, l]) => `<button class="qdgrp" data-qg="${k}">+ ${l}</button>`).join('')
+    + (left.length ? left.map(n => { const p = playerAt(t, +n); return `<button class="qdshirt${q.pick === n ? ' on' : ''}" data-qp="${n}" aria-pressed="${q.pick === n}" aria-label="Shirt ${n}">${miniShirt(n, moveColor(m, n), 34)}<small>${p ? esc(surname(p.name)) : esc(posName(+n).split(' ').pop())}</small></button>`; }).join('')
+      : '<span class="qdnone">Everyone is on the pitch</span>');
+}
+// what Quick draw adds on top of the pitch: the line being drawn, and the passing order
+function qdOverlay(m){
+  const q = ME.qd; let s = '';
+  if(q.trail && q.trail.length > 1){
+    const a = q.trail[0];
+    for(const id of q.sel){ if(!m.icons[id]) continue; const st = posAt(m.icons[id], 0), P = q.trail.map(p => [p[0] - a[0] + st[0], p[1] - a[1] + st[1]]), e = P[P.length-1];
+      s += `<polyline class="qdtrail${id === q.lead ? '' : ' other'}" points="${P.map(p => p[0].toFixed(2) + ',' + p[1].toFixed(2)).join(' ')}"/><circle class="qdend" cx="${e[0].toFixed(2)}" cy="${e[1].toFixed(2)}" r=".9"/>`; }
+  }
+  if(q.step === 'ball'){
+    const ord = {}; carries(m).forEach((c, i) => { if(c.p) (ord[c.p] = ord[c.p] || []).push(i + 1); });
+    for(const id in ord){ const p = iconPos(m, id, ME.frame), txt = ord[id].join(','), w = 1.5 + txt.length * .55;
+      s += `<g class="qdord" transform="translate(${(p[0] + 2.6).toFixed(2)} ${(p[1] - 2.8).toFixed(2)})"><rect x="${-w}" y="-1.5" width="${w * 2}" height="3" rx="1.5" fill="#F2C230" stroke="#1A1405" stroke-width=".22"/><text y=".75" text-anchor="middle" font-size="2.1" font-weight="800" fill="#1A1405" font-family="Barlow,system-ui,sans-serif">${txt}</text></g>`; }
+  }
+  return s;
+}
+$('#qdBar').addEventListener('click', e => { if(!qdOn()) return; const s = e.target.closest('[data-qs]'), a = e.target.closest('[data-qa]'); if(s) qdStep(s.dataset.qs); else if(a) qdAct(a.dataset.qa); });
+$('#qdTray').addEventListener('click', e => { if(!qdOn()) return; const g = e.target.closest('[data-qg]'), p = e.target.closest('[data-qp]');
+  if(g) return qdAddGroup(g.dataset.qg);
+  if(p){ const q = ME.qd; qdRewind(); q.sel.clear(); q.pick = q.pick === p.dataset.qp ? null : p.dataset.qp; renderQd(); renderMoveLayer(); } });
+$('#edQuick').addEventListener('click', () => { const m = curMove(); if(!m || roMove(m)) return; stopPlay();
+  if(qdOn()) ME.qd = null; else qdStart(iconIds(m).some(i => i !== 'ball') ? 'trace' : 'place');
+  renderEditor(); toast(ME.qd ? 'Quick draw: place, draw runs, set the ball' : 'Fine-tune: frames, speeds and pauses'); });
+
 function renderEditor(){
   const m = curMove();
   $('#edName').textContent = m.name;
@@ -3219,6 +3571,9 @@ function renderEditor(){
   syncShowChip();
   $('#edPasses').hidden = false; // always there: in a drill without the ball, tapping it adds the ball
   document.body.classList.toggle('romove', roMove(m));
+  document.body.classList.toggle('qd', qdOn());
+  const qb = $('#edQuick'); qb.textContent = qdOn() ? 'Fine-tune' : 'Quick draw'; qb.classList.toggle('on', qdOn());
+  renderQd();
   const eb = $('#edEdit'); eb.hidden = !canEditMove(m); eb.textContent = roMove(m) ? 'Edit' : 'Done'; eb.classList.toggle('on', !roMove(m));
   eb.setAttribute('aria-label', roMove(m) ? 'Edit this animation' : 'Stop editing');
   const nt = $('#edNotes'), hasNotes = !!((m.page || '').trim() || (m.links || []).length); nt.hidden = !hasNotes && roMove(m);
@@ -3243,12 +3598,12 @@ function renderBanner(){
 }
 function renderMoveLayer(){
   const m = curMove(); if(!m) return;
-  const t = team(), f = ME.frame, cf = Math.round(f);
+  const t = team(), f = ME.frame, cf = Math.round(f), qd = qdOn();
   let paths='', toks='', dots='', edTok='';
   for(const id of iconIds(m)){
     const ic = m.icons[id], isEd = ME.editing===id, dim = !!ME.editing && !isEd;
     const col = id==='ball' ? '#FFFFFF' : moveColor(m,id), key = visKey(m,id);
-    const hideTok = !isEd && isHidden('shirts', key), hidePath = !isEd && (S.ui.paths===false || hideTok || isHidden('paths', key));
+    const hideTok = !isEd && !qd && isHidden('shirts', key), hidePath = !isEd && !qd && (S.ui.paths===false || hideTok || isHidden('paths', key)); // Quick draw shows everything
     const pts = [...Array(framesOf(m))].map((_,k)=>iconPos(m,id,k));
     if(!hidePath){
       paths += `<polyline points="${pts.map(p=>p[0].toFixed(2)+','+p[1].toFixed(2)).join(' ')}" class="path${isEd?' ed':''}${dim?' dim':''}" stroke="${col}" ${id==='ball'?'stroke-dasharray="1 .8"':''}/>`;
@@ -3265,11 +3620,11 @@ function renderMoveLayer(){
     }
     const p = iconPos(m, id, f);
     const p2 = playerAt(t, +id);
-    const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: 'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 && !isViewer() ? surname(p2.name) : '', hit: 'i:'+id, dim, ghost:isEd});
+    const tok = id==='ball' ? ballSVG({x:p[0], y:p[1], hit: 'i:ball', dim}) : shirtSVG({x:p[0], y:p[1], n:id, color:col, label: S.ui.names!==false && p2 && !isViewer() ? surname(p2.name) : '', hit: 'i:'+id, dim, ghost:isEd, sel: qd && ME.qd.sel.has(id)});
     if(isEd) edTok = tok; else if(!hideTok) toks += tok; // ball is last in iconIds, so it draws on top
   }
   const cones = (m.cones || []).map(c => coneSVG(c, !!ME.editing)).join('');
-  moveCtl.layer.innerHTML = paths + toks + edTok + cones + dots; // cones on top (small grab area) so one under a shirt can still be moved
+  moveCtl.layer.innerHTML = paths + toks + edTok + cones + dots + (qd ? qdOverlay(m) : ''); // cones on top (small grab area) so one under a shirt can still be moved
   syncShowChip();
   if(iconIds(m).length) $('#edHint').textContent = ME.editing ? 'Tap another shirt to switch, Done to finish' : `Tap a shirt for its path · double-tap to edit · ${framesOf(m)} frames`;
 }
@@ -3289,7 +3644,7 @@ function play(){
   const step = now => {
     if(!ME.playing) return;
     ME.frame += (now-last) / (FRAME_MS/ME.speed); last = now;
-    if(ME.frame >= endF){ if(ME.loop) ME.frame = 0; else { ME.frame = endF; ME.playing = false; } }
+    if(ME.frame >= endF){ if(ME.loop) ME.frame = 0; else { ME.frame = endF; ME.playing = false; if(qdOn()) qdRewindSoon(); } }
     renderMoveLayer(); updateTransport();
     if(ME.playing) ME.raf = requestAnimationFrame(step);
   };
@@ -3349,7 +3704,7 @@ function straighten(id){
   save(); renderMoveLayer(); if(ME.editing === id) renderBanner();
   toast(sel != null ? `Run ${sel+1} straightened` : n > 1 ? 'Each run straightened' : 'Run straightened');
 }
-function startPathEdit(id){ stopPlay(); if(ME.editing !== id && (!ME.runSel || ME.runSel.id !== id)) ME.runSel = null; ME.editing = id; renderBanner(); renderMoveLayer(); }
+function startPathEdit(id){ stopPlay(); if(ME.qd){ ME.qd = null; renderEditor(); } if(ME.editing !== id && (!ME.runSel || ME.runSel.id !== id)) ME.runSel = null; ME.editing = id; renderBanner(); renderMoveLayer(); }
 $('#edTitle').addEventListener('click', () => {
   const m = curMove();
   if(roMove(m)) return openSheet(`<div class="eyebrow">${esc(S.sync.groupName)}</div><h2>${esc(m.name)}</h2>${m.desc ? `<p>${esc(m.desc)}</p>` : ''}
@@ -6235,7 +6590,7 @@ function showHats(){
     ${canHelp() ?'<button class="btn ghost wide" id="hatHelp">Help for coaches and admins</button>' : ''}
     <p class="hint">A code can join you to a team or club, make you a coach or admin, or link your child: it does whatever it was made for.</p>
     <p class="hint">Each role has its own tabs. Coaches, team admins, club admins, players and parents each see only their own tools.</p>
-    <p class="hint" style="text-align:center">Version 12 Nov 2026, 23:05</p>`,
+    <p class="hint" style="text-align:center">Version 13 Nov 2026, 00:25</p>`,
     el => {
       $$('[data-hat]', el).forEach(b => b.addEventListener('click', () => { const [kind, id] = b.dataset.hat.split('|'); setHat(hs.find(x => x.kind === kind && x.id === id)); }));
       $('#hatJoin', el).addEventListener('click', () => { closeSheet(); showGate(true); });
@@ -7067,7 +7422,7 @@ async function sendSupport(place, topic, msg, email){
   const id = now + '-' + [...crypto.getRandomValues(new Uint8Array(6))].map(x => x.toString(36).padStart(2, '0')).join('');
   await fb('POST', ':commit', {writes: [{update: {name: DOCNAME('support/' + id), fields: {kind: sv(place.kind), club: sv(place.club), group: sv(place.group),
     name: sv(place.name), who: sv(place.who), topic: sv(topic), msg: sv(msg), email: sv(email), by: sv(uid), at: {integerValue: String(now)}, status: sv('new'),
-    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('12 Nov 2026, 23:05'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
+    role: sv(place.kind === 'club' ? 'Club admin' : 'Team admin'), version: sv('13 Nov 2026, 00:25'), device: sv(deviceLabel()), ua: sv(navigator.userAgent.slice(0, 400))}},
     currentDocument: {exists: false}}]});
 }
 // this phone's requests and their answers, newest first
